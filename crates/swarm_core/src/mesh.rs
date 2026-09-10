@@ -16,7 +16,8 @@
 //! brick boundary, so a brick's mesh depends on its own cells and a one cell
 //! halo and on nothing further away.
 
-use crate::damage::{ramp, DamageGrid, HEAT_STEPS};
+use crate::damage::{crust_alpha, ramp, DamageGrid, CHAR, HEAT_STEPS};
+use crate::fx::{ember_tile, ember_uv};
 use crate::rng::hash_cell;
 use crate::voxel::{mat, VoxelModel, SURF_COUNT};
 
@@ -111,7 +112,22 @@ impl MeshData {
 #[derive(Clone, Debug, Default)]
 pub struct Surfaces {
     pub skin: Vec<MeshData>,
+    /// The inside a hit opened, drawn as the machinery it is: lit, in the
+    /// surviving cell's own colour, on the plate's own UVs.
+    ///
+    /// This face used to exist only as ember, on a ramp that cools to char,
+    /// so a hole a minute old was a black void with the reactor somewhere
+    /// inside it and nothing to see. They are parts, and the yard has always
+    /// drawn them with the plate off, so the battlefield draws them too.
+    pub inner: MeshData,
+    /// The burn ON that inside: the same faces again, unlit, on the ember
+    /// atlas, white hot through orange to char. Alpha is the CRUST, which
+    /// keeps a third of itself once the fire is out, so a cooled wound is a
+    /// burnt hole rather than a part looking freshly built.
     pub wound: MeshData,
+    /// The soot on the plating AROUND a hole, on the ember atlas too, so both
+    /// halves of a burn come off one texture.
+    pub scorch: MeshData,
     pub windows: Vec<MeshData>,
 }
 
@@ -119,7 +135,9 @@ impl Surfaces {
     fn sized(kinds: usize) -> Self {
         Surfaces {
             skin: (0..SURF_COUNT).map(|_| MeshData::default()).collect(),
+            inner: MeshData::default(),
             wound: MeshData::default(),
+            scorch: MeshData::default(),
             windows: (0..kinds).map(|_| MeshData::default()).collect(),
         }
     }
@@ -140,6 +158,16 @@ impl Surfaces {
 
     pub fn window_quads(&self) -> usize {
         self.windows.iter().map(|s| s.quads()).sum()
+    }
+
+    /// Every quad in every layer, which is what a face count is measured
+    /// against: the skin, the windows cut out of it, and the inside a hit
+    /// opened. The wound and the scorch are the same faces again in another
+    /// layer, so they are not counted twice.
+    pub fn face_quads(&self) -> usize {
+        self.skin.iter().map(|s| s.quad_cells.len()).sum::<usize>()
+            + self.window_quads()
+            + self.inner.quads()
     }
 }
 
@@ -226,14 +254,21 @@ pub fn mesh_region(
     };
     // A face whose neighbour is a cell that DIED rather than one that was never
     // there is the inside of the ship, and it is drawn as such.
-    let dead_at = |i: i32, j: i32, k: i32| -> Option<u32> {
+    // The dead cell behind a face, and how hot it still is. The CELL comes
+    // back as well as the heat because the ember tile is hashed off it: a
+    // wound that picked its tile from the live cell would relight a whole
+    // crater the same way.
+    let dead_at = |i: i32, j: i32, k: i32| -> Option<(u32, f32)> {
         let (d, tick) = damage?;
         if !m.inside(i, j, k) {
             return None;
         }
         let n = m.index(i as usize, j as usize, k as usize);
         if m.grid[n] != mat::EMPTY && d.is_dead(n) {
-            Some((d.heat(n, tick) * HEAT_STEPS as f32).round() as u32)
+            // Quantised, so a wound repaints once every 28 ticks rather than
+            // every frame, and two faces at nearly one heat draw alike.
+            let bucket = (d.heat(n, tick) * HEAT_STEPS as f32).round();
+            Some((n as u32, bucket / HEAT_STEPS as f32))
         } else {
             None
         }
@@ -269,44 +304,84 @@ pub fn mesh_region(
                         continue;
                     }
                     let n = m.index(i as usize, j as usize, k as usize);
-                    let dead = dead_at(ni, nj, nk);
+                    // The corners of this one cell's face, which three of the
+                    // four layers below want and none of them may compute its
+                    // own way: two answers about where a face is would draw a
+                    // pane, a burn and the plate under them a hair apart.
+                    let face = if step > 0 { 1 } else { 0 };
+                    let ccw = (step > 0) != (axis == 1);
+                    let order: [(i32, i32); 4] =
+                        if ccw { [(0, 0), (1, 0), (1, 1), (0, 1)] } else { [(0, 0), (0, 1), (1, 1), (1, 0)] };
+                    let mut corners = [[0.0f32; 3]; 4];
+                    let mut duv = [[0.0f32; 2]; 4];
+                    for (c, (du, dv)) in order.into_iter().enumerate() {
+                        corners[c] = world(put(axis, u + du, v + dv, w + face));
+                        duv[c] = if axis == 0 { [dv as f32, du as f32] } else { [du as f32, dv as f32] };
+                    }
+
+                    // A face whose neighbour DIED is the inside of the ship,
+                    // and it is TWO layers: the machinery it is made of, and
+                    // the burn over it. It leaves the greedy pass because
+                    // each picks its own tile of the ember atlas by its own
+                    // cell, and two heats must never merge into one quad.
+                    if let Some((dc, heat)) = dead_at(ni, nj, nk) {
+                        let tile = ember_tile(dc);
+                        let [r, g, b] = ramp(heat);
+                        let mut euv = [[0.0f32; 2]; 4];
+                        for c in 0..4 {
+                            euv[c] = ember_uv(tile, duv[c]);
+                        }
+                        out.inner.push_quad(corners, normal, rgb_of(m.colour[n]), duv, tangent, n as u32);
+                        out.inner.quad_cells.push(n as u32);
+                        out.inner.close_quad();
+                        out.wound.push_quad(corners, normal, [r, g, b, crust_alpha(heat)], euv, tangent, dc);
+                        out.wound.quad_cells.push(dc);
+                        out.wound.close_quad();
+                        continue;
+                    }
+
                     // A window face leaves the plate pass entirely: it is
                     // its own quad with its own slice of the decal strip,
                     // and the hole it leaves in the plating is exactly where
                     // it goes. Not over a hole, though: a face that looks
                     // into the inside of the ship is a wound, whatever the
                     // plate there used to wear.
-                    if dead.is_none() {
-                        if let Some(win) = m.window_at(n, d) {
-                            let face = if step > 0 { 1 } else { 0 };
-                            let ccw = (step > 0) != (axis == 1);
-                            let order: [(i32, i32); 4] = if ccw {
-                                [(0, 0), (1, 0), (1, 1), (0, 1)]
-                            } else {
-                                [(0, 0), (0, 1), (1, 1), (1, 0)]
-                            };
-                            let variants = win.variants.max(1) as u32;
-                            let slice = if variants > 1 { hash_cell(n as u32) % variants } else { 0 };
-                            let span = 1.0 / variants as f32;
-                            let mut corners = [[0.0f32; 3]; 4];
-                            let mut uvs = [[0.0f32; 2]; 4];
-                            for (c, (du, dv)) in order.into_iter().enumerate() {
-                                corners[c] = world(put(axis, u + du, v + dv, w + face));
-                                let (s0, t0) = if axis == 0 { (dv as f32, du as f32) } else { (du as f32, dv as f32) };
-                                uvs[c] = [(slice as f32 + s0) * span, t0];
+                    if let Some(win) = m.window_at(n, d) {
+                        let variants = win.variants.max(1) as u32;
+                        let slice = if variants > 1 { hash_cell(n as u32) % variants } else { 0 };
+                        let span = 1.0 / variants as f32;
+                        let mut uvs = [[0.0f32; 2]; 4];
+                        for c in 0..4 {
+                            uvs[c] = [(slice as f32 + duv[c][0]) * span, duv[c][1]];
+                        }
+                        let kind = win.kind as usize;
+                        let target = &mut out.windows[kind];
+                        target.push_quad(corners, normal, rgb_of(m.colour[n]), uvs, tangent, n as u32);
+                        target.quad_cells.push(n as u32);
+                        target.close_quad();
+                        continue;
+                    }
+
+                    // Soot on the plating around a hole, as a layer over it.
+                    // Only on faces looking into SPACE: the faces looking into
+                    // the hole already carry the burn above, and stacking a
+                    // third layer on them would be three decals deep on one
+                    // plane for no picture anybody could read.
+                    if let Some((d_grid, tick)) = damage {
+                        if let Some(alpha) = d_grid.scorch_at(m, n) {
+                            let tile = ember_tile(n as u32);
+                            let mut euv = [[0.0f32; 2]; 4];
+                            for c in 0..4 {
+                                euv[c] = ember_uv(tile, duv[c]);
                             }
-                            let kind = win.kind as usize;
-                            let target = &mut out.windows[kind];
-                            target.push_quad(corners, normal, rgb_of(m.colour[n]), uvs, tangent, n as u32);
-                            target.quad_cells.push(n as u32);
-                            target.close_quad();
-                            continue;
+                            let _ = tick;
+                            out.scorch.push_quad(corners, normal, [CHAR[0], CHAR[1], CHAR[2], alpha], euv, tangent, n as u32);
+                            out.scorch.quad_cells.push(n as u32);
+                            out.scorch.close_quad();
                         }
                     }
-                    let key = match dead {
-                        Some(heat) => (1i64 << 32) | ((heat as i64) << 24),
-                        None => (m.colour[n] as i64) | ((m.surf[n] as i64) << 24),
-                    };
+
+                    let key = (m.colour[n] as i64) | ((m.surf[n] as i64) << 24);
                     let slot = (u - u0) as usize + (v - v0) as usize * un;
                     mask[slot] = key;
                     owner[slot] = n as u32;
@@ -357,25 +432,14 @@ pub fn mesh_region(
                     };
                     let mut corners = [[0.0f32; 3]; 4];
                     let mut uvs = [[0.0f32; 2]; 4];
+                    #[allow(clippy::needless_range_loop)]
                     for (c, (du, dv)) in order.into_iter().enumerate() {
                         corners[c] = world(put(axis, u0 + u as i32 + du, v0 + v as i32 + dv, w + face));
                         uvs[c] = if axis == 0 { [dv as f32, du as f32] } else { [du as f32, dv as f32] };
                     }
                     let own = owner[u + v * un];
-                    let is_wound = key >> 32 != 0;
-                    let colour = if is_wound {
-                        let heat = ((key >> 24) & 0xFF) as f32 / HEAT_STEPS as f32;
-                        let [r, g, b] = ramp(heat);
-                        [r, g, b, 1.0]
-                    } else {
-                        rgb_of((key & 0xFF_FFFF) as u32)
-                    };
-                    let target = if is_wound {
-                        &mut out.wound
-                    } else {
-                        &mut out.skin[((key >> 24) & 0xFF) as usize]
-                    };
-                    target.push_quad(corners, normal, colour, uvs, tangent, own);
+                    let target = &mut out.skin[((key >> 24) & 0xFF) as usize];
+                    target.push_quad(corners, normal, rgb_of((key & 0xFF_FFFF) as u32), uvs, tangent, own);
                     // The rectangle's whole footprint, so a hit can take the
                     // cells it reached and leave the rest of the plate standing.
                     for b in 0..tall {
@@ -584,6 +648,7 @@ mod tests {
         let faces = exposed_faces(&m, None);
         let skin = s.skin_all();
         assert_eq!(area(&skin) + s.window_quads(), faces);
+        assert_eq!(s.face_quads(), faces, "the layers cover every face once");
         assert_eq!(s.window_quads(), 292, "every window hull.ts derived is drawn");
         assert!(skin.quads() < faces / 2, "greedy merged {} faces into {} quads", faces, skin.quads());
         let mut seen = std::collections::HashSet::new();
