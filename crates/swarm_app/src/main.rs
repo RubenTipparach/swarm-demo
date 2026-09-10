@@ -31,13 +31,14 @@ use bevy::{
 use std::{collections::HashMap, time::Duration};
 use swarm_core::{
     alien::{generate, Archetype},
-    damage::{chunk_for, Chunk, DamageGrid},
+    damage::{chunk_for, Chunk, DamageGrid, Vent},
+    fx::{blast_sparks, breach_sparks, guns_of, muzzle_sparks, Beam, Blast, Gun, Spark, SparkKind},
     mesh::{greedy_mesh, mesh_region, srgb_to_linear, MeshData, Surfaces},
-    rng::Rng,
+    rng::{drift_of, Rng},
     sky::{bake_cubemap, starfield, to_half, SkyPreset},
     VoxelModel, SURF_COUNT,
 };
-use swarm::{spawn_mote_mesh, MoteSkin, SwarmClock, SwarmConfig, SwarmPlugin};
+use swarm::{spawn_mote_mesh, spawn_spark_mesh, Capsule, FxTextures, Shots, SparkQueue, SwarmClock, SwarmConfig, SwarmPlugin};
 
 const HULLS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/hulls/");
 /// Shaders and textures, pinned at build time: Bevy otherwise looks beside
@@ -66,6 +67,19 @@ struct Args {
     /// What the camera looks at, in world units. The hull's centre unless
     /// asked otherwise: the showcase aliens sit below and ahead of it.
     target: Vec3,
+    /// Force the reactor at this tick. Nought leaves it to the hull's own
+    /// state, which goes critical once enough of it is gone.
+    explode: u32,
+    /// Ticks between one gun firing and the next. Nought silences them.
+    cadence: u32,
+    /// Advance exactly one tick a frame rather than by the wall clock.
+    ///
+    /// A software rasteriser draws at four frames a second, so a frame here
+    /// is fourteen ticks and a screenshot cannot be aimed at one: the shot
+    /// meant for the fireball arrives four hundred ticks after it went out.
+    /// This is for the harness, and it is what makes a headless render a
+    /// function of its frame count rather than of how fast the machine is.
+    fixed_dt: bool,
 }
 
 fn parse_args() -> Args {
@@ -80,6 +94,9 @@ fn parse_args() -> Args {
         chewers: 48,
         zoom: 4.6,
         target: Vec3::ZERO,
+        explode: 0,
+        cadence: 70,
+        fixed_dt: false,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -106,6 +123,9 @@ fn parse_args() -> Args {
                 i += 1;
             }
             "--chewers" => { a.chewers = next().parse().expect("--chewers N"); i += 1; }
+            "--explode" => { a.explode = next().parse().expect("--explode TICK"); i += 1; }
+            "--cadence" => { a.cadence = next().parse().expect("--cadence TICKS"); i += 1; }
+            "--fixed-dt" => a.fixed_dt = true,
             other => panic!("unknown argument {other}"),
         }
         i += 1;
@@ -139,13 +159,35 @@ fn main() {
         .add_systems(Update, orbit_input);
     }
     app.insert_resource(ClearColor(Color::BLACK))
-        .insert_resource(SwarmConfig { count: args.motes, ..default() })
-        .insert_resource(Scene { hull: args.hull.clone(), chewers: args.chewers, zoom: args.zoom, target: args.target })
+        .insert_resource(SwarmConfig { count: args.motes, fixed_dt: args.fixed_dt, ..default() })
+        .insert_resource(Scene {
+            hull: args.hull.clone(),
+            chewers: args.chewers,
+            zoom: args.zoom,
+            target: args.target,
+            explode: args.explode,
+            cadence: args.cadence,
+            fixed_dt: args.fixed_dt,
+        })
         .init_resource::<Tick>()
         .init_resource::<ChunkMaterials>()
         .add_plugins(SwarmPlugin)
+        .init_resource::<Shots>()
+        .init_resource::<SparkQueue>()
+        .init_resource::<LiveFx>()
+        .init_resource::<BeamQuads>()
         .add_systems(Startup, (load_textures, setup).chain())
-        .add_systems(Update, (advance_tick, chew, remesh_dirty, fly_chunks, spin_showcase, orbit_camera, ride_the_eye).chain())
+        .add_systems(
+            Update,
+            (
+                advance_tick,
+                (fire_guns, chew, vent_smoke, go_critical),
+                (age_fx, draw_beams),
+                remesh_dirty,
+                (fly_chunks, spin_showcase, orbit_camera, ride_the_eye),
+            )
+                .chain(),
+        )
         .run();
 }
 
@@ -155,6 +197,9 @@ struct Scene {
     chewers: usize,
     zoom: f32,
     target: Vec3,
+    explode: u32,
+    cadence: u32,
+    fixed_dt: bool,
 }
 
 /// Sixty a second, accumulated from wall time and clamped, so the chewers eat
@@ -165,7 +210,11 @@ struct Tick {
     acc: f32,
 }
 
-fn advance_tick(time: Res<Time>, mut t: ResMut<Tick>) {
+fn advance_tick(time: Res<Time>, scene: Res<Scene>, mut t: ResMut<Tick>) {
+    if scene.fixed_dt {
+        t.tick += 1;
+        return;
+    }
     t.acc += time.delta_secs().min(0.25);
     while t.acc >= 1.0 / 60.0 {
         t.acc -= 1.0 / 60.0;
@@ -185,6 +234,7 @@ struct Textures {
     finishes: HashMap<String, Handle<Image>>,
     windows: HashMap<String, WindowMaps>,
     chitin: Option<Handle<Image>>,
+    ember: Option<Handle<Image>>,
 }
 
 #[derive(Clone)]
@@ -232,8 +282,13 @@ fn load_textures(mut commands: Commands, assets: Res<AssetServer>) {
         );
     }
     let chitin = load("textures/alien_chitin_n.png".into(), false, true);
-    commands.insert_resource(MoteSkin(chitin.clone()));
+    // The ember atlas is the one texture a burn comes off, wherever it is: the
+    // inside of a hole, the soot round it, and every spark in the air. One
+    // fire, one picture of it.
+    let ember = load("textures/ember.png".into(), true, false);
+    commands.insert_resource(FxTextures { chitin: chitin.clone(), ember: ember.clone() });
     t.chitin = Some(chitin);
+    t.ember = Some(ember);
     commands.insert_resource(t);
 }
 
@@ -252,7 +307,12 @@ struct Piece {
 #[derive(Default)]
 struct Brick {
     skin: Vec<Piece>,
+    /// The machinery a hole uncovered, the burn over it, and the soot on the
+    /// plating round the rim. Three layers on the same faces, and they are
+    /// three materials because they are three different things.
+    inner: Piece,
     wound: Piece,
+    scorch: Piece,
     windows: Vec<Piece>,
 }
 
@@ -265,10 +325,19 @@ struct Hull {
     bricks: Vec<Brick>,
     surface_mats: Vec<Handle<StandardMaterial>>,
     window_mats: Vec<Handle<StandardMaterial>>,
+    inner_mat: Handle<StandardMaterial>,
     wound_mat: Handle<StandardMaterial>,
+    scorch_mat: Handle<StandardMaterial>,
     chewers: Vec<Chewer>,
+    /// Where this hull's weapons are and which way they look, read off the
+    /// cells the export says are gunnery.
+    guns: Vec<Gun>,
     breaches: usize,
     last_heat_key: u32,
+    /// How many cells it started with, so "enough of it is gone" is a share
+    /// rather than a number that means something different on every class.
+    cells: usize,
+    dead_hull: bool,
 }
 
 struct Chewer {
@@ -416,7 +485,9 @@ fn place_brick(commands: &mut Commands, meshes: &mut Assets<Mesh>, hull: &mut Hu
     for (i, md) in s.skin.iter().enumerate() {
         upsert(commands, meshes, &mut brick.skin[i], md, &hull.surface_mats[i], parent);
     }
+    upsert(commands, meshes, &mut brick.inner, &s.inner, &hull.inner_mat, parent);
     upsert(commands, meshes, &mut brick.wound, &s.wound, &hull.wound_mat, parent);
+    upsert(commands, meshes, &mut brick.scorch, &s.scorch, &hull.scorch_mat, parent);
     for (k, md) in s.windows.iter().enumerate() {
         upsert(commands, meshes, &mut brick.windows[k], md, &hull.window_mats[k], parent);
     }
@@ -438,14 +509,49 @@ fn setup(
     cfg.hull_radius = radius;
     let mut damage = DamageGrid::new(&model);
     let hull_entity = commands.spawn((Transform::IDENTITY, Visibility::default())).id();
+    let guns = guns_of(&model);
+    let cells = model.solid_count();
     let mut hull = Hull {
         surface_mats: surface_materials(&model, &tex, &mut materials),
         window_mats: window_materials(&model, &tex, &mut materials),
-        wound_mat: materials.add(StandardMaterial { base_color: Color::WHITE, unlit: true, ..default() }),
+        // The inside of a ship is machinery, so it wears what machinery wears.
+        inner_mat: materials.add(StandardMaterial {
+            base_color: Color::WHITE,
+            perceptual_roughness: 0.62,
+            metallic: 0.55,
+            normal_map_texture: tex.finishes.get("greeble").cloned(),
+            ..default()
+        }),
+        // The burn over it. Unlit, because a fire is its own light, and well
+        // over white so a fresh hole clears the bloom threshold: the ramp is
+        // nought to one by construction (it is a colour), and how BRIGHT that
+        // colour is put on the hull is the picture's business, not the ramp's.
+        wound_mat: materials.add(StandardMaterial {
+            base_color: Color::LinearRgba(LinearRgba::rgb(3.4, 3.4, 3.4)),
+            base_color_texture: tex.ember.clone(),
+            unlit: true,
+            alpha_mode: AlphaMode::Blend,
+            depth_bias: 2.0,
+            ..default()
+        }),
+        // And the soot around it, which is a stain rather than a light: lit,
+        // dark, and biased off the plate it is laid on so it does not fight
+        // the panel underneath for the same depth.
+        scorch_mat: materials.add(StandardMaterial {
+            base_color: Color::WHITE,
+            base_color_texture: tex.ember.clone(),
+            unlit: true,
+            alpha_mode: AlphaMode::Blend,
+            depth_bias: 1.0,
+            ..default()
+        }),
         bricks: (0..damage.brick_count()).map(|_| Brick::default()).collect(),
         chewers: Vec::new(),
+        guns,
         breaches: 0,
         last_heat_key: 0,
+        cells,
+        dead_hull: false,
         model,
         damage,
     };
@@ -463,8 +569,8 @@ fn setup(
         .map(|s| format!("{s}:{}", hull.model.surfaces.get(s).map(|x| x.finish.as_str()).unwrap_or("?")))
         .collect();
     info!(
-        "hull {}: {} cells, {} quads over {} bricks, {} window faces of {} kinds, surfaces [{}], radius {:.2}",
-        scene.hull, hull.model.solid_count(), quads, hull.damage.brick_count(), windows, hull.model.window_kinds.len(), used.join(" "), radius
+        "hull {}: {} cells, {} quads over {} bricks, {} window faces of {} kinds, {} guns, surfaces [{}], radius {:.2}",
+        scene.hull, hull.cells, quads, hull.damage.brick_count(), windows, hull.model.window_kinds.len(), hull.guns.len(), used.join(" "), radius
     );
 
     // Chewers stand on random exposed cells, one cell out along the open face.
@@ -510,6 +616,31 @@ fn setup(
     // The swarm's body: a drone, drawn once per mote off the GPU buffer.
     let drone = generate(Archetype::Drone, 1);
     spawn_mote_mesh(&mut commands, meshes.add(to_mesh(&greedy_mesh(&drone, None).skin_all())));
+
+    // And one unit quad, drawn once per spark off the other half of it. The
+    // quad is turned to face the eye in the shader; this is only its corners.
+    spawn_spark_mesh(&mut commands, meshes.add(Rectangle::new(1.0, 1.0)));
+
+    // The beams, as one mesh rebuilt every frame: there are a few dozen and
+    // they are a function of where the eye is, so there is nothing to cache.
+    let beam_mesh = meshes.add(empty_mesh());
+    commands.spawn((
+        Mesh3d(beam_mesh.clone()),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::WHITE,
+            unlit: true,
+            alpha_mode: AlphaMode::Add,
+            // A beam is turned edge on to the eye every frame, so which way
+            // its winding comes out depends on where the camera is: culled,
+            // it disappeared from half the orbit.
+            cull_mode: None,
+            ..default()
+        })),
+        Transform::IDENTITY,
+        bevy::camera::visibility::NoFrustumCulling,
+        BeamMesh,
+    ));
+    commands.insert_resource(BeamHandle(beam_mesh));
 
     // ---- the sky ----
     //
@@ -651,10 +782,14 @@ fn chew(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut chunk_mats: ResMut<ChunkMaterials>,
+    mut sparks: ResMut<SparkQueue>,
     mut cube: Local<Option<Handle<Mesh>>>,
 ) {
     for (mut hull, xf) in &mut hulls {
         let hull = &mut *hull;
+        if hull.dead_hull {
+            continue;
+        }
         let mut breaches: Vec<Chunk> = Vec::new();
         for c in &mut hull.chewers {
             while c.next <= tick.tick {
@@ -662,6 +797,14 @@ fn chew(
                 if let Some(b) = hull.damage.bite(&hull.model, c.at.to_array(), 9.0, tick.tick) {
                     // Follow the hole in: stand where the cell was.
                     c.at = Vec3::from(hull.model.centre_of(b.cell as usize));
+                    // The spray comes off the FACE that opened, in world
+                    // space: a spark thrown in the hull's own frame would
+                    // fly off in the wrong direction the moment a ship moves.
+                    let at = xf.transform_point(Vec3::from(hull.model.centre_of(b.cell as usize)));
+                    let out = xf.rotation * Vec3::from(b.outward);
+                    let mut list = Vec::new();
+                    breach_sparks(b.cell, b.tick, at.to_array(), out.to_array(), hull.model.cell, &mut list);
+                    sparks.extend(list);
                     breaches.push(chunk_for(&hull.model, &b));
                 }
             }
@@ -731,6 +874,321 @@ fn spin_showcase(time: Res<Time>, mut q: Query<&mut Transform, With<Showcase>>) 
     }
 }
 
+// ------------------------------------------------------------------ fx --
+
+/// Every shot and every blast that is still live.
+///
+/// They are here rather than as entities because they are read as one batch
+/// every frame by two things (the mesh that draws them and the uniform the
+/// swarm is handed) and neither wants a query: a few dozen of anything is a
+/// Vec, and an entity per beam would be an archetype move per shot fired.
+#[derive(Resource, Default)]
+struct LiveFx {
+    beams: Vec<Beam>,
+    blasts: Vec<Blast>,
+    /// Totals over the whole run, for the headless report. A picture with no
+    /// beam in it and a picture of a beam that was never fired look the same,
+    /// and only one of them is a bug in this file.
+    fired: usize,
+    sparked: usize,
+}
+
+#[derive(Component)]
+struct BeamMesh;
+
+#[derive(Resource)]
+struct BeamHandle(Handle<Mesh>);
+
+/// How many quads the beam mesh carried this frame.
+#[derive(Resource, Default)]
+struct BeamQuads(usize);
+
+/// A mesh with nothing in it that the renderer will still accept.
+fn empty_mesh() -> Mesh {
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0f32; 3]; 3]);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; 3]);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32; 2]; 3]);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vec![[0.0f32; 4]; 3]);
+    mesh.insert_indices(Indices::U32(vec![0, 1, 2]));
+    mesh
+}
+
+/// Guns go off on their own cadence, staggered so a broadside is a rattle
+/// rather than one bang, and sweep so the beams rake the cloud instead of
+/// drilling the same hole in it forever.
+fn fire_guns(
+    tick: Res<Tick>,
+    scene: Res<Scene>,
+    hulls: Query<(&Hull, &Transform)>,
+    mut fx: ResMut<LiveFx>,
+    mut sparks: ResMut<SparkQueue>,
+) {
+    if scene.cadence == 0 {
+        return;
+    }
+    for (hull, xf) in &hulls {
+        if hull.dead_hull {
+            continue;
+        }
+        let reach = hull.model.radius() * 3.0;
+        for (n, g) in hull.guns.iter().enumerate() {
+            // Staggered by the gun's own cell, so two hulls of one class do
+            // not fire in lockstep and the pattern does not read as a clock.
+            let phase = (swarm_core::rng::hash_cell(g.cell) % scene.cadence) as u32;
+            if (tick.tick + phase) % scene.cadence != 0 {
+                continue;
+            }
+            let at = xf.transform_point(Vec3::from(g.at));
+            let out = (xf.rotation * Vec3::from(g.out)).normalize_or_zero();
+            // A slow rake across the shell. Trigonometry is fine here and
+            // nowhere near the core: this decides where a light is drawn.
+            let t = tick.tick as f32 * 0.03 + n as f32 * 1.7;
+            let side = out.cross(Vec3::Y).normalize_or(Vec3::X);
+            let up = side.cross(out);
+            let dir = (out + side * (t.sin() * 0.45) + up * ((t * 0.7).cos() * 0.30)).normalize();
+            fx.beams.push(Beam {
+                from: at.to_array(),
+                to: (at + dir * reach).to_array(),
+                radius: hull.model.cell * 2.2,
+                born: tick.tick,
+            });
+            fx.fired += 1;
+            let mut list = Vec::new();
+            muzzle_sparks(g.cell.wrapping_add(tick.tick), at.to_array(), dir.to_array(), hull.model.cell, &mut list);
+            sparks.extend(list);
+        }
+    }
+}
+
+/// A hull that has lost enough of itself goes critical.
+///
+/// A share rather than a count, because "enough" means something different on
+/// a corvette and a heavy cruiser, and the same number would kill one instantly
+/// and never kill the other.
+const CRITICAL_SHARE: f32 = 0.10;
+
+fn go_critical(
+    tick: Res<Tick>,
+    scene: Res<Scene>,
+    mut hulls: Query<(Entity, &mut Hull, &Transform)>,
+    mut fx: ResMut<LiveFx>,
+    mut sparks: ResMut<SparkQueue>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut chunk_mats: ResMut<ChunkMaterials>,
+) {
+    for (entity, mut hull, xf) in &mut hulls {
+        let hull = &mut *hull;
+        if hull.dead_hull {
+            continue;
+        }
+        let share = hull.damage.dead_count() as f32 / hull.cells.max(1) as f32;
+        let forced = scene.explode > 0 && tick.tick >= scene.explode;
+        if !forced && share < CRITICAL_SHARE {
+            continue;
+        }
+        hull.dead_hull = true;
+
+        let radius = hull.model.radius();
+        let centre = xf.translation;
+        let blast = Blast { at: centre.to_array(), radius: radius * 1.8, born: tick.tick };
+        // What it does to the HULL is a smaller sphere than what it does to
+        // the swarm: a reactor takes the ship it is in, and the pressure wave
+        // goes further than the wreck does.
+        let hull_blast = Blast { at: [0.0; 3], radius: radius * 1.5, born: tick.tick };
+        info!(
+            "hull went critical at tick {} ({:.1}% of its cells gone{}): blast radius {:.2}",
+            tick.tick,
+            share * 100.0,
+            if forced { ", forced" } else { "" },
+            blast.radius
+        );
+
+        // The hull itself: everything inside the sphere is gone at once, and
+        // every cell that went is thrown.
+        let breaches = hull.damage.blast_cells(&hull.model, &hull_blast, tick.tick);
+        let cube = meshes.add(Cuboid::from_length(hull.model.cell * 0.9));
+        // A cap, because a cruiser inside its own blast is ten thousand cells
+        // and ten thousand entities is a stall, not an explosion. The ones
+        // that are not thrown are simply gone, which is what the re-mesh
+        // draws anyway.
+        const MAX_DEBRIS: usize = 450;
+        let step = (breaches.len() / MAX_DEBRIS).max(1);
+        for b in breaches.iter().step_by(step) {
+            let ch = chunk_for(&hull.model, b);
+            let mat = chunk_mats
+                .0
+                .entry(ch.colour)
+                .or_insert_with(|| {
+                    let [r, g, bl, _] = swarm_core::mesh::rgb_of(ch.colour);
+                    materials.add(StandardMaterial { base_color: Color::srgb(r, g, bl), perceptual_roughness: 0.8, ..default() })
+                })
+                .clone();
+            let origin = xf.transform_point(Vec3::from(ch.origin));
+            let away = (origin - centre).normalize_or_zero();
+            commands.spawn((
+                Mesh3d(cube.clone()),
+                MeshMaterial3d(mat),
+                Transform::from_translation(origin),
+                Debris { vel: Vec3::from(ch.velocity) + away * radius * 1.6, born: ch.born },
+            ));
+        }
+
+        // The fireball is SPARKS, not a shell.
+        //
+        // It was a sphere mesh drawn additively, and it came out as a solid
+        // orange disc with the wreck somewhere behind it: additive blending on
+        // a closed surface lays the same colour down twice per ray, once going
+        // in and once coming out, so a shell bright enough to read at its rim
+        // is opaque everywhere else. redux-tribes learned the same thing on its
+        // movement envelope and answered it with a fresnel; the answer here is
+        // that a particle system already exists and an explosion is a great
+        // many burning pieces, which is a thing it can draw and a sphere is
+        // not. What is left of the shell is the FLASH below: small, very
+        // bright, and gone in a tenth of a second.
+        let mut list = Vec::new();
+        blast_sparks(tick.tick, centre.to_array(), blast.radius, 1400, &mut list);
+        sparks.extend(list);
+
+        // The detonation itself: a handful of very large, very short sparks at
+        // the centre, which is what makes the first frame read as a flash
+        // rather than as debris that was always there.
+        let mut flash = Vec::new();
+        blast_sparks(tick.tick ^ 0xF1A5, centre.to_array(), blast.radius * 0.22, 26, &mut flash);
+        for f in &mut flash {
+            f.size *= 5.0;
+            f.life = 0.10 + f.life * 0.06;
+            f.colour = [9.0, 6.0, 3.2];
+            f.kind = SparkKind::Blast;
+        }
+        sparks.extend(flash);
+        fx.blasts.push(blast);
+        // The whole hull re-meshes: a sphere of it just went.
+        hull.damage.mark_all_dirty();
+        let _ = entity;
+    }
+}
+
+/// Smoke out of the holes: slow, dark, and only a few at a time, because a
+/// plume from every vent on a chewed hull is a fog bank.
+fn vent_smoke(tick: Res<Tick>, hulls: Query<(&Hull, &Transform)>, mut sparks: ResMut<SparkQueue>) {
+    if tick.tick % 4 != 0 {
+        return;
+    }
+    for (hull, xf) in &hulls {
+        let vents: Vec<Vent> = hull.damage.vents(&hull.model, 120);
+        if vents.is_empty() {
+            continue;
+        }
+        for n in 0..vents.len().min(6) {
+            let v = vents[(tick.tick as usize / 4 + n * 17) % vents.len()];
+            let d = drift_of(v.cell, tick.tick.wrapping_add(n as u32));
+            let at = xf.transform_point(Vec3::from(v.at));
+            // Outward is the way INTO the hole, so smoke leaves along its
+            // opposite: a plume that went the other way would go through the
+            // ship.
+            let out = -(xf.rotation * Vec3::from(v.outward));
+            let vel = out * hull.model.cell * 2.4 + Vec3::from(d) * hull.model.cell * 1.2;
+            sparks.push(Spark {
+                pos: at.to_array(),
+                vel: vel.to_array(),
+                // Barely over black: smoke is what a fire leaves, and it is
+                // the one thing here that must NOT bloom.
+                colour: [0.30, 0.20, 0.16],
+                size: hull.model.cell * (2.0 + 1.5 * (d[0] * 0.5 + 0.5)),
+                life: 1.4 + 1.2 * (d[1] * 0.5 + 0.5),
+                kind: SparkKind::Breach,
+            });
+        }
+    }
+}
+
+/// Drop what has gone out, and hand what is left to the swarm as capsules.
+///
+/// The blast's radius is grown HERE rather than in the shader, which is what
+/// lets a beam and a blast be one shape on the other side: the shader tests a
+/// capsule and never learns there are two kinds.
+fn age_fx(tick: Res<Tick>, mut fx: ResMut<LiveFx>, mut shots: ResMut<Shots>, sparks: Res<SparkQueue>) {
+    fx.sparked += sparks.0.len();
+    fx.beams.retain(|b| b.live(tick.tick));
+    fx.blasts.retain(|b| b.live(tick.tick));
+    shots.0.clear();
+    for b in &fx.beams {
+        shots.0.push(Capsule { from: Vec3::from(b.from), to: Vec3::from(b.to), radius: b.radius });
+    }
+    for b in &fx.blasts {
+        let at = Vec3::from(b.at);
+        shots.0.push(Capsule { from: at, to: at, radius: b.radius_at(tick.tick) });
+    }
+}
+
+/// Rebuild the beam mesh: one strip of three quads per beam, turned edge on to
+/// the eye.
+///
+/// Three quads rather than one so the beam has a soft edge: the outer columns
+/// carry no alpha and the inner two carry all of it, which is a bright core
+/// with a falloff either side. One quad could only be a flat slab.
+fn draw_beams(
+    tick: Res<Tick>,
+    fx: Res<LiveFx>,
+    handle: Option<Res<BeamHandle>>,
+    cam: Query<&Transform, With<Camera3d>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut quads: ResMut<BeamQuads>,
+) {
+    let Some(handle) = handle else { return };
+    let Ok(eye) = cam.single() else { return };
+    let eye = eye.translation;
+    let mut pos: Vec<[f32; 3]> = Vec::new();
+    let mut col: Vec<[f32; 4]> = Vec::new();
+    let mut idx: Vec<u32> = Vec::new();
+    const OFFSETS: [f32; 4] = [-1.0, -0.34, 0.34, 1.0];
+    const ALPHAS: [f32; 4] = [0.0, 1.0, 1.0, 0.0];
+    for b in &fx.beams {
+        let (from, to) = (Vec3::from(b.from), Vec3::from(b.to));
+        let dir = (to - from).normalize_or_zero();
+        let mid = (from + to) * 0.5;
+        // Edge on to the eye, so the beam is the same width from anywhere.
+        let across = dir.cross(eye - mid).normalize_or(Vec3::Y.cross(dir).normalize_or(Vec3::X));
+        // It fires bright and goes out; the tail thins as it does.
+        let fade = 1.0 - b.age(tick.tick);
+        let w = b.radius * (0.35 + 0.65 * fade);
+        // Well over white: the camera is HDR and bloom thresholds just under
+        // one after tone mapping, so a beam has to CLEAR that to glow rather
+        // than merely to be a pale blue line.
+        let hot = Vec3::new(3.0, 5.0, 9.0) * fade;
+        let base = pos.len() as u32;
+        for c in 0..4 {
+            let off = across * OFFSETS[c] * w;
+            pos.push((from + off).to_array());
+            pos.push((to + off).to_array());
+            // The far end of a beam is dimmer than the muzzle, which is what
+            // makes it read as travelling rather than as a painted line.
+            col.push([hot.x, hot.y, hot.z, ALPHAS[c]]);
+            col.push([hot.x * 0.5, hot.y * 0.5, hot.z * 0.5, ALPHAS[c] * 0.55]);
+        }
+        for c in 0..3u32 {
+            let a = base + c * 2;
+            idx.extend_from_slice(&[a, a + 1, a + 3, a, a + 3, a + 2]);
+        }
+    }
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    quads.0 = idx.len() / 6;
+    if pos.is_empty() {
+        mesh = empty_mesh();
+    } else {
+        let n = pos.len();
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n]);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32; 2]; n]);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, col);
+        mesh.insert_indices(Indices::U32(idx));
+    }
+    let _ = meshes.insert(handle.0.id(), mesh);
+}
+
 // -------------------------------------------------------------- camera --
 
 #[derive(Component)]
@@ -796,6 +1254,8 @@ fn headless_capture(
     clock: Res<SwarmClock>,
     time: Res<Time>,
     hulls: Query<&Hull>,
+    fx: Res<LiveFx>,
+    quads: Res<BeamQuads>,
     tex: Res<Textures>,
     assets: Res<AssetServer>,
     images: Res<Assets<Image>>,
@@ -815,6 +1275,10 @@ fn headless_capture(
     println!(
         "headless: {} frames in {:.1}s ({:.1} ms/frame mean), swarm ticks {}, chewed {} cells ({} breaches thrown)",
         *frames, *spent, *spent * 1000.0 / *frames as f32, clock.ticks, dead, breaches
+    );
+    println!(
+        "fx: {} beams fired, {} live and {} quads on the last frame, {} blasts live, {} sparks queued",
+        fx.fired, fx.beams.len(), quads.0, fx.blasts.len(), fx.sparked
     );
     // PROVE the textures loaded rather than asserting it: a normal map that
     // failed to decode is a material with no pixels in it, and a hull drawn

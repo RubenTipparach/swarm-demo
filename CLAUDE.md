@@ -109,6 +109,115 @@ the hole is nearer than the cell under it. `a_bite_lands_on_the_nearest_exposed_
 counts nine plate cells and one of machinery for forty bites. The CPU chewers
 in the app follow their hole in, which is what drills.
 
+**A wound is FOUR layers and each is a different thing**: the plate that
+survived, the machinery the hole uncovered (lit, in the cell's own colour, on
+the plate's own UVs), the burn over that machinery (unlit, on the ember
+atlas, white hot through orange to char, alpha the CRUST so a third of it
+stays once the fire is out), and the soot on the plating round the rim (two
+rings at 0.78 and 0.34, on the ember atlas too, so both halves of a burn come
+off one texture). `a_wound_is_four_layers_and_they_line_up` holds the first
+three to the same faces quad for quad, and holds the soot OFF the faces that
+already carry the burn: three decals deep on one plane is not a picture
+anybody can read.
+
+The burn leaves the greedy pass entirely, like a window, because each face
+picks its own tile of the atlas by its own DEAD cell: a wound that took its
+tile from the live cell would light a whole crater the same way. And the
+material puts it on at 3.4, well over white, because the ramp is nought to
+one by construction (it is a colour) and how bright that colour is laid on a
+hull is the picture's business, not the ramp's.
+
+`DamageGrid::vents` answers where smoke leaves, one per face a hit opened
+rather than one per hole: a crater vents along its whole rim, and a single
+plume from the middle would read as a chimney. Smoke is the one spark that
+must NOT bloom, so it is thrown at 0.30, 0.20, 0.16 and nothing else here is
+under one.
+
+## Effects: what a shot is, and what comes off a thing that dies
+
+**A shot is a VOLUME, and the swarm shader is what resolves it.** The CPU
+cannot see where a mote is: they live in a storage buffer and never come
+back. So nothing is resolved on the CPU and told to the swarm. `Shots` is a
+list of capsules pushed into the params uniform every frame, and the tick
+shader tests every mote against every one of them. A beam is a capsule from
+muzzle to endpoint; a blast is a capsule of ZERO LENGTH whose radius the app
+has already grown for this tick (`Blast::radius_at`, `sqrt` so it opens fast
+and stops). One shape, so the shader has one test and no branch on kind.
+
+That test is written twice, in `fx::Beam::kills` and in `swarm.wgsl`, and
+that is the divergent path GUIDELINES 5.1 warns about. It is here on purpose
+because the boundary is real, and the honest guard is that the Rust one is
+the reference and is pinned against a brute force answer that walks the
+segment (`the_capsule_test_agrees_with_walking_the_segment`, six thousand
+points over three beams). The WGSL is a transcription of that same
+expression. If it ever needs to change, change it in `fx.rs` first.
+
+**Guns are read off the ship.** `fx::guns_of` clusters the cells the export
+says are `SURF_WEAPON` and puts a muzzle at each cluster's outermost cell,
+looking outward from the hull's own axis. The Terran frigate has three, which
+is what its class table says it carries. Nothing about a gun is authored
+beside the hull, so a class with no weapons has none rather than having some
+invented for it.
+
+**Sparks are one buffer with TWO writers.** The lower half of the ring is the
+app's, written with `write_buffer` at a cursor `swarm.rs` keeps; the upper
+half is the swarm shader's, claimed with one `atomicAdd` per burst so a
+mote's sparks stay together and cannot interleave with another's half written
+ones. Two regions, no contention. A compute pass integrates them and one
+instanced draw of camera facing quads puts them on screen, additive and
+unlit, because a spark is light rather than a surface.
+
+Four things learned building it, each of which looked like something else:
+
+- **`clear_spark_queue` ran in `Last` and drew nothing.** Extraction runs
+  after the main schedule, so a queue emptied at the end of the frame is
+  emptied before the render world has seen it. Every spark was counted, and
+  every one was thrown away. It runs in `First` now. The reason it was found
+  at all is that the headless report counts what was QUEUED, so "no sparks in
+  the picture" and "no sparks asked for" could be told apart.
+- **Additive is not the default.** The sorted phase hands out alpha blending,
+  which is right for glass and exactly wrong for a spark: an alpha blended
+  spark DARKENS whatever is behind it wherever its own colour is dimmer, so a
+  burst over a lit hull came out as grey specks. The spark pipeline sets
+  `One, One` itself.
+- **The ember atlas is mostly char.** It is a burn seen on a hull, and the
+  wound multiplies it by a heat ramp so the char is what shows once a hole has
+  cooled. Multiplied into a spark it does the same thing, and a spark IS the
+  molten part: sampling a random point of a mostly black tile put most of a
+  burst out. Its LUMINANCE modulates over a floor instead, which keeps the
+  mottling and never takes a spark below the colour it was thrown with.
+- **A fireball is not a shell.** It was a sphere drawn additively and it came
+  out as a solid orange disc with the wreck somewhere behind it: additive
+  blending on a closed surface lays the same colour down twice per ray, going
+  in and coming out, so a shell bright enough to read at its rim is opaque
+  everywhere else. redux-tribes hit this on its movement envelope and answered
+  it with a fresnel. The answer here is that a particle system already exists
+  and an explosion is a great many burning pieces, which is a thing it can
+  draw and a sphere is not.
+
+**A beam is a strip of three quads turned edge on to the eye**, rebuilt on the
+CPU every frame because there are a few dozen and they are a function of where
+the camera is. Three rather than one so it has a soft edge: the outer columns
+carry no alpha and the inner two carry all of it. `cull_mode: None`, because
+which way the winding comes out depends on where the eye is and a culled beam
+vanished over half the orbit.
+
+**A hull that has lost a tenth of itself goes critical.** A share rather than
+a count, because "enough" means something different on a corvette and a heavy
+cruiser. The reactor takes a sphere of the ship at once (`blast_cells`, at the
+FULL radius rather than staged over the two dozen ticks the fireball takes, or
+the same bricks re-mesh twenty four times to no visible end), throws what it
+took as debris up to a cap, sprays fourteen hundred sparks and a flash, and
+pushes a capsule the swarm feels. What it does to the HULL is a smaller sphere
+than what it does to the swarm: a reactor takes the ship it is in, and the
+pressure wave goes further than the wreck does.
+
+**`--fixed-dt` is how a screenshot is aimed.** A software rasteriser draws at
+four frames a second, so a frame is fourteen ticks by the wall clock and the
+shot meant for the fireball arrives four hundred ticks after it went out. With
+it, one frame is one tick and a headless render is a function of its frame
+count rather than of how fast the machine is.
+
 ## The sky is the archive's, baked once
 
 `sky.rs` is `sky.ts`, which is `Procgen_Space_Skybox.shadergraph`: two layers
@@ -167,11 +276,18 @@ the same failure as one that never loaded.
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 32, the core
+cargo test -p swarm_core                                   # 42, the core
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
 cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png
 ./target/release/swarm_app --headless --motes 1 --chewers 0 --zoom 1.7 --out close.png
+# The effects, aimed: one frame is one tick, so a shot can be taken AT a tick.
+./target/release/swarm_app --headless --fixed-dt --motes 1 --chewers 80 --cadence 0 \
+    --frames 260 --zoom 1.35 --out wound.png            # a hull burning
+./target/release/swarm_app --headless --fixed-dt --motes 2600 --cadence 5 \
+    --frames 140 --zoom 3.4 --out beams.png             # guns into the swarm
+./target/release/swarm_app --headless --fixed-dt --motes 900 --explode 90 \
+    --frames 93 --zoom 6.0 --out boom.png               # three ticks after the reactor
 node tools/export_hulls.mjs ../redux-tribes assets/hulls   # re-export the fleet (needs npm install in tools/)
 ```
 

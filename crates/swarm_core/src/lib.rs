@@ -15,14 +15,18 @@
 //! - [`rng`]: a deterministic generator and the hash a chunk's drift comes from.
 //! - [`sky`]: the nebula baked to a cubemap and the stars as points, from
 //!   `sky.ts`.
+//! - [`fx`]: what a shot is, what a blast kills, and what comes off a thing
+//!   that dies.
 
 pub mod alien;
 pub mod damage;
+pub mod fx;
 pub mod mesh;
 pub mod rng;
 pub mod sky;
 pub mod voxel;
 
 pub use damage::DamageGrid;
+pub use fx::{Beam, Blast, Spark, SparkKind};
 pub use mesh::{greedy_mesh, mesh_region, MeshData};
 pub use voxel::{mat, Surface, VoxelModel, Window, HULL_NX, HULL_NY, HULL_NZ, SURF_COUNT};
