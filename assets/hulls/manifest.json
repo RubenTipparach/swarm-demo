@@ -1,0 +1,209 @@
+[
+ {
+  "key": "terran_frigate",
+  "faction": "terran",
+  "rung": "frigate",
+  "cell": 0.109375,
+  "cells": 8938,
+  "plate": 6379,
+  "bytes": 107284
+ },
+ {
+  "key": "karisen_frigate",
+  "faction": "karisen",
+  "rung": "frigate",
+  "cell": 0.109375,
+  "cells": 7029,
+  "plate": 3744,
+  "bytes": 84376
+ },
+ {
+  "key": "rogue_frigate",
+  "faction": "rogue",
+  "rung": "frigate",
+  "cell": 0.109375,
+  "cells": 5200,
+  "plate": 2148,
+  "bytes": 62428
+ },
+ {
+  "key": "benefactor_frigate",
+  "faction": "benefactor",
+  "rung": "frigate",
+  "cell": 0.109375,
+  "cells": 6946,
+  "plate": 4180,
+  "bytes": 83380
+ },
+ {
+  "key": "freighter",
+  "faction": "civil",
+  "rung": "escort",
+  "cell": 0.1640625,
+  "cells": 10580,
+  "plate": 7950,
+  "bytes": 126988
+ },
+ {
+  "key": "terran_corvette",
+  "faction": "terran",
+  "rung": "frigate",
+  "cell": 0.109375,
+  "cells": 4126,
+  "plate": 2738,
+  "bytes": 49540
+ },
+ {
+  "key": "terran_destroyer",
+  "faction": "terran",
+  "rung": "escort",
+  "cell": 0.1640625,
+  "cells": 9688,
+  "plate": 6212,
+  "bytes": 116284
+ },
+ {
+  "key": "terran_cruiser",
+  "faction": "terran",
+  "rung": "cruiser",
+  "cell": 0.21875,
+  "cells": 11993,
+  "plate": 6865,
+  "bytes": 143944
+ },
+ {
+  "key": "karisen_corvette",
+  "faction": "karisen",
+  "rung": "frigate",
+  "cell": 0.109375,
+  "cells": 3028,
+  "plate": 1584,
+  "bytes": 36364
+ },
+ {
+  "key": "karisen_destroyer",
+  "faction": "karisen",
+  "rung": "escort",
+  "cell": 0.1640625,
+  "cells": 7312,
+  "plate": 4076,
+  "bytes": 87772
+ },
+ {
+  "key": "karisen_cruiser",
+  "faction": "karisen",
+  "rung": "cruiser",
+  "cell": 0.21875,
+  "cells": 7876,
+  "plate": 3939,
+  "bytes": 94540
+ },
+ {
+  "key": "rogue_corvette",
+  "faction": "rogue",
+  "rung": "frigate",
+  "cell": 0.109375,
+  "cells": 2534,
+  "plate": 1095,
+  "bytes": 30436
+ },
+ {
+  "key": "rogue_destroyer",
+  "faction": "rogue",
+  "rung": "escort",
+  "cell": 0.1640625,
+  "cells": 5583,
+  "plate": 2080,
+  "bytes": 67024
+ },
+ {
+  "key": "rogue_cruiser",
+  "faction": "rogue",
+  "rung": "cruiser",
+  "cell": 0.21875,
+  "cells": 7503,
+  "plate": 2629,
+  "bytes": 90064
+ },
+ {
+  "key": "benefactor_corvette",
+  "faction": "benefactor",
+  "rung": "frigate",
+  "cell": 0.109375,
+  "cells": 3464,
+  "plate": 2169,
+  "bytes": 41596
+ },
+ {
+  "key": "benefactor_destroyer",
+  "faction": "benefactor",
+  "rung": "escort",
+  "cell": 0.1640625,
+  "cells": 8527,
+  "plate": 4944,
+  "bytes": 102352
+ },
+ {
+  "key": "benefactor_cruiser",
+  "faction": "benefactor",
+  "rung": "cruiser",
+  "cell": 0.21875,
+  "cells": 9738,
+  "plate": 4602,
+  "bytes": 116884
+ },
+ {
+  "key": "civil_lighter",
+  "faction": "civil",
+  "rung": "frigate",
+  "cell": 0.109375,
+  "cells": 4984,
+  "plate": 3392,
+  "bytes": 59836
+ },
+ {
+  "key": "civil_hauler",
+  "faction": "civil",
+  "rung": "escort",
+  "cell": 0.1640625,
+  "cells": 9854,
+  "plate": 6211,
+  "bytes": 118276
+ },
+ {
+  "key": "civil_boxship",
+  "faction": "civil",
+  "rung": "cruiser",
+  "cell": 0.21875,
+  "cells": 12467,
+  "plate": 6154,
+  "bytes": 149632
+ },
+ {
+  "key": "civil_tanker",
+  "faction": "civil",
+  "rung": "cruiser",
+  "cell": 0.21875,
+  "cells": 11814,
+  "plate": 6826,
+  "bytes": 141796
+ },
+ {
+  "key": "civil_miner",
+  "faction": "civil",
+  "rung": "escort",
+  "cell": 0.1640625,
+  "cells": 8519,
+  "plate": 5029,
+  "bytes": 102256
+ },
+ {
+  "key": "civil_liner",
+  "faction": "civil",
+  "rung": "cruiser",
+  "cell": 0.21875,
+  "cells": 10898,
+  "plate": 6129,
+  "bytes": 130804
+ }
+]
