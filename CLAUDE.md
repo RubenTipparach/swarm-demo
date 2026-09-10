@@ -157,6 +157,13 @@ group at 3, and that is why the instance attributes moved to 8 and 9: they
 were at 3 and 4, which is fine for a cube and collides with the tangents the
 moment the mesh has any.
 
+It is tiled at HALF the rate of a finish, a scale spanning two cells, in the
+material's `uv_transform` and in the mote shader alike. At one scale a cell,
+on a body a few cells across, the map was bound and loaded and read as grain:
+the close up (`--target -1.4,-2.3,3.9 --zoom 1.05`, which is where the
+showcase stands) is the check, because a normal map that reads as nothing is
+the same failure as one that never loaded.
+
 ## Suites
 
 ```sh

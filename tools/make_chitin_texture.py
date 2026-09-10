@@ -25,7 +25,7 @@ from texkit import ROOT, clamp01, dome, emit, fbm, frac, normal_png, rng, smooth
 
 OUT = ROOT / "crates" / "swarm_app" / "assets" / "textures" / "alien_chitin_n.png"
 SIZE = 128
-STRENGTH = 2.4
+STRENGTH = 3.4
 
 # Scales per row across the tile, and rows down it. Odd rows are offset by
 # half a scale, so each sits over the crease between two below it.
