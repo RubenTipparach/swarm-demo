@@ -12,6 +12,7 @@
 //! neighbour blocks whose cells now face it, and the renderer rebuilds only
 //! those.
 
+use crate::fx::Blast;
 use crate::rng::drift_of;
 use crate::voxel::{mat, VoxelModel, NEIGHBOURS};
 
@@ -25,6 +26,20 @@ pub const HEAT_STEPS: u32 = 32;
 
 /// Cells on a side of one re-mesh block.
 pub const BRICK: usize = 8;
+
+/// How far the soot spreads from a hole, in cells, and how much of it there
+/// is at each remove.
+///
+/// A shot that takes cells out of a flank does not leave the plate beside it
+/// factory fresh, and that is what it looked like: the survivors of a partly
+/// eaten quad were rebuilt in the hull's own colour, so the edge of every
+/// wound was a clean cut through clean paint. The near ring is nearly all
+/// soot and the far one is a smudge.
+pub const SCORCH_RINGS: [f32; 2] = [0.78, 0.34];
+
+/// The colour soot is. Not black: a burnt mark on plating is char, and flat
+/// black reads as a hole rather than as a stain.
+pub const CHAR: [f32; 3] = [0.09, 0.075, 0.07];
 
 /// Not yet dead.
 const ALIVE: u32 = u32::MAX;
@@ -91,6 +106,16 @@ pub struct Breach {
     pub tick: u32,
     /// Which way out of the hull the face it was bitten from looks.
     pub outward: [f32; 3],
+}
+
+/// Where smoke leaves a hull: the centre of one face a hit opened, and the
+/// way OUT of it, so a plume goes into space rather than through the ship.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Vent {
+    pub at: [f32; 3],
+    pub outward: [f32; 3],
+    /// The dead cell it opened onto, which is what carries the heat.
+    pub cell: u32,
 }
 
 /// A piece coming off, for the renderer to throw. Its drift is hashed from the
@@ -300,6 +325,109 @@ impl DamageGrid {
         best.map(|(n, o, _)| (n, o))
     }
 
+    /// How much soot is on a live cell, from how far it is along solid cells
+    /// from the nearest dead one, or none.
+    ///
+    /// Asked per cell rather than derived by one walk over the whole dead set,
+    /// because a brick re-meshes on its own and a ring crosses a brick
+    /// boundary: a global walk would have to be redone whole every time one
+    /// cell died. Two steps is a short enough march to do here.
+    pub fn scorch_at(&self, m: &VoxelModel, n: usize) -> Option<f32> {
+        if m.grid[n] == mat::EMPTY || self.is_dead(n) {
+            return None;
+        }
+        let (i, j, k) = m.at(n);
+        let solid_live = |i: i32, j: i32, k: i32| -> Option<(usize, bool)> {
+            if !m.inside(i, j, k) {
+                return None;
+            }
+            let c = m.index(i as usize, j as usize, k as usize);
+            (m.grid[c] != mat::EMPTY).then(|| (c, self.is_dead(c)))
+        };
+        for (a, b, c) in NEIGHBOURS {
+            if let Some((_, true)) = solid_live(i as i32 + a, j as i32 + b, k as i32 + c) {
+                return Some(SCORCH_RINGS[0]);
+            }
+        }
+        for (a, b, c) in NEIGHBOURS {
+            let Some((mid, false)) = solid_live(i as i32 + a, j as i32 + b, k as i32 + c) else {
+                continue;
+            };
+            let (x, y, z) = m.at(mid);
+            for (d, e, f) in NEIGHBOURS {
+                if let Some((_, true)) = solid_live(x as i32 + d, y as i32 + e, z as i32 + f) {
+                    return Some(SCORCH_RINGS[1]);
+                }
+            }
+        }
+        None
+    }
+
+    /// Every face a hit opened, as somewhere smoke can leave.
+    ///
+    /// One per face rather than one per hole: a crater in a flank vents along
+    /// its whole rim, and a single plume from the middle of it would read as a
+    /// chimney.
+    pub fn vents(&self, m: &VoxelModel, limit: usize) -> Vec<Vent> {
+        let mut out = Vec::new();
+        for n in 0..m.len() {
+            if !self.is_dead(n) {
+                continue;
+            }
+            let (i, j, k) = m.at(n);
+            for (a, b, c) in NEIGHBOURS {
+                let (x, y, z) = (i as i32 + a, j as i32 + b, k as i32 + c);
+                if !m.inside(x, y, z) {
+                    continue;
+                }
+                let live = m.index(x as usize, y as usize, z as usize);
+                if m.grid[live] == mat::EMPTY || self.is_dead(live) {
+                    continue;
+                }
+                // The face between them, which is half a cell off the dead
+                // one, and the way out is from the live cell toward it.
+                let p = m.centre_of(n);
+                let h = m.cell * 0.5;
+                out.push(Vent {
+                    at: [p[0] + a as f32 * h, p[1] + b as f32 * h, p[2] + c as f32 * h],
+                    outward: [-(a as f32), -(b as f32), -(c as f32)],
+                    cell: n as u32,
+                });
+                if out.len() >= limit {
+                    return out;
+                }
+            }
+        }
+        out
+    }
+
+    /// Everything inside a blast dies at once, and every cell that does is
+    /// answered so the app can throw it.
+    ///
+    /// The blast is measured at its FULL radius rather than at its radius this
+    /// tick: a hull inside an explosion is gone, and staging the cells over
+    /// the two dozen ticks the fireball takes to open would re-mesh the same
+    /// bricks twenty four times to no visible end.
+    pub fn blast_cells(&mut self, m: &VoxelModel, b: &Blast, tick: u32) -> Vec<Breach> {
+        let mut out = Vec::new();
+        let r2 = b.radius * b.radius;
+        for n in 0..m.len() {
+            if m.grid[n] == mat::EMPTY || self.is_dead(n) {
+                continue;
+            }
+            let p = m.centre_of(n);
+            let d = [p[0] - b.at[0], p[1] - b.at[1], p[2] - b.at[2]];
+            if d[0] * d[0] + d[1] * d[1] + d[2] * d[2] > r2 {
+                continue;
+            }
+            let outward = crate::fx::normalise(d);
+            if let Some(br) = self.chip(n, f32::MAX, tick, outward) {
+                out.push(br);
+            }
+        }
+        out
+    }
+
     /// Bite the hull at a point: find the exposed cell there and chip it.
     pub fn bite(&mut self, m: &VoxelModel, p: [f32; 3], amount: f32, tick: u32) -> Option<Breach> {
         let (n, outward) = self.nearest_exposed(m, p, 2)?;
@@ -443,6 +571,79 @@ mod tests {
         assert_eq!(skin, whole.skin_all().quad_cells.len());
         assert_eq!(wound, whole.wound.quad_cells.len());
         assert_eq!(skin + wound, exposed_faces(&m, Some(&d)));
+    }
+
+    #[test]
+    fn soot_rings_a_hole_and_never_lands_in_it() {
+        let m = slab();
+        let mut d = DamageGrid::new(&m);
+        assert!((0..m.len()).all(|n| d.scorch_at(&m, n).is_none()), "an unhit hull is clean");
+        let n = m.index(7, 9, 7);
+        d.chip(n, 1000.0, 1, [0.0, 1.0, 0.0]);
+        assert_eq!(d.scorch_at(&m, n), None, "a dead cell is a hole, not a stain");
+        // Its five solid neighbours are the near ring.
+        for (a, b, c) in [(6, 9, 7), (8, 9, 7), (7, 8, 7), (7, 9, 6), (7, 9, 8)] {
+            assert_eq!(d.scorch_at(&m, m.index(a, b, c)), Some(SCORCH_RINGS[0]), "({a},{b},{c})");
+        }
+        // Two steps out is the smudge, three is clean.
+        assert_eq!(d.scorch_at(&m, m.index(5, 9, 7)), Some(SCORCH_RINGS[1]));
+        assert_eq!(d.scorch_at(&m, m.index(4, 9, 7)), None);
+        // Distance is measured along SOLID cells, so soot does not jump a gap:
+        // the slab is four cells deep and nothing below it is scorched.
+        assert_eq!(d.scorch_at(&m, m.index(7, 5, 7)), None, "below the slab is empty");
+        assert!(CHAR.iter().all(|&c| c > 0.0 && c < 0.2), "char is nearly black, not black");
+    }
+
+    #[test]
+    fn a_hole_vents_along_its_whole_rim_and_every_plume_goes_out() {
+        let m = slab();
+        let mut d = DamageGrid::new(&m);
+        assert!(d.vents(&m, 99).is_empty());
+        let n = m.index(7, 9, 7);
+        d.chip(n, 1000.0, 1, [0.0, 1.0, 0.0]);
+        let v = d.vents(&m, 99);
+        // Five solid neighbours, so five faces to vent from; the sixth looks
+        // at space and is where the cell went.
+        assert_eq!(v.len(), 5);
+        let centre = m.centre_of(n);
+        for x in &v {
+            assert_eq!(x.cell, n as u32);
+            // Each sits half a cell off the dead cell's centre, on one axis.
+            let off = [x.at[0] - centre[0], x.at[1] - centre[1], x.at[2] - centre[2]];
+            let far = off.iter().map(|o| o.abs()).fold(0.0f32, f32::max);
+            assert!((far - m.cell * 0.5).abs() < 1e-6, "{off:?}");
+            // And it looks back INTO the hole, away from the live cell.
+            let dotp: f32 = (0..3).map(|a| off[a] * x.outward[a]).sum();
+            assert!(dotp < 0.0, "plume goes through the ship: {x:?}");
+        }
+        assert_eq!(d.vents(&m, 2).len(), 2, "the limit is honoured");
+    }
+
+    #[test]
+    fn a_blast_takes_a_sphere_of_hull_at_once() {
+        let m = slab();
+        let mut d = DamageGrid::new(&m);
+        let at = m.centre_of(m.index(7, 8, 7));
+        let b = crate::fx::Blast { at, radius: m.cell * 2.5, born: 4 };
+        let breaches = d.blast_cells(&m, &b, 4);
+        assert!(!breaches.is_empty());
+        // Every cell within the radius is gone, and nothing outside it is.
+        for n in 0..m.len() {
+            if m.grid[n] == mat::EMPTY {
+                continue;
+            }
+            let p = m.centre_of(n);
+            let dist = ((p[0] - at[0]).powi(2) + (p[1] - at[1]).powi(2) + (p[2] - at[2]).powi(2)).sqrt();
+            assert_eq!(d.is_dead(n), dist <= b.radius, "cell {n} at {dist}");
+        }
+        assert_eq!(d.dead_count(), breaches.len());
+        // Thrown outward from the centre, and the one AT the centre is not
+        // thrown nowhere: `normalise` answers a direction either way.
+        for br in &breaches {
+            let l: f32 = br.outward.iter().map(|x| x * x).sum::<f32>().sqrt();
+            assert!((l - 1.0).abs() < 1e-4, "{:?}", br.outward);
+        }
+        assert!(d.blast_cells(&m, &b, 5).is_empty(), "nothing dies twice");
     }
 
     #[test]
