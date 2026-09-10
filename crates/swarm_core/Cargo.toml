@@ -1,0 +1,8 @@
+[package]
+name = "swarm_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The voxel lattice, the greedy mesher, the damage grid and the alien generator. No engine, no renderer, no crates: the same boundary redux-tribes keeps between sim_core and web."
+
+[dependencies]

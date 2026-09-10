@@ -1,0 +1,11 @@
+{
+  "name": "swarm-demo-tools",
+  "private": true,
+  "type": "module",
+  "description": "node tools/export_hulls.mjs <redux-tribes dir> assets/hulls. esbuild bundles redux-tribes' TypeScript in memory; three is what its mesher builds geometry with.",
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "three": "^0.169.0",
+    "typescript": "^5.6.0"
+  }
+}

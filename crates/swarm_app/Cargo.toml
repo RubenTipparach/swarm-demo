@@ -1,0 +1,11 @@
+[package]
+name = "swarm_app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The Bevy harness: draws what swarm_core says, ticks the swarm on the GPU, and collects input."
+
+[dependencies]
+swarm_core = { path = "../swarm_core" }
+bevy = "0.18.1"
+bytemuck = { version = "1", features = ["derive"] }
