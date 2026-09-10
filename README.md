@@ -10,6 +10,7 @@ Left drag orbits, wheel zooms.
 ```sh
 cargo test -p swarm_core                           # the engine-free core
 cargo run --release -p swarm_app                   # a window: drag to orbit, wheel to zoom
+cargo run --release -p swarm_app -- --fps 60      # frames are capped at 120 by default
 cargo run --release -p swarm_app -- --headless \
     --motes 5000 --frames 60 --out shot.png        # no window: render, screenshot, exit
 ```

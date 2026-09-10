@@ -342,6 +342,7 @@ cargo test -p swarm_core                                   # 42, the core
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
 cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png
+./target/release/swarm_app --fps 60          # a window, capped; --fps 0 lifts the cap
 ./target/release/swarm_app --headless --motes 1 --chewers 0 --zoom 1.7 --out close.png
 # The effects, aimed: one frame is one tick, so a shot can be taken AT a tick.
 ./target/release/swarm_app --headless --fixed-dt --motes 1 --chewers 80 --cadence 0 \
@@ -365,6 +366,38 @@ And what it cannot catch: driver specific behaviour. Redux-tribes learned that
 SwiftShader gives `pow` of a negative base a defined answer while a real driver
 gives a NaN. Same trap here. Guard every expression at the point it can leave
 its domain, and test invariants headless and performance on silicon.
+
+## A frame cap, and why the numbers before it were wrong
+
+`--fps N` caps the frame loop, defaulting to 120; nought lifts it. Vsync is
+not a cap, it is the MONITOR's cap: on a 144 or 240 hertz panel a scene this
+cheap to simulate draws at the refresh rate and holds the GPU at full clock
+the whole time, which is a hot room for frames nobody asked for.
+
+It is a DEADLINE rather than a fixed sleep, so the cap does not drift, and a
+frame that has already overrun resyncs the deadline to now rather than chasing
+it: catching up means running the next few flat out, which is the thing the
+cap exists to prevent. `sleep` and not a spin, because a spin paces better and
+burns a core doing it, and burning a core is the problem.
+
+**And it looked broken when it was working, which is the part worth keeping.**
+Capped at two frames a second the report still said four. `Time` in Bevy
+clamps the virtual delta at 250 ms so one stalled frame cannot make everything
+jump, so a frame SLOWER than that is reported as 250 ms however long it really
+took. The headless report was a sum of those deltas, which means it quietly
+stopped counting at four frames a second, which is exactly the range a
+software rasteriser lives in.
+
+So every frame time this file recorded before the fix is a LOWER BOUND wherever
+it approaches 250 ms, and the ones that sat just under it were the clamp rather
+than a measurement. Re-measured off an `Instant`: the nine thousand mote scene
+is **479 ms a frame**, not the 239.8 the delta sum reported. Exactly double,
+because most of its frames were over the clamp.
+
+The rule that comes out of it: **time a thing with a clock, not with the
+engine's idea of how long a frame was allowed to be.** An engine's delta is
+shaped for the simulation that reads it, and every shaping is a lie to a
+harness.
 
 ## Measure, then decide
 

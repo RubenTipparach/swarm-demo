@@ -28,7 +28,10 @@ use bevy::{
     window::{ExitCondition, WindowPlugin},
     winit::WinitPlugin,
 };
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 use swarm_core::{
     alien::{generate, Archetype},
     damage::{chunk_for, Chunk, DamageGrid, Vent},
@@ -80,6 +83,8 @@ struct Args {
     /// Draw the four archetypes in a row beside the hull. Off by default now
     /// that the carriers are the aliens on show.
     showcase: bool,
+    /// Frames a second, at most. Nought lifts the cap.
+    fps: u32,
     /// Advance exactly one tick a frame rather than by the wall clock.
     ///
     /// A software rasteriser draws at four frames a second, so a frame here
@@ -107,6 +112,7 @@ fn parse_args() -> Args {
         hives: 10,
         order: None,
         showcase: false,
+        fps: 120,
         fixed_dt: false,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -144,6 +150,7 @@ fn parse_args() -> Args {
                 i += 1;
             }
             "--showcase" => a.showcase = true,
+            "--fps" => { a.fps = next().parse().expect("--fps N, or 0 for no cap"); i += 1; }
             other => panic!("unknown argument {other}"),
         }
         i += 1;
@@ -175,6 +182,9 @@ fn main() {
             ..default()
         }))
         .add_systems(Update, orbit_input);
+    }
+    if args.fps > 0 {
+        app.insert_resource(FrameLimit::new(args.fps)).add_systems(Last, limit_frames);
     }
     app.insert_resource(ClearColor(Color::BLACK))
         .insert_resource(SwarmConfig { count: args.motes, fixed_dt: args.fixed_dt, ..default() })
@@ -218,6 +228,41 @@ fn main() {
         .run();
 }
 
+/// How fast the frame loop is allowed to go.
+///
+/// Vsync alone is not a cap, it is the MONITOR's cap: on a hundred and
+/// forty four or two hundred and forty hertz panel a scene this cheap to
+/// simulate will happily draw at the refresh rate and hold the GPU at full
+/// clock the whole time, which is a hot room for frames nobody asked for.
+///
+/// A deadline rather than a fixed sleep, so the cap does not drift: each
+/// frame waits until its own slot has come round. When a frame has already
+/// overrun its budget the deadline is resynced to now rather than chased,
+/// because catching up on a frame that took too long means running the next
+/// few flat out, which is the thing this exists to prevent.
+///
+/// `sleep` rather than a spin, deliberately. A spin wait paces more precisely
+/// and burns a core doing it, and burning a core is the problem.
+#[derive(Resource)]
+struct FrameLimit {
+    budget: Duration,
+    next: Instant,
+}
+
+impl FrameLimit {
+    fn new(fps: u32) -> Self {
+        FrameLimit { budget: Duration::from_secs_f64(1.0 / fps as f64), next: Instant::now() }
+    }
+}
+
+fn limit_frames(mut limit: ResMut<FrameLimit>) {
+    let now = Instant::now();
+    if limit.next > now {
+        std::thread::sleep(limit.next - now);
+    }
+    limit.next = limit.next.max(now) + limit.budget;
+}
+
 #[derive(Resource)]
 struct Scene {
     hull: String,
@@ -231,6 +276,7 @@ struct Scene {
     showcase: bool,
     fixed_dt: bool,
 }
+
 
 /// Sixty a second, accumulated from wall time and clamped, so the chewers eat
 /// at one rate whatever the frame rate is doing.
@@ -1909,7 +1955,6 @@ fn headless_capture(
     mut h: ResMut<Headless>,
     target: Option<Res<HeadlessTarget>>,
     clock: Res<SwarmClock>,
-    time: Res<Time>,
     hulls: Query<&Hull>,
     fx: Res<LiveFx>,
     quads: Res<BeamQuads>,
@@ -1917,21 +1962,31 @@ fn headless_capture(
     assets: Res<AssetServer>,
     images: Res<Assets<Image>>,
     mut frames: Local<u32>,
-    mut spent: Local<f32>,
+    mut started: Local<Option<Instant>>,
     mut commands: Commands,
 ) {
+    // Wall time, from an `Instant`, and NOT the sum of `Time::delta_secs()`.
+    //
+    // Bevy clamps the virtual delta at 250 ms so that one stalled frame
+    // cannot make everything jump; the effect is that a frame slower than
+    // that is REPORTED as 250 ms however long it really took. On a software
+    // rasteriser that is exactly the range these runs live in, so a report
+    // built out of deltas is a report that quietly stops counting at four
+    // frames a second. It was also why the frame limiter looked broken when
+    // it was working: capped at two a second, the sum still said four.
+    let start = *started.get_or_insert_with(Instant::now);
     *frames += 1;
-    *spent += time.delta_secs();
     if h.shot || *frames < h.frames {
         return;
     }
+    let spent = start.elapsed().as_secs_f32();
     let Some(t) = target else { return };
     h.shot = true;
     let breaches: usize = hulls.iter().map(|x| x.breaches).sum();
     let dead: usize = hulls.iter().map(|x| x.damage.dead_count()).sum();
     println!(
-        "headless: {} frames in {:.1}s ({:.1} ms/frame mean), swarm ticks {}, chewed {} cells ({} breaches thrown)",
-        *frames, *spent, *spent * 1000.0 / *frames as f32, clock.ticks, dead, breaches
+        "headless: {} frames in {:.1}s ({:.1} ms/frame mean, wall clock), swarm ticks {}, chewed {} cells ({} breaches thrown)",
+        *frames, spent, spent * 1000.0 / *frames as f32, clock.ticks, dead, breaches
     );
     println!(
         "fx: {} beams fired and {} flak bursts, {} beams live and {} quads on the last frame, {} blasts live, {} sparks queued",
