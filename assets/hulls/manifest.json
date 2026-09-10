@@ -1,209 +1,2379 @@
-[
- {
-  "key": "terran_frigate",
-  "faction": "terran",
-  "rung": "frigate",
-  "cell": 0.109375,
-  "cells": 8938,
-  "plate": 6379,
-  "bytes": 107284
- },
- {
-  "key": "karisen_frigate",
-  "faction": "karisen",
-  "rung": "frigate",
-  "cell": 0.109375,
-  "cells": 7029,
-  "plate": 3744,
-  "bytes": 84376
- },
- {
-  "key": "rogue_frigate",
-  "faction": "rogue",
-  "rung": "frigate",
-  "cell": 0.109375,
-  "cells": 5200,
-  "plate": 2148,
-  "bytes": 62428
- },
- {
-  "key": "benefactor_frigate",
-  "faction": "benefactor",
-  "rung": "frigate",
-  "cell": 0.109375,
-  "cells": 6946,
-  "plate": 4180,
-  "bytes": 83380
- },
- {
-  "key": "freighter",
-  "faction": "civil",
-  "rung": "escort",
-  "cell": 0.1640625,
-  "cells": 10580,
-  "plate": 7950,
-  "bytes": 126988
- },
- {
-  "key": "terran_corvette",
-  "faction": "terran",
-  "rung": "frigate",
-  "cell": 0.109375,
-  "cells": 4126,
-  "plate": 2738,
-  "bytes": 49540
- },
- {
-  "key": "terran_destroyer",
-  "faction": "terran",
-  "rung": "escort",
-  "cell": 0.1640625,
-  "cells": 9688,
-  "plate": 6212,
-  "bytes": 116284
- },
- {
-  "key": "terran_cruiser",
-  "faction": "terran",
-  "rung": "cruiser",
-  "cell": 0.21875,
-  "cells": 11993,
-  "plate": 6865,
-  "bytes": 143944
- },
- {
-  "key": "karisen_corvette",
-  "faction": "karisen",
-  "rung": "frigate",
-  "cell": 0.109375,
-  "cells": 3028,
-  "plate": 1584,
-  "bytes": 36364
- },
- {
-  "key": "karisen_destroyer",
-  "faction": "karisen",
-  "rung": "escort",
-  "cell": 0.1640625,
-  "cells": 7312,
-  "plate": 4076,
-  "bytes": 87772
- },
- {
-  "key": "karisen_cruiser",
-  "faction": "karisen",
-  "rung": "cruiser",
-  "cell": 0.21875,
-  "cells": 7876,
-  "plate": 3939,
-  "bytes": 94540
- },
- {
-  "key": "rogue_corvette",
-  "faction": "rogue",
-  "rung": "frigate",
-  "cell": 0.109375,
-  "cells": 2534,
-  "plate": 1095,
-  "bytes": 30436
- },
- {
-  "key": "rogue_destroyer",
-  "faction": "rogue",
-  "rung": "escort",
-  "cell": 0.1640625,
-  "cells": 5583,
-  "plate": 2080,
-  "bytes": 67024
- },
- {
-  "key": "rogue_cruiser",
-  "faction": "rogue",
-  "rung": "cruiser",
-  "cell": 0.21875,
-  "cells": 7503,
-  "plate": 2629,
-  "bytes": 90064
- },
- {
-  "key": "benefactor_corvette",
-  "faction": "benefactor",
-  "rung": "frigate",
-  "cell": 0.109375,
-  "cells": 3464,
-  "plate": 2169,
-  "bytes": 41596
- },
- {
-  "key": "benefactor_destroyer",
-  "faction": "benefactor",
-  "rung": "escort",
-  "cell": 0.1640625,
-  "cells": 8527,
-  "plate": 4944,
-  "bytes": 102352
- },
- {
-  "key": "benefactor_cruiser",
-  "faction": "benefactor",
-  "rung": "cruiser",
-  "cell": 0.21875,
-  "cells": 9738,
-  "plate": 4602,
-  "bytes": 116884
- },
- {
-  "key": "civil_lighter",
-  "faction": "civil",
-  "rung": "frigate",
-  "cell": 0.109375,
-  "cells": 4984,
-  "plate": 3392,
-  "bytes": 59836
- },
- {
-  "key": "civil_hauler",
-  "faction": "civil",
-  "rung": "escort",
-  "cell": 0.1640625,
-  "cells": 9854,
-  "plate": 6211,
-  "bytes": 118276
- },
- {
-  "key": "civil_boxship",
-  "faction": "civil",
-  "rung": "cruiser",
-  "cell": 0.21875,
-  "cells": 12467,
-  "plate": 6154,
-  "bytes": 149632
- },
- {
-  "key": "civil_tanker",
-  "faction": "civil",
-  "rung": "cruiser",
-  "cell": 0.21875,
-  "cells": 11814,
-  "plate": 6826,
-  "bytes": 141796
- },
- {
-  "key": "civil_miner",
-  "faction": "civil",
-  "rung": "escort",
-  "cell": 0.1640625,
-  "cells": 8519,
-  "plate": 5029,
-  "bytes": 102256
- },
- {
-  "key": "civil_liner",
-  "faction": "civil",
-  "rung": "cruiser",
-  "cell": 0.21875,
-  "cells": 10898,
-  "plate": 6129,
-  "bytes": 130804
- }
-]
+{
+ "surfaces": [
+  "plate",
+  "trim",
+  "structure",
+  "frame",
+  "drive",
+  "weapon",
+  "part",
+  "brush 1",
+  "brush 2",
+  "brush 3",
+  "brush 4",
+  "brush 5",
+  "brush 6",
+  "brush 7",
+  "brush 8"
+ ],
+ "hulls": [
+  {
+   "key": "terran_frigate",
+   "faction": "terran",
+   "rung": "frigate",
+   "cell": 0.109375,
+   "cells": 8938,
+   "plate": 6379,
+   "quads": 1611,
+   "groups": {
+    "plate": 514,
+    "trim": 394,
+    "structure": 117,
+    "frame": 3,
+    "drive": 275,
+    "weapon": 152,
+    "part": 156
+   },
+   "windows": {
+    "beacons": 30,
+    "bridge": 13,
+    "panes": 240,
+    "porthole": 9
+   },
+   "windowFaces": 292,
+   "surfaces": [
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.38,
+     "rough": 0.44
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.48,
+     "rough": 0.58
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    }
+   ],
+   "bytes": 109877
+  },
+  {
+   "key": "karisen_frigate",
+   "faction": "karisen",
+   "rung": "frigate",
+   "cell": 0.109375,
+   "cells": 7029,
+   "plate": 3744,
+   "quads": 1859,
+   "groups": {
+    "plate": 625,
+    "trim": 517,
+    "structure": 203,
+    "frame": 3,
+    "drive": 223,
+    "weapon": 181,
+    "part": 107
+   },
+   "windows": {
+    "beacons": 31,
+    "bridge": 56,
+    "panes": 132,
+    "porthole": 78
+   },
+   "windowFaces": 297,
+   "surfaces": [
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "weave",
+     "metal": 0.3,
+     "rough": 0.52
+    },
+    {
+     "finish": "plate",
+     "metal": 0.42,
+     "rough": 0.48
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    }
+   ],
+   "bytes": 87009
+  },
+  {
+   "key": "rogue_frigate",
+   "faction": "rogue",
+   "rung": "frigate",
+   "cell": 0.109375,
+   "cells": 5200,
+   "plate": 2148,
+   "quads": 1964,
+   "groups": {
+    "plate": 432,
+    "trim": 383,
+    "structure": 131,
+    "drive": 458,
+    "weapon": 154,
+    "part": 406
+   },
+   "windows": {
+    "beacons": 69,
+    "bridge": 15,
+    "panes": 96,
+    "porthole": 71
+   },
+   "windowFaces": 251,
+   "surfaces": [
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.14,
+     "rough": 0.78
+    },
+    {
+     "finish": "tread",
+     "metal": 0.24,
+     "rough": 0.66
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    }
+   ],
+   "bytes": 64704
+  },
+  {
+   "key": "benefactor_frigate",
+   "faction": "benefactor",
+   "rung": "frigate",
+   "cell": 0.109375,
+   "cells": 6946,
+   "plate": 4180,
+   "quads": 2326,
+   "groups": {
+    "plate": 418,
+    "trim": 677,
+    "structure": 604,
+    "drive": 319,
+    "weapon": 189,
+    "part": 119
+   },
+   "windows": {
+    "beacons": 43,
+    "bridge": 50,
+    "panes": 104,
+    "porthole": 42,
+    "strip": 91
+   },
+   "windowFaces": 330,
+   "surfaces": [
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "weave",
+     "metal": 0.4,
+     "rough": 0.36
+    },
+    {
+     "finish": "plate",
+     "metal": 0.52,
+     "rough": 0.34
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    }
+   ],
+   "bytes": 86281
+  },
+  {
+   "key": "freighter",
+   "faction": "civil",
+   "rung": "escort",
+   "cell": 0.1640625,
+   "cells": 10580,
+   "plate": 7950,
+   "quads": 1074,
+   "groups": {
+    "plate": 232,
+    "trim": 296,
+    "structure": 269,
+    "drive": 152,
+    "part": 125
+   },
+   "windows": {
+    "bridge": 66,
+    "hangar": 15,
+    "panes": 98,
+    "porthole": 123
+   },
+   "windowFaces": 302,
+   "surfaces": [
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.12,
+     "rough": 0.76
+    },
+    {
+     "finish": "plate",
+     "metal": 0.22,
+     "rough": 0.58
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    }
+   ],
+   "bytes": 129668
+  },
+  {
+   "key": "terran_corvette",
+   "faction": "terran",
+   "rung": "frigate",
+   "cell": 0.109375,
+   "cells": 4126,
+   "plate": 2738,
+   "quads": 1131,
+   "groups": {
+    "plate": 377,
+    "trim": 310,
+    "structure": 95,
+    "frame": 3,
+    "drive": 137,
+    "weapon": 98,
+    "part": 111
+   },
+   "windows": {
+    "beacons": 33,
+    "panes": 108,
+    "porthole": 9
+   },
+   "windowFaces": 150,
+   "surfaces": [
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.38,
+     "rough": 0.44
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.48,
+     "rough": 0.58
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    }
+   ],
+   "bytes": 50989
+  },
+  {
+   "key": "terran_destroyer",
+   "faction": "terran",
+   "rung": "escort",
+   "cell": 0.1640625,
+   "cells": 9688,
+   "plate": 6212,
+   "quads": 1936,
+   "groups": {
+    "plate": 489,
+    "trim": 383,
+    "structure": 127,
+    "frame": 3,
+    "drive": 493,
+    "weapon": 281,
+    "part": 160
+   },
+   "windows": {
+    "beacons": 3,
+    "bridge": 9,
+    "panes": 278,
+    "porthole": 33
+   },
+   "windowFaces": 323,
+   "surfaces": [
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.38,
+     "rough": 0.44
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.48,
+     "rough": 0.58
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    }
+   ],
+   "bytes": 119125
+  },
+  {
+   "key": "terran_cruiser",
+   "faction": "terran",
+   "rung": "cruiser",
+   "cell": 0.21875,
+   "cells": 11993,
+   "plate": 6865,
+   "quads": 1766,
+   "groups": {
+    "plate": 377,
+    "trim": 292,
+    "structure": 122,
+    "frame": 4,
+    "drive": 409,
+    "weapon": 395,
+    "part": 167
+   },
+   "windows": {
+    "beacons": 23,
+    "bridge": 8,
+    "panes": 175,
+    "porthole": 57
+   },
+   "windowFaces": 263,
+   "surfaces": [
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.38,
+     "rough": 0.44
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.48,
+     "rough": 0.58
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    }
+   ],
+   "bytes": 146305
+  },
+  {
+   "key": "karisen_corvette",
+   "faction": "karisen",
+   "rung": "frigate",
+   "cell": 0.109375,
+   "cells": 3028,
+   "plate": 1584,
+   "quads": 1740,
+   "groups": {
+    "plate": 537,
+    "trim": 491,
+    "structure": 231,
+    "drive": 289,
+    "weapon": 114,
+    "part": 78
+   },
+   "windows": {
+    "beacons": 37,
+    "panes": 40,
+    "porthole": 48
+   },
+   "windowFaces": 125,
+   "surfaces": [
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "weave",
+     "metal": 0.3,
+     "rough": 0.52
+    },
+    {
+     "finish": "plate",
+     "metal": 0.42,
+     "rough": 0.48
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    }
+   ],
+   "bytes": 37613
+  },
+  {
+   "key": "karisen_destroyer",
+   "faction": "karisen",
+   "rung": "escort",
+   "cell": 0.1640625,
+   "cells": 7312,
+   "plate": 4076,
+   "quads": 2002,
+   "groups": {
+    "plate": 634,
+    "trim": 512,
+    "structure": 216,
+    "frame": 3,
+    "drive": 304,
+    "weapon": 213,
+    "part": 120
+   },
+   "windows": {
+    "beacons": 38,
+    "bridge": 52,
+    "panes": 210,
+    "porthole": 85
+   },
+   "windowFaces": 385,
+   "surfaces": [
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "weave",
+     "metal": 0.3,
+     "rough": 0.52
+    },
+    {
+     "finish": "plate",
+     "metal": 0.42,
+     "rough": 0.48
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    }
+   ],
+   "bytes": 91109
+  },
+  {
+   "key": "karisen_cruiser",
+   "faction": "karisen",
+   "rung": "cruiser",
+   "cell": 0.21875,
+   "cells": 7876,
+   "plate": 3939,
+   "quads": 2187,
+   "groups": {
+    "plate": 617,
+    "trim": 472,
+    "structure": 188,
+    "frame": 5,
+    "drive": 449,
+    "weapon": 341,
+    "part": 115
+   },
+   "windows": {
+    "beacons": 20,
+    "bridge": 40,
+    "panes": 236,
+    "porthole": 107
+   },
+   "windowFaces": 403,
+   "surfaces": [
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "weave",
+     "metal": 0.3,
+     "rough": 0.52
+    },
+    {
+     "finish": "plate",
+     "metal": 0.42,
+     "rough": 0.48
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.35,
+     "rough": 0.45
+    }
+   ],
+   "bytes": 98021
+  },
+  {
+   "key": "rogue_corvette",
+   "faction": "rogue",
+   "rung": "frigate",
+   "cell": 0.109375,
+   "cells": 2534,
+   "plate": 1095,
+   "quads": 1156,
+   "groups": {
+    "plate": 290,
+    "trim": 274,
+    "structure": 105,
+    "frame": 4,
+    "drive": 215,
+    "weapon": 81,
+    "part": 187
+   },
+   "windows": {
+    "beacons": 18,
+    "bridge": 9,
+    "panes": 71,
+    "porthole": 43
+   },
+   "windowFaces": 141,
+   "surfaces": [
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.14,
+     "rough": 0.78
+    },
+    {
+     "finish": "tread",
+     "metal": 0.24,
+     "rough": 0.66
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    }
+   ],
+   "bytes": 31832
+  },
+  {
+   "key": "rogue_destroyer",
+   "faction": "rogue",
+   "rung": "escort",
+   "cell": 0.1640625,
+   "cells": 5583,
+   "plate": 2080,
+   "quads": 2086,
+   "groups": {
+    "plate": 431,
+    "trim": 327,
+    "structure": 118,
+    "drive": 470,
+    "weapon": 275,
+    "part": 465
+   },
+   "windows": {
+    "beacons": 36,
+    "panes": 152,
+    "porthole": 40
+   },
+   "windowFaces": 228,
+   "surfaces": [
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.14,
+     "rough": 0.78
+    },
+    {
+     "finish": "tread",
+     "metal": 0.24,
+     "rough": 0.66
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    }
+   ],
+   "bytes": 69108
+  },
+  {
+   "key": "rogue_cruiser",
+   "faction": "rogue",
+   "rung": "cruiser",
+   "cell": 0.21875,
+   "cells": 7503,
+   "plate": 2629,
+   "quads": 2076,
+   "groups": {
+    "plate": 459,
+    "trim": 325,
+    "structure": 127,
+    "drive": 501,
+    "weapon": 212,
+    "part": 452
+   },
+   "windows": {
+    "beacons": 66,
+    "bridge": 2,
+    "panes": 190,
+    "porthole": 27
+   },
+   "windowFaces": 285,
+   "surfaces": [
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.14,
+     "rough": 0.78
+    },
+    {
+     "finish": "tread",
+     "metal": 0.24,
+     "rough": 0.66
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    },
+    {
+     "finish": "battered",
+     "metal": 0.18,
+     "rough": 0.72
+    }
+   ],
+   "bytes": 92612
+  },
+  {
+   "key": "benefactor_corvette",
+   "faction": "benefactor",
+   "rung": "frigate",
+   "cell": 0.109375,
+   "cells": 3464,
+   "plate": 2169,
+   "quads": 1696,
+   "groups": {
+    "plate": 312,
+    "trim": 586,
+    "structure": 519,
+    "frame": 2,
+    "drive": 35,
+    "weapon": 135,
+    "part": 107
+   },
+   "windows": {
+    "beacons": 36,
+    "bridge": 58,
+    "panes": 59,
+    "porthole": 13,
+    "strip": 34
+   },
+   "windowFaces": 200,
+   "surfaces": [
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "weave",
+     "metal": 0.4,
+     "rough": 0.36
+    },
+    {
+     "finish": "plate",
+     "metal": 0.52,
+     "rough": 0.34
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    }
+   ],
+   "bytes": 43457
+  },
+  {
+   "key": "benefactor_destroyer",
+   "faction": "benefactor",
+   "rung": "escort",
+   "cell": 0.1640625,
+   "cells": 8527,
+   "plate": 4944,
+   "quads": 1977,
+   "groups": {
+    "plate": 312,
+    "trim": 477,
+    "structure": 482,
+    "frame": 4,
+    "drive": 345,
+    "weapon": 235,
+    "part": 122
+   },
+   "windows": {
+    "beacons": 49,
+    "bridge": 54,
+    "panes": 261,
+    "porthole": 67,
+    "strip": 59
+   },
+   "windowFaces": 490,
+   "surfaces": [
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "weave",
+     "metal": 0.4,
+     "rough": 0.36
+    },
+    {
+     "finish": "plate",
+     "metal": 0.52,
+     "rough": 0.34
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    }
+   ],
+   "bytes": 106533
+  },
+  {
+   "key": "benefactor_cruiser",
+   "faction": "benefactor",
+   "rung": "cruiser",
+   "cell": 0.21875,
+   "cells": 9738,
+   "plate": 4602,
+   "quads": 2107,
+   "groups": {
+    "plate": 302,
+    "trim": 413,
+    "structure": 504,
+    "frame": 1,
+    "drive": 446,
+    "weapon": 346,
+    "part": 95
+   },
+   "windows": {
+    "beacons": 72,
+    "bridge": 54,
+    "panes": 245,
+    "porthole": 60,
+    "strip": 25
+   },
+   "windowFaces": 456,
+   "surfaces": [
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "weave",
+     "metal": 0.4,
+     "rough": 0.36
+    },
+    {
+     "finish": "plate",
+     "metal": 0.52,
+     "rough": 0.34
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    },
+    {
+     "finish": "hex",
+     "metal": 0.45,
+     "rough": 0.3
+    }
+   ],
+   "bytes": 120793
+  },
+  {
+   "key": "civil_lighter",
+   "faction": "civil",
+   "rung": "frigate",
+   "cell": 0.109375,
+   "cells": 4984,
+   "plate": 3392,
+   "quads": 1302,
+   "groups": {
+    "plate": 337,
+    "trim": 287,
+    "structure": 236,
+    "drive": 247,
+    "part": 195
+   },
+   "windows": {
+    "cargo": 21,
+    "panes": 46,
+    "porthole": 88
+   },
+   "windowFaces": 155,
+   "surfaces": [
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.12,
+     "rough": 0.76
+    },
+    {
+     "finish": "plate",
+     "metal": 0.22,
+     "rough": 0.58
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    }
+   ],
+   "bytes": 61331
+  },
+  {
+   "key": "civil_hauler",
+   "faction": "civil",
+   "rung": "escort",
+   "cell": 0.1640625,
+   "cells": 9854,
+   "plate": 6211,
+   "quads": 1705,
+   "groups": {
+    "plate": 332,
+    "trim": 327,
+    "structure": 300,
+    "drive": 270,
+    "part": 476
+   },
+   "windows": {
+    "beacons": 35,
+    "bridge": 33,
+    "cargo": 72,
+    "panes": 41,
+    "porthole": 131,
+    "strip": 36
+   },
+   "windowFaces": 348,
+   "surfaces": [
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.12,
+     "rough": 0.76
+    },
+    {
+     "finish": "plate",
+     "metal": 0.22,
+     "rough": 0.58
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    }
+   ],
+   "bytes": 121339
+  },
+  {
+   "key": "civil_boxship",
+   "faction": "civil",
+   "rung": "cruiser",
+   "cell": 0.21875,
+   "cells": 12467,
+   "plate": 6154,
+   "quads": 2491,
+   "groups": {
+    "plate": 442,
+    "trim": 343,
+    "structure": 300,
+    "drive": 588,
+    "part": 818
+   },
+   "windows": {
+    "beacons": 48,
+    "bridge": 33,
+    "cargo": 115,
+    "panes": 96,
+    "porthole": 125,
+    "strip": 36
+   },
+   "windowFaces": 453,
+   "surfaces": [
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.12,
+     "rough": 0.76
+    },
+    {
+     "finish": "plate",
+     "metal": 0.22,
+     "rough": 0.58
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    },
+    {
+     "finish": "tread",
+     "metal": 0.15,
+     "rough": 0.7
+    }
+   ],
+   "bytes": 153535
+  },
+  {
+   "key": "civil_tanker",
+   "faction": "civil",
+   "rung": "cruiser",
+   "cell": 0.21875,
+   "cells": 11814,
+   "plate": 6826,
+   "quads": 2328,
+   "groups": {
+    "plate": 285,
+    "trim": 291,
+    "structure": 250,
+    "drive": 486,
+    "part": 1016
+   },
+   "windows": {
+    "bridge": 60,
+    "louvre": 119,
+    "panes": 109,
+    "porthole": 123
+   },
+   "windowFaces": 411,
+   "surfaces": [
+    {
+     "finish": "crate",
+     "metal": 0.22,
+     "rough": 0.62
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.12,
+     "rough": 0.76
+    },
+    {
+     "finish": "plate",
+     "metal": 0.22,
+     "rough": 0.58
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "crate",
+     "metal": 0.22,
+     "rough": 0.62
+    },
+    {
+     "finish": "crate",
+     "metal": 0.22,
+     "rough": 0.62
+    },
+    {
+     "finish": "crate",
+     "metal": 0.22,
+     "rough": 0.62
+    },
+    {
+     "finish": "crate",
+     "metal": 0.22,
+     "rough": 0.62
+    },
+    {
+     "finish": "crate",
+     "metal": 0.22,
+     "rough": 0.62
+    },
+    {
+     "finish": "crate",
+     "metal": 0.22,
+     "rough": 0.62
+    },
+    {
+     "finish": "crate",
+     "metal": 0.22,
+     "rough": 0.62
+    },
+    {
+     "finish": "crate",
+     "metal": 0.22,
+     "rough": 0.62
+    }
+   ],
+   "bytes": 145348
+  },
+  {
+   "key": "civil_miner",
+   "faction": "civil",
+   "rung": "escort",
+   "cell": 0.1640625,
+   "cells": 8519,
+   "plate": 5029,
+   "quads": 1598,
+   "groups": {
+    "plate": 324,
+    "trim": 301,
+    "structure": 241,
+    "drive": 220,
+    "weapon": 70,
+    "part": 442
+   },
+   "windows": {
+    "beacons": 36,
+    "bridge": 13,
+    "louvre": 64,
+    "panes": 43,
+    "porthole": 114
+   },
+   "windowFaces": 270,
+   "surfaces": [
+    {
+     "finish": "cracked",
+     "metal": 0.18,
+     "rough": 0.74
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.12,
+     "rough": 0.76
+    },
+    {
+     "finish": "plate",
+     "metal": 0.22,
+     "rough": 0.58
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.18,
+     "rough": 0.74
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.18,
+     "rough": 0.74
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.18,
+     "rough": 0.74
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.18,
+     "rough": 0.74
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.18,
+     "rough": 0.74
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.18,
+     "rough": 0.74
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.18,
+     "rough": 0.74
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.18,
+     "rough": 0.74
+    }
+   ],
+   "bytes": 104682
+  },
+  {
+   "key": "civil_liner",
+   "faction": "civil",
+   "rung": "cruiser",
+   "cell": 0.21875,
+   "cells": 10898,
+   "plate": 6129,
+   "quads": 1880,
+   "groups": {
+    "plate": 331,
+    "trim": 314,
+    "structure": 275,
+    "drive": 506,
+    "part": 454
+   },
+   "windows": {
+    "beacons": 30,
+    "bridge": 39,
+    "cargo": 10,
+    "porthole": 56,
+    "promenade": 618,
+    "strip": 48
+   },
+   "windowFaces": 801,
+   "surfaces": [
+    {
+     "finish": "plate",
+     "metal": 0.2,
+     "rough": 0.48
+    },
+    {
+     "finish": "cracked",
+     "metal": 0.12,
+     "rough": 0.76
+    },
+    {
+     "finish": "plate",
+     "metal": 0.22,
+     "rough": 0.58
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "plate",
+     "metal": 0.2,
+     "rough": 0.48
+    },
+    {
+     "finish": "plate",
+     "metal": 0.2,
+     "rough": 0.48
+    },
+    {
+     "finish": "plate",
+     "metal": 0.2,
+     "rough": 0.48
+    },
+    {
+     "finish": "plate",
+     "metal": 0.2,
+     "rough": 0.48
+    },
+    {
+     "finish": "plate",
+     "metal": 0.2,
+     "rough": 0.48
+    },
+    {
+     "finish": "plate",
+     "metal": 0.2,
+     "rough": 0.48
+    },
+    {
+     "finish": "plate",
+     "metal": 0.2,
+     "rough": 0.48
+    },
+    {
+     "finish": "plate",
+     "metal": 0.2,
+     "rough": 0.48
+    }
+   ],
+   "bytes": 137488
+  }
+ ]
+}

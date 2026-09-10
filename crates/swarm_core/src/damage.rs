@@ -403,7 +403,7 @@ mod tests {
         // each show one face into the hole, and those are wound faces.
         assert_eq!(after.wound.quads(), 5);
         assert_eq!(after.wound.colours[0], [1.0, 1.0, 1.0, 1.0], "fresh is white hot");
-        assert_eq!(after.skin.quad_cells.len() + after.wound.quad_cells.len(), exposed_faces(&m, Some(&d)));
+        assert_eq!(after.skin_all().quad_cells.len() + after.wound.quad_cells.len(), exposed_faces(&m, Some(&d)));
         let cooled = greedy_mesh(&m, Some((&d, 10 + COOL_TICKS)));
         assert_eq!(cooled.wound.quads(), 5);
         assert!(cooled.wound.colours[0][0] < 0.2, "char after COOL_TICKS");
@@ -436,11 +436,11 @@ mod tests {
         let mut skin = 0;
         let mut wound = 0;
         for s in &bricks {
-            skin += s.skin.quad_cells.len();
+            skin += s.skin_all().quad_cells.len();
             wound += s.wound.quad_cells.len();
         }
         let whole = greedy_mesh(&m, Some((&d, tick)));
-        assert_eq!(skin, whole.skin.quad_cells.len());
+        assert_eq!(skin, whole.skin_all().quad_cells.len());
         assert_eq!(wound, whole.wound.quad_cells.len());
         assert_eq!(skin + wound, exposed_faces(&m, Some(&d)));
     }

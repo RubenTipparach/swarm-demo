@@ -17,7 +17,8 @@
 //! halo and on nothing further away.
 
 use crate::damage::{ramp, DamageGrid, HEAT_STEPS};
-use crate::voxel::{mat, VoxelModel};
+use crate::rng::hash_cell;
+use crate::voxel::{mat, VoxelModel, SURF_COUNT};
 
 /// A mesh as parallel arrays, four vertices and six indices per quad, plus the
 /// cells each quad stands on so a hit can find the quads it reached.
@@ -30,6 +31,10 @@ pub struct MeshData {
     pub colours: Vec<[f32; 4]>,
     /// One repeat per cell, V along the model's up axis on every face.
     pub uvs: Vec<[f32; 2]>,
+    /// The direction U increases in, and in w which way V goes relative to
+    /// normal cross tangent, so a normal map seats the right way up. Exact
+    /// for an axis aligned quad; nothing here needs mikktspace.
+    pub tangents: Vec<[f32; 4]>,
     pub indices: Vec<u32>,
     /// The cell each quad is named for.
     pub quad_cell: Vec<u32>,
@@ -53,6 +58,7 @@ impl MeshData {
         normal: [f32; 3],
         colour: [f32; 4],
         uvs: [[f32; 2]; 4],
+        tangent: [f32; 4],
         owner: u32,
     ) {
         let base = self.positions.len() as u32;
@@ -61,6 +67,7 @@ impl MeshData {
             self.normals.push(normal);
             self.colours.push(colour);
             self.uvs.push(uvs[c]);
+            self.tangents.push(tangent);
         }
         self.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
         self.quad_cell.push(owner);
@@ -81,6 +88,7 @@ impl MeshData {
         self.normals.extend_from_slice(&other.normals);
         self.colours.extend_from_slice(&other.colours);
         self.uvs.extend_from_slice(&other.uvs);
+        self.tangents.extend_from_slice(&other.tangents);
         self.indices.extend(other.indices.iter().map(|i| i + vbase));
         self.quad_cell.extend_from_slice(&other.quad_cell);
         self.quad_cells.extend_from_slice(&other.quad_cells);
@@ -91,12 +99,48 @@ impl MeshData {
     }
 }
 
-/// Two surfaces, because a wound is two things: the plate that is still there,
-/// and the inside the hit opened, which is drawn as burning and cools.
+/// What one pass of the mesher produces, by material.
+///
+/// `skin[s]` is every face of surface `s` (`SURF_*`), which is what lets each
+/// band of plating, the frame and each kind of machinery wear its own finish:
+/// a normal map is a material and a material is a draw call, so the split is
+/// by what a face is made of and by nothing finer. `wound` is the inside a hit
+/// opened, drawn burning and cooling. `windows[k]` is every window face of
+/// kind `k` (`VoxelModel::window_kinds`), one quad per cell and never merged,
+/// because each picks its own slice of a variant strip.
 #[derive(Clone, Debug, Default)]
 pub struct Surfaces {
-    pub skin: MeshData,
+    pub skin: Vec<MeshData>,
     pub wound: MeshData,
+    pub windows: Vec<MeshData>,
+}
+
+impl Surfaces {
+    fn sized(kinds: usize) -> Self {
+        Surfaces {
+            skin: (0..SURF_COUNT).map(|_| MeshData::default()).collect(),
+            wound: MeshData::default(),
+            windows: (0..kinds).map(|_| MeshData::default()).collect(),
+        }
+    }
+
+    /// Every skin face, all surfaces together, for a picture that draws one
+    /// material.
+    pub fn skin_all(&self) -> MeshData {
+        let mut all = MeshData::default();
+        for s in &self.skin {
+            all.append(s);
+        }
+        all
+    }
+
+    pub fn skin_quads(&self) -> usize {
+        self.skin.iter().map(|s| s.quads()).sum()
+    }
+
+    pub fn window_quads(&self) -> usize {
+        self.windows.iter().map(|s| s.quads()).sum()
+    }
 }
 
 /// sRGB channel to linear, for a renderer that lights in linear.
@@ -137,6 +181,21 @@ fn put(axis: usize, u: i32, v: i32, w: i32) -> [i32; 3] {
     }
 }
 
+/// The tangent of a face in direction `d`, given the UV rule below: on the x
+/// faces U runs along z, on the others along x. The w is the handedness that
+/// makes `w * cross(normal, tangent)` the direction V increases in, which is
+/// the hull's up on every face but the decks and keels, where it is z.
+fn tangent_of(d: usize) -> [f32; 4] {
+    match d {
+        0 => [0.0, 0.0, 1.0, -1.0],
+        1 => [0.0, 0.0, 1.0, 1.0],
+        2 => [1.0, 0.0, 0.0, -1.0],
+        3 => [1.0, 0.0, 0.0, 1.0],
+        4 => [1.0, 0.0, 0.0, 1.0],
+        _ => [1.0, 0.0, 0.0, -1.0],
+    }
+}
+
 /// The whole model.
 pub fn greedy_mesh(m: &VoxelModel, damage: Option<(&DamageGrid, u32)>) -> Surfaces {
     mesh_region(m, damage, [0, 0, 0], [m.nx, m.ny, m.nz])
@@ -151,9 +210,12 @@ pub fn mesh_region(
     lo: [usize; 3],
     hi: [usize; 3],
 ) -> Surfaces {
-    let mut out = Surfaces::default();
+    let mut out = Surfaces::sized(m.window_kinds.len());
     let half = [m.nx as f32 / 2.0, m.ny as f32 / 2.0, m.nz as f32 / 2.0];
     let cell = m.cell;
+    let world = |p: [i32; 3]| -> [f32; 3] {
+        [(p[0] as f32 - half[0]) * cell, (p[1] as f32 - half[1]) * cell, (p[2] as f32 - half[2]) * cell]
+    };
 
     let solid = |i: i32, j: i32, k: i32| -> bool {
         if !m.inside(i, j, k) {
@@ -177,7 +239,8 @@ pub fn mesh_region(
         }
     };
 
-    for (axis, step, normal) in DIRS {
+    for (d, (axis, step, normal)) in DIRS.into_iter().enumerate() {
+        let tangent = tangent_of(d);
         let u_axis = if axis == 0 { 1 } else { 0 };
         let v_axis = if axis == 2 { 1 } else { 2 };
         let (u0, u1) = (lo[u_axis] as i32, hi[u_axis] as i32);
@@ -206,9 +269,43 @@ pub fn mesh_region(
                         continue;
                     }
                     let n = m.index(i as usize, j as usize, k as usize);
-                    let key = match dead_at(ni, nj, nk) {
+                    let dead = dead_at(ni, nj, nk);
+                    // A window face leaves the plate pass entirely: it is
+                    // its own quad with its own slice of the decal strip,
+                    // and the hole it leaves in the plating is exactly where
+                    // it goes. Not over a hole, though: a face that looks
+                    // into the inside of the ship is a wound, whatever the
+                    // plate there used to wear.
+                    if dead.is_none() {
+                        if let Some(win) = m.window_at(n, d) {
+                            let face = if step > 0 { 1 } else { 0 };
+                            let ccw = (step > 0) != (axis == 1);
+                            let order: [(i32, i32); 4] = if ccw {
+                                [(0, 0), (1, 0), (1, 1), (0, 1)]
+                            } else {
+                                [(0, 0), (0, 1), (1, 1), (1, 0)]
+                            };
+                            let variants = win.variants.max(1) as u32;
+                            let slice = if variants > 1 { hash_cell(n as u32) % variants } else { 0 };
+                            let span = 1.0 / variants as f32;
+                            let mut corners = [[0.0f32; 3]; 4];
+                            let mut uvs = [[0.0f32; 2]; 4];
+                            for (c, (du, dv)) in order.into_iter().enumerate() {
+                                corners[c] = world(put(axis, u + du, v + dv, w + face));
+                                let (s0, t0) = if axis == 0 { (dv as f32, du as f32) } else { (du as f32, dv as f32) };
+                                uvs[c] = [(slice as f32 + s0) * span, t0];
+                            }
+                            let kind = win.kind as usize;
+                            let target = &mut out.windows[kind];
+                            target.push_quad(corners, normal, rgb_of(m.colour[n]), uvs, tangent, n as u32);
+                            target.quad_cells.push(n as u32);
+                            target.close_quad();
+                            continue;
+                        }
+                    }
+                    let key = match dead {
                         Some(heat) => (1i64 << 32) | ((heat as i64) << 24),
-                        None => m.colour[n] as i64,
+                        None => (m.colour[n] as i64) | ((m.surf[n] as i64) << 24),
                     };
                     let slot = (u - u0) as usize + (v - v0) as usize * un;
                     mask[slot] = key;
@@ -261,12 +358,7 @@ pub fn mesh_region(
                     let mut corners = [[0.0f32; 3]; 4];
                     let mut uvs = [[0.0f32; 2]; 4];
                     for (c, (du, dv)) in order.into_iter().enumerate() {
-                        let p = put(axis, u0 + u as i32 + du, v0 + v as i32 + dv, w + face);
-                        corners[c] = [
-                            (p[0] as f32 - half[0]) * cell,
-                            (p[1] as f32 - half[1]) * cell,
-                            (p[2] as f32 - half[2]) * cell,
-                        ];
+                        corners[c] = world(put(axis, u0 + u as i32 + du, v0 + v as i32 + dv, w + face));
                         uvs[c] = if axis == 0 { [dv as f32, du as f32] } else { [du as f32, dv as f32] };
                     }
                     let own = owner[u + v * un];
@@ -278,8 +370,12 @@ pub fn mesh_region(
                     } else {
                         rgb_of((key & 0xFF_FFFF) as u32)
                     };
-                    let target = if is_wound { &mut out.wound } else { &mut out.skin };
-                    target.push_quad(corners, normal, colour, uvs, own);
+                    let target = if is_wound {
+                        &mut out.wound
+                    } else {
+                        &mut out.skin[((key >> 24) & 0xFF) as usize]
+                    };
+                    target.push_quad(corners, normal, colour, uvs, tangent, own);
                     // The rectangle's whole footprint, so a hit can take the
                     // cells it reached and leave the rest of the plate standing.
                     for b in 0..tall {
@@ -347,10 +443,42 @@ mod tests {
     fn a_solid_box_is_six_quads() {
         let m = box_model(4, 1, 3);
         let s = greedy_mesh(&m, None);
-        assert_eq!(s.skin.quads(), 6);
-        assert_eq!(area(&s.skin), 24, "2x2x2 box has 24 cell faces");
+        let skin = s.skin_all();
+        assert_eq!(skin.quads(), 6);
+        assert_eq!(area(&skin), 24, "2x2x2 box has 24 cell faces");
         assert!(s.wound.is_empty());
-        assert_eq!(s.skin.indices.len(), 36);
+        assert_eq!(skin.indices.len(), 36);
+        assert_eq!(skin.tangents.len(), 24);
+    }
+
+    /// The tangent frame has to agree with the UVs, or a normal map seats a
+    /// rivet head the wrong way up on half the faces: for every quad, the
+    /// tangent is the direction U grows in and `w * cross(n, t)` the direction
+    /// V grows in, measured off the quad's own corners.
+    #[test]
+    fn tangents_follow_the_uvs_on_every_face() {
+        let m = box_model(4, 1, 3);
+        let skin = greedy_mesh(&m, None).skin_all();
+        for q in 0..skin.quads() {
+            let p = &skin.positions[q * 4..q * 4 + 4];
+            let uv = &skin.uvs[q * 4..q * 4 + 4];
+            let n = skin.normals[q * 4];
+            let t = skin.tangents[q * 4];
+            // Find the corner that differs from corner 0 in U only, and in V only.
+            let mut du = None;
+            let mut dv = None;
+            for c in 1..4 {
+                let (su, sv) = (uv[c][0] - uv[0][0], uv[c][1] - uv[0][1]);
+                let d = [p[c][0] - p[0][0], p[c][1] - p[0][1], p[c][2] - p[0][2]];
+                if su > 0.0 && sv == 0.0 { du = Some(d); }
+                if sv > 0.0 && su == 0.0 { dv = Some(d); }
+            }
+            let (du, dv) = (du.unwrap(), dv.unwrap());
+            let along = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+            assert!(along(du, [t[0], t[1], t[2]]) > 0.0, "quad {q}: tangent {t:?} against U {du:?}");
+            let b = [n[1] * t[2] - n[2] * t[1], n[2] * t[0] - n[0] * t[2], n[0] * t[1] - n[1] * t[0]];
+            assert!(along(dv, b) * t[3] > 0.0, "quad {q}: bitangent {b:?} w {} against V {dv:?}", t[3]);
+        }
     }
 
     #[test]
@@ -364,17 +492,18 @@ mod tests {
             }
         }
         let s = greedy_mesh(&m, None);
-        assert_eq!(s.skin.quads(), 12, "six outside and six inside");
-        assert_eq!(area(&s.skin), exposed_faces(&m, None));
+        let skin = s.skin_all();
+        assert_eq!(skin.quads(), 12, "six outside and six inside");
+        assert_eq!(area(&skin), exposed_faces(&m, None));
     }
 
     #[test]
     fn every_quad_winds_toward_its_normal() {
         let m = box_model(4, 1, 3);
-        let s = greedy_mesh(&m, None);
-        for q in 0..s.skin.quads() {
-            let p = &s.skin.positions[q * 4..q * 4 + 4];
-            let n = s.skin.normals[q * 4];
+        let s = greedy_mesh(&m, None).skin_all();
+        for q in 0..s.quads() {
+            let p = &s.positions[q * 4..q * 4 + 4];
+            let n = s.normals[q * 4];
             let a = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]];
             let b = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
             let c = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -387,9 +516,64 @@ mod tests {
     fn two_colours_do_not_merge() {
         let mut m = box_model(4, 1, 3);
         m.set(1, 1, 1, mat::GLOW, 0xFFE0BC);
+        let s = greedy_mesh(&m, None).skin_all();
+        assert!(s.quads() > 6);
+        assert_eq!(area(&s), 24);
+    }
+
+    /// Two cells of one colour on two SURFACES are two quads, in two meshes:
+    /// a finish is a material and a material cannot straddle a quad.
+    #[test]
+    fn two_surfaces_do_not_merge() {
+        let mut m = box_model(4, 1, 3);
+        let n = m.index(1, 1, 1);
+        m.surf[n] = 3;
         let s = greedy_mesh(&m, None);
-        assert!(s.skin.quads() > 6);
-        assert_eq!(area(&s.skin), 24);
+        // The corner cell shows three faces. Each leaves its box face as one
+        // quad of its own plus an L of three cells, which greedy lays as two.
+        assert_eq!(s.skin[3].quads(), 3);
+        assert_eq!(s.skin[0].quads(), 3 + 3 * 2);
+        assert_eq!(area(&s.skin_all()), 24);
+    }
+
+    /// A window is a hole in the plating: the plate quad does not cover it,
+    /// the window quad does, and the two together cover every face once.
+    #[test]
+    fn a_window_is_cut_out_of_the_plate() {
+        let mut m = box_model(6, 1, 5);
+        m.window_kinds = vec!["panes".into(), "porthole".into()];
+        let a = m.index(4, 2, 2);
+        let b = m.index(4, 3, 3);
+        m.windows = vec![
+            crate::voxel::Window { cell: a as u32, dir: 0, kind: 0, variants: 7 },
+            crate::voxel::Window { cell: b as u32, dir: 0, kind: 1, variants: 1 },
+            // Looking up: the export never writes one, and if it did the face
+            // is still a face.
+            crate::voxel::Window { cell: m.index(2, 4, 2) as u32, dir: 2, kind: 0, variants: 7 },
+        ];
+        m.rebuild_window_lut();
+        let s = greedy_mesh(&m, None);
+        assert_eq!(s.window_quads(), 3);
+        assert_eq!(s.windows[0].quads(), 2);
+        assert_eq!(s.windows[1].quads(), 1);
+        assert_eq!(area(&s.skin_all()) + s.window_quads(), exposed_faces(&m, None));
+        // The +x face of the box without the windows would be one quad; with
+        // two holes in it the plate is several.
+        assert!(s.skin_quads() > 6);
+        // The variant slice: U spans one seventh of the strip for a panes
+        // window, the whole strip for a porthole, and V the full height.
+        let uv = &s.windows[0].uvs[0..4];
+        let umin = uv.iter().map(|c| c[0]).fold(f32::MAX, f32::min);
+        let umax = uv.iter().map(|c| c[0]).fold(f32::MIN, f32::max);
+        assert!((umax - umin - 1.0 / 7.0).abs() < 1e-6, "{umin}..{umax}");
+        assert!(umin >= 0.0 && umax <= 1.0);
+        let uv1 = &s.windows[1].uvs[0..4];
+        assert_eq!(uv1.iter().map(|c| c[0]).fold(f32::MIN, f32::max), 1.0);
+        // A dead window cell has no window: its face is a hole, not a pane.
+        let mut d = DamageGrid::new(&m);
+        d.chip(a, 1000.0, 1, [1.0, 0.0, 0.0]);
+        let s = greedy_mesh(&m, Some((&d, 1)));
+        assert_eq!(s.window_quads(), 2);
     }
 
     #[test]
@@ -398,17 +582,28 @@ mod tests {
         let m = VoxelModel::from_ftvx(&bytes).unwrap();
         let s = greedy_mesh(&m, None);
         let faces = exposed_faces(&m, None);
-        assert_eq!(area(&s.skin), faces);
-        assert!(s.skin.quads() < faces / 2, "greedy merged {} faces into {} quads", faces, s.skin.quads());
+        let skin = s.skin_all();
+        assert_eq!(area(&skin) + s.window_quads(), faces);
+        assert_eq!(s.window_quads(), 292, "every window hull.ts derived is drawn");
+        assert!(skin.quads() < faces / 2, "greedy merged {} faces into {} quads", faces, skin.quads());
         let mut seen = std::collections::HashSet::new();
-        for q in 0..s.skin.quads() {
-            let (from, to) = (s.skin.quad_at[q] as usize, s.skin.quad_at[q + 1] as usize);
-            let n = s.skin.normals[q * 4];
-            for &c in &s.skin.quad_cells[from..to] {
+        for q in 0..skin.quads() {
+            let (from, to) = (skin.quad_at[q] as usize, skin.quad_at[q + 1] as usize);
+            let n = skin.normals[q * 4];
+            for &c in &skin.quad_cells[from..to] {
                 assert!(seen.insert((c, n.map(|x| x as i32))), "cell {c} face {n:?} covered twice");
             }
         }
-        eprintln!("terran_frigate: {} exposed faces, {} quads", faces, s.skin.quads());
+        for w in &s.windows {
+            for q in 0..w.quads() {
+                let n = w.normals[q * 4];
+                assert!(seen.insert((w.quad_cell[q], n.map(|x| x as i32))), "window face covered twice");
+            }
+        }
+        // Seven surfaces on a stock Terran: three bands, frame, drive, weapon, part.
+        let used: Vec<usize> = (0..SURF_COUNT).filter(|&i| !s.skin[i].is_empty()).collect();
+        assert_eq!(used, vec![0, 1, 2, 3, 4, 5, 6]);
+        eprintln!("terran_frigate: {} exposed faces, {} skin quads, {} window quads, hull.ts drew 1611", faces, skin.quads(), s.window_quads());
     }
 
     #[test]
@@ -417,15 +612,18 @@ mod tests {
         let m = VoxelModel::from_ftvx(&bytes).unwrap();
         let whole = greedy_mesh(&m, None);
         let mut sum = 0;
+        let mut wins = 0;
         let b = 8;
         for k in (0..HULL_NZ).step_by(b) {
             for j in (0..HULL_NY).step_by(b) {
                 for i in (0..HULL_NX).step_by(b) {
                     let s = mesh_region(&m, None, [i, j, k], [i + b, j + b, k + b]);
-                    sum += area(&s.skin);
-                    for q in 0..s.skin.quads() {
+                    let skin = s.skin_all();
+                    sum += area(&skin);
+                    wins += s.window_quads();
+                    for q in 0..skin.quads() {
                         for c in 0..4 {
-                            let p = s.skin.positions[q * 4 + c];
+                            let p = skin.positions[q * 4 + c];
                             let lo = |a: usize, o: f32| (a as f32 - o) * m.cell - 1e-4;
                             assert!(p[0] >= lo(i, HULL_NX as f32 / 2.0) && p[0] <= lo(i + b, HULL_NX as f32 / 2.0) + 2e-4);
                             assert!(p[1] >= lo(j, HULL_NY as f32 / 2.0) && p[1] <= lo(j + b, HULL_NY as f32 / 2.0) + 2e-4);
@@ -435,14 +633,15 @@ mod tests {
                 }
             }
         }
-        assert_eq!(sum, area(&whole.skin));
+        assert_eq!(sum, area(&whole.skin_all()));
+        assert_eq!(wins, whole.window_quads());
         let _ = RUNG_FRIGATE;
     }
 
     #[test]
     fn append_keeps_quad_footprints_aligned() {
-        let a = greedy_mesh(&box_model(4, 1, 3), None).skin;
-        let b = greedy_mesh(&box_model(4, 0, 2), None).skin;
+        let a = greedy_mesh(&box_model(4, 1, 3), None).skin_all();
+        let b = greedy_mesh(&box_model(4, 0, 2), None).skin_all();
         let mut all = a.clone();
         all.append(&b);
         assert_eq!(all.quads(), a.quads() + b.quads());

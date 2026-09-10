@@ -12,7 +12,12 @@ cargo run --release -p swarm_app -- --headless \
 
 ![M0](docs/m0.png)
 
-What is on screen: a stock redux-tribes hull meshed by brick, CPU chewers
-eating it cell by cell and throwing chunks, the four alien archetypes, and the
-swarm drawn instanced off the buffer a compute pass ticks. See `CLAUDE.md`
-for the design and the rules.
+What is on screen: a stock redux-tribes hull, drawn as redux-tribes draws it
+(one material per surface with its finish normal map, windows cut into the
+plating wearing their decals), meshed by brick, CPU chewers eating it cell by
+cell and throwing chunks, the four alien archetypes in chitin, the swarm
+drawn instanced off the buffer a compute pass ticks, and the archive's sky
+baked at launch. See `CLAUDE.md` for the design and the rules.
+
+![Terran frigate](docs/terran_close.png)
+![Karisen cruiser](docs/karisen_close.png)

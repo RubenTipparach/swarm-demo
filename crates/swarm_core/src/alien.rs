@@ -363,8 +363,8 @@ mod tests {
     #[test]
     fn a_mote_meshes_like_a_hull() {
         let m = generate(Archetype::Chewer, 3);
-        let s = crate::mesh::greedy_mesh(&m, None);
-        assert!(s.skin.quads() > 40);
-        assert_eq!(s.skin.quad_cells.len(), crate::mesh::exposed_faces(&m, None));
+        let s = crate::mesh::greedy_mesh(&m, None).skin_all();
+        assert!(s.quads() > 40);
+        assert_eq!(s.quad_cells.len(), crate::mesh::exposed_faces(&m, None));
     }
 }

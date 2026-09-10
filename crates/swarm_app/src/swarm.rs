@@ -31,11 +31,12 @@ use bevy::{
             RenderCommandResult, SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
         },
         render_resource::{
-            binding_types::{storage_buffer, uniform_buffer},
+            binding_types::{sampler, storage_buffer, texture_2d, uniform_buffer},
             *,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         sync_world::MainEntity,
+        texture::GpuImage,
         view::ExtractedView,
         Render, RenderApp, RenderStartup, RenderSystems,
     },
@@ -48,6 +49,11 @@ use swarm_core::rng::Rng;
 const TICK_SHADER: &str = "shaders/swarm.wgsl";
 const MOTE_SHADER: &str = "shaders/mote.wgsl";
 const WORKGROUP: u32 = 256;
+
+/// The chitin normal map every mote wears, loaded by the main world and
+/// bound by the render world once its pixels are there.
+#[derive(Resource, Clone, ExtractResource)]
+pub struct MoteSkin(pub Handle<Image>);
 
 /// What the swarm is told about the world, once a frame.
 #[derive(Resource, Clone, ExtractResource)]
@@ -114,6 +120,7 @@ impl Plugin for SwarmPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
             ExtractResourcePlugin::<SwarmConfig>::default(),
+            ExtractResourcePlugin::<MoteSkin>::default(),
             ExtractComponentPlugin::<MoteMesh>::default(),
         ))
         .add_plugins(ExtractResourcePlugin::<SwarmClock>::default())
@@ -130,6 +137,7 @@ impl Plugin for SwarmPlugin {
                 (
                     prepare_swarm_buffers.in_set(RenderSystems::PrepareResources),
                     prepare_tick_bind_group.in_set(RenderSystems::PrepareBindGroups),
+                    prepare_skin_bind_group.in_set(RenderSystems::PrepareBindGroups),
                     queue_motes.in_set(RenderSystems::QueueMeshes),
                 ),
             );
@@ -309,10 +317,45 @@ impl render_graph::Node for SwarmTickNode {
 struct MotePipeline {
     shader: Handle<Shader>,
     mesh_pipeline: MeshPipeline,
+    skin_layout: BindGroupLayoutDescriptor,
 }
 
 fn init_mote_pipeline(mut commands: Commands, assets: Res<AssetServer>, mesh_pipeline: Res<MeshPipeline>) {
-    commands.insert_resource(MotePipeline { shader: assets.load(MOTE_SHADER), mesh_pipeline: mesh_pipeline.clone() });
+    let skin_layout = BindGroupLayoutDescriptor::new(
+        "mote skin",
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (texture_2d(TextureSampleType::Float { filterable: true }), sampler(SamplerBindingType::Filtering)),
+        ),
+    );
+    commands.insert_resource(MotePipeline { shader: assets.load(MOTE_SHADER), mesh_pipeline: mesh_pipeline.clone(), skin_layout });
+}
+
+/// The chitin, bound. Absent until the image has reached the GPU, and the draw
+/// skips itself until then rather than binding nothing.
+#[derive(Resource)]
+struct SkinBindGroup(BindGroup);
+
+fn prepare_skin_bind_group(
+    mut commands: Commands,
+    pipeline: Res<MotePipeline>,
+    skin: Option<Res<MoteSkin>>,
+    images: Res<RenderAssets<GpuImage>>,
+    device: Res<RenderDevice>,
+    cache: Res<PipelineCache>,
+    have: Option<Res<SkinBindGroup>>,
+) {
+    if have.is_some() {
+        return;
+    }
+    let Some(skin) = skin else { return };
+    let Some(img) = images.get(&skin.0) else { return };
+    let bg = device.create_bind_group(
+        Some("mote skin"),
+        &cache.get_bind_group_layout(&pipeline.skin_layout),
+        &BindGroupEntries::sequential((&img.texture_view, &img.sampler)),
+    );
+    commands.insert_resource(SkinBindGroup(bg));
 }
 
 impl SpecializedMeshPipeline for MotePipeline {
@@ -325,15 +368,18 @@ impl SpecializedMeshPipeline for MotePipeline {
     ) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError> {
         let mut d = self.mesh_pipeline.specialize(key, layout)?;
         d.vertex.shader = self.shader.clone();
+        // Locations 8 and 9: clear of the mesh's own, which run to 5 (colour)
+        // and include the tangents at 4 the chitin needs.
         d.vertex.buffers.push(VertexBufferLayout {
             array_stride: size_of::<Mote>() as u64,
             step_mode: VertexStepMode::Instance,
             attributes: vec![
-                VertexAttribute { format: VertexFormat::Float32x4, offset: 0, shader_location: 3 },
-                VertexAttribute { format: VertexFormat::Float32x4, offset: 16, shader_location: 4 },
+                VertexAttribute { format: VertexFormat::Float32x4, offset: 0, shader_location: 8 },
+                VertexAttribute { format: VertexFormat::Float32x4, offset: 16, shader_location: 9 },
             ],
         });
         d.fragment.as_mut().unwrap().shader = self.shader.clone();
+        d.layout.push(self.skin_layout.clone());
         // Motes are opaque bodies drawn through the sorted phase: they must
         // write depth or the near ones do not cover the far ones.
         if let Some(ds) = d.depth_stencil.as_mut() {
@@ -388,8 +434,30 @@ type DrawMotes = (
     SetMeshViewBindGroup<0>,
     SetMeshViewBindingArrayBindGroup<1>,
     SetMeshBindGroup<2>,
+    SetSkinBindGroup<3>,
     DrawMotesInstanced,
 );
+
+struct SetSkinBindGroup<const I: usize>;
+
+impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetSkinBindGroup<I> {
+    type Param = Option<SRes<SkinBindGroup>>;
+    type ViewQuery = ();
+    type ItemQuery = ();
+
+    #[inline]
+    fn render<'w>(
+        _item: &P,
+        _view: (),
+        _entity: Option<()>,
+        skin: SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
+        let Some(skin) = skin else { return RenderCommandResult::Skip };
+        pass.set_bind_group(I, &skin.into_inner().0, &[]);
+        RenderCommandResult::Success
+    }
+}
 
 struct DrawMotesInstanced;
 

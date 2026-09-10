@@ -42,9 +42,47 @@ pub const RUNG_ESCORT: f32 = 10.5 / 64.0;
 pub const RUNG_CRUISER: f32 = 14.0 / 64.0;
 pub const RUNG_CAPITAL: f32 = 28.0 / 64.0;
 
-/// One material and one colour per cell, plus the two bytes the hull files
-/// carry beside them (purpose and livery role) so nothing that came across the
-/// boundary is thrown away.
+/// How many surfaces a hull draws in: three bands of plating, the frame,
+/// drives, weapons, other machinery, and eight brush slots. `SURF_*` in
+/// redux-tribes `hull.ts`, and the order is a wire value.
+pub const SURF_ARMOUR: u8 = 0;
+pub const SURF_FRAME: u8 = 3;
+pub const SURF_DRIVE: u8 = 4;
+pub const SURF_WEAPON: u8 = 5;
+pub const SURF_PART: u8 = 6;
+pub const SURF_SLOT: u8 = 7;
+pub const SURF_COUNT: usize = 15;
+
+/// What one surface is made of: the finish is the key of a normal map
+/// (`armour_<finish>_n.png`, or `smooth` for none), and the pair is what a
+/// PBR shader calls metalness and roughness.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Surface {
+    pub finish: String,
+    pub metal: f32,
+    pub rough: f32,
+}
+
+/// A window: a hole cut in the plating on one face of one cell, wearing a
+/// decal. Derived by redux-tribes from the room behind the plate, the navy's
+/// own rows, and whatever a player painted, and exported as the answer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Window {
+    pub cell: u32,
+    /// Face, in `mesh::DIRS` order: +x -x +y -y +z -z.
+    pub dir: u8,
+    /// Index into `VoxelModel::window_kinds`.
+    pub kind: u8,
+    /// How many variants sit side by side in that decal's strip.
+    pub variants: u16,
+}
+
+/// No window on this face.
+pub const NO_WINDOW: u16 = 0xFFFF;
+
+/// One material and one colour per cell, plus the bytes the hull files carry
+/// beside them (purpose, livery role, surface) so nothing that came across the
+/// boundary is thrown away; and the hull's surfaces and windows.
 #[derive(Clone, Debug, PartialEq)]
 pub struct VoxelModel {
     pub nx: usize,
@@ -57,6 +95,17 @@ pub struct VoxelModel {
     pub colour: Vec<u32>,
     pub purp: Vec<u8>,
     pub tone: Vec<u8>,
+    /// Which surface each cell draws in, `SURF_*`.
+    pub surf: Vec<u8>,
+    /// In `SURF_*` order. Empty for a model that has no finishes, such as a
+    /// mote, which draws every surface alike.
+    pub surfaces: Vec<Surface>,
+    pub window_kinds: Vec<String>,
+    pub windows: Vec<Window>,
+    /// `cell * 6 + dir` to the index of the window on that face, or
+    /// `NO_WINDOW`. Built from `windows` by `rebuild_window_lut`, which the
+    /// loader calls. Sixteen bits: a liner carries 801 windows.
+    pub window_lut: Vec<u16>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -67,12 +116,16 @@ pub enum FtvxError {
     BadDims,
     Truncated,
     IndexOutOfRange(u32),
+    BadString,
+    BadSurface,
+    BadWindow,
 }
 
 const FTVX_MAGIC: &[u8; 4] = b"FTVX";
-const FTVX_VERSION: u32 = 1;
-const FTVX_HEADER: usize = 4 + 4 + 12 + 4 + 4;
+const FTVX_VERSION: u32 = 2;
+const FTVX_HEADER: usize = 4 + 4 + 12 + 4;
 const FTVX_RECORD: usize = 12;
+const FTVX_WINDOW: usize = 8;
 
 impl VoxelModel {
     pub fn new(nx: usize, ny: usize, nz: usize, cell: f32) -> Self {
@@ -86,7 +139,32 @@ impl VoxelModel {
             colour: vec![0; n],
             purp: vec![0; n],
             tone: vec![0; n],
+            surf: vec![0; n],
+            surfaces: Vec::new(),
+            window_kinds: Vec::new(),
+            windows: Vec::new(),
+            window_lut: vec![NO_WINDOW; n * 6],
         }
+    }
+
+    /// Rebuild the face lookup from the window list. A window on a cell that
+    /// is not solid is dropped: there is no plate there to cut it into.
+    pub fn rebuild_window_lut(&mut self) {
+        let n = self.len();
+        self.window_lut = vec![NO_WINDOW; n * 6];
+        for (w, win) in self.windows.iter().enumerate() {
+            let c = win.cell as usize;
+            if c < n && win.dir < 6 && self.grid[c] != mat::EMPTY && w < NO_WINDOW as usize {
+                self.window_lut[c * 6 + win.dir as usize] = w as u16;
+            }
+        }
+    }
+
+    /// The window on a face, if any.
+    #[inline]
+    pub fn window_at(&self, cell: usize, dir: usize) -> Option<&Window> {
+        let w = self.window_lut[cell * 6 + dir];
+        (w != NO_WINDOW).then(|| &self.windows[w as usize])
     }
 
     pub fn hull(cell: f32) -> Self {
@@ -244,67 +322,183 @@ impl VoxelModel {
 
     /// Read a hull file written by `tools/export_hulls.mjs`.
     ///
-    /// FTVX v1, little endian: magic, u32 version, u32 nx ny nz, f32 cell, u32
-    /// count, then count records of u32 index, u8 mat, u8 purp, u8 tone, u8
-    /// pad, u32 rgb. Sparse, because a frigate is 65536 cells of which a few
-    /// thousand are anything.
+    /// FTVX v2, little endian: magic, u32 version, u32 nx ny nz, f32 cell;
+    /// a string table (u32 count, then u16 length + utf8 each); a surface
+    /// table (u32 count, then u16 finish string, u16 pad, f32 metal, f32
+    /// rough, in `SURF_*` order); the cells (u32 count, then u32 index, u8
+    /// mat, u8 purp, u8 tone, u8 surf, u32 rgb); and the windows (u32 count,
+    /// then u32 cell, u8 dir, u8 kind string, u16 variants). Sparse, because
+    /// a frigate is 65536 cells of which a few thousand are anything, and
+    /// refused by name when it is not what this build understands: an index
+    /// off the lattice, a string off the table, a surface count that is not
+    /// the fifteen this build draws.
     pub fn from_ftvx(bytes: &[u8]) -> Result<Self, FtvxError> {
+        let mut r = Reader { b: bytes, o: 0 };
         if bytes.len() < FTVX_HEADER {
             return Err(FtvxError::TooShort);
         }
         if &bytes[0..4] != FTVX_MAGIC {
             return Err(FtvxError::BadMagic);
         }
-        let u32_at = |o: usize| u32::from_le_bytes([bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]]);
-        let version = u32_at(4);
+        r.o = 4;
+        let version = r.u32()?;
         if version != FTVX_VERSION {
             return Err(FtvxError::BadVersion(version));
         }
-        let (nx, ny, nz) = (u32_at(8) as usize, u32_at(12) as usize, u32_at(16) as usize);
+        let (nx, ny, nz) = (r.u32()? as usize, r.u32()? as usize, r.u32()? as usize);
         if nx == 0 || ny == 0 || nz == 0 || nx * ny * nz > 1 << 24 {
             return Err(FtvxError::BadDims);
         }
-        let cell = f32::from_le_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
-        let count = u32_at(24) as usize;
-        if bytes.len() < FTVX_HEADER + count * FTVX_RECORD {
+        let cell = r.f32()?;
+        let nstr = r.u32()? as usize;
+        let mut strings = Vec::with_capacity(nstr);
+        for _ in 0..nstr {
+            let len = r.u16()? as usize;
+            let raw = r.bytes(len)?;
+            strings.push(std::str::from_utf8(raw).map_err(|_| FtvxError::BadString)?.to_string());
+        }
+        let nsurf = r.u32()? as usize;
+        if nsurf != 0 && nsurf != SURF_COUNT {
+            return Err(FtvxError::BadSurface);
+        }
+        let mut surfaces = Vec::with_capacity(nsurf);
+        for _ in 0..nsurf {
+            let finish = r.u16()? as usize;
+            let _pad = r.u16()?;
+            let metal = r.f32()?;
+            let rough = r.f32()?;
+            let finish = strings.get(finish).ok_or(FtvxError::BadSurface)?.clone();
+            surfaces.push(Surface { finish, metal, rough });
+        }
+        let count = r.u32()? as usize;
+        if r.b.len() < r.o + count * FTVX_RECORD {
             return Err(FtvxError::Truncated);
         }
         let mut m = VoxelModel::new(nx, ny, nz, cell);
+        m.surfaces = surfaces;
         let total = m.len();
-        for r in 0..count {
-            let o = FTVX_HEADER + r * FTVX_RECORD;
-            let idx = u32_at(o);
+        for _ in 0..count {
+            let idx = r.u32()?;
             if idx as usize >= total {
                 return Err(FtvxError::IndexOutOfRange(idx));
             }
             let n = idx as usize;
-            m.grid[n] = bytes[o + 4];
-            m.purp[n] = bytes[o + 5];
-            m.tone[n] = bytes[o + 6];
-            m.colour[n] = u32_at(o + 8) & 0x00FF_FFFF;
+            let rec = r.bytes(4)?;
+            m.grid[n] = rec[0];
+            m.purp[n] = rec[1];
+            m.tone[n] = rec[2];
+            m.surf[n] = rec[3];
+            if m.surf[n] as usize >= SURF_COUNT {
+                return Err(FtvxError::BadSurface);
+            }
+            m.colour[n] = r.u32()? & 0x00FF_FFFF;
         }
+        let nwin = r.u32()? as usize;
+        if r.b.len() < r.o + nwin * FTVX_WINDOW {
+            return Err(FtvxError::Truncated);
+        }
+        let mut kinds: Vec<String> = Vec::new();
+        for _ in 0..nwin {
+            let cell = r.u32()?;
+            let rec = r.bytes(2)?;
+            let (dir, kind) = (rec[0], rec[1] as usize);
+            let variants = r.u16()?;
+            if cell as usize >= total || dir >= 6 || variants == 0 {
+                return Err(FtvxError::BadWindow);
+            }
+            let name = strings.get(kind).ok_or(FtvxError::BadWindow)?;
+            let k = match kinds.iter().position(|s| s == name) {
+                Some(k) => k,
+                None => {
+                    kinds.push(name.clone());
+                    kinds.len() - 1
+                }
+            };
+            m.windows.push(Window { cell, dir, kind: k as u8, variants });
+        }
+        m.window_kinds = kinds;
+        m.rebuild_window_lut();
         Ok(m)
     }
 
     pub fn to_ftvx(&self) -> Vec<u8> {
+        let mut strings: Vec<String> = Vec::new();
+        let intern = |s: &str, strings: &mut Vec<String>| -> u16 {
+            match strings.iter().position(|x| x == s) {
+                Some(i) => i as u16,
+                None => {
+                    strings.push(s.to_string());
+                    (strings.len() - 1) as u16
+                }
+            }
+        };
+        let surf_ids: Vec<u16> = self.surfaces.iter().map(|s| intern(&s.finish, &mut strings)).collect();
+        let kind_ids: Vec<u16> = self.window_kinds.iter().map(|k| intern(k, &mut strings)).collect();
         let count = self.solid_count();
-        let mut out = Vec::with_capacity(FTVX_HEADER + count * FTVX_RECORD);
+        let mut out = Vec::new();
         out.extend_from_slice(FTVX_MAGIC);
         out.extend_from_slice(&FTVX_VERSION.to_le_bytes());
         out.extend_from_slice(&(self.nx as u32).to_le_bytes());
         out.extend_from_slice(&(self.ny as u32).to_le_bytes());
         out.extend_from_slice(&(self.nz as u32).to_le_bytes());
         out.extend_from_slice(&self.cell.to_le_bytes());
+        out.extend_from_slice(&(strings.len() as u32).to_le_bytes());
+        for s in &strings {
+            out.extend_from_slice(&(s.len() as u16).to_le_bytes());
+            out.extend_from_slice(s.as_bytes());
+        }
+        out.extend_from_slice(&(self.surfaces.len() as u32).to_le_bytes());
+        for (s, id) in self.surfaces.iter().zip(&surf_ids) {
+            out.extend_from_slice(&id.to_le_bytes());
+            out.extend_from_slice(&0u16.to_le_bytes());
+            out.extend_from_slice(&s.metal.to_le_bytes());
+            out.extend_from_slice(&s.rough.to_le_bytes());
+        }
         out.extend_from_slice(&(count as u32).to_le_bytes());
         for n in 0..self.len() {
             if self.grid[n] == mat::EMPTY {
                 continue;
             }
             out.extend_from_slice(&(n as u32).to_le_bytes());
-            out.extend_from_slice(&[self.grid[n], self.purp[n], self.tone[n], 0]);
+            out.extend_from_slice(&[self.grid[n], self.purp[n], self.tone[n], self.surf[n]]);
             out.extend_from_slice(&self.colour[n].to_le_bytes());
         }
+        out.extend_from_slice(&(self.windows.len() as u32).to_le_bytes());
+        for w in &self.windows {
+            out.extend_from_slice(&w.cell.to_le_bytes());
+            out.push(w.dir);
+            out.push(kind_ids[w.kind as usize] as u8);
+            out.extend_from_slice(&w.variants.to_le_bytes());
+        }
         out
+    }
+}
+
+/// A cursor over a hull file that refuses to read past its end.
+struct Reader<'a> {
+    b: &'a [u8],
+    o: usize,
+}
+
+impl<'a> Reader<'a> {
+    fn bytes(&mut self, n: usize) -> Result<&'a [u8], FtvxError> {
+        if self.o + n > self.b.len() {
+            return Err(FtvxError::Truncated);
+        }
+        let s = &self.b[self.o..self.o + n];
+        self.o += n;
+        Ok(s)
+    }
+    fn u32(&mut self) -> Result<u32, FtvxError> {
+        let s = self.bytes(4)?;
+        Ok(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+    }
+    fn u16(&mut self) -> Result<u16, FtvxError> {
+        let s = self.bytes(2)?;
+        Ok(u16::from_le_bytes([s[0], s[1]]))
+    }
+    fn f32(&mut self) -> Result<f32, FtvxError> {
+        Ok(f32::from_bits(self.u32()?))
     }
 }
 
@@ -333,9 +527,30 @@ mod tests {
         let n = m.index(1, 2, 3);
         m.purp[n] = 3;
         m.tone[n] = 5;
+        m.surf[n] = 1;
+        m.surfaces = (0..SURF_COUNT)
+            .map(|i| Surface { finish: if i % 2 == 0 { "plate".into() } else { "hex".into() }, metal: 0.1 * i as f32, rough: 0.5 })
+            .collect();
+        // Kinds are numbered in the order the file first names them, so a
+        // model that numbers them that way round trips to itself exactly.
+        m.window_kinds = vec!["panes".into(), "bridge".into()];
+        m.windows = vec![Window { cell: n as u32, dir: 4, kind: 0, variants: 7 }, Window { cell: n as u32, dir: 0, kind: 1, variants: 1 }];
+        m.rebuild_window_lut();
         let bytes = m.to_ftvx();
         let back = VoxelModel::from_ftvx(&bytes).unwrap();
         assert_eq!(back, m);
+        assert_eq!(back.window_at(n, 0).map(|w| w.kind), Some(1));
+        assert_eq!(back.window_at(n, 4).map(|w| w.variants), Some(7));
+        assert!(back.window_at(n, 1).is_none());
+    }
+
+    #[test]
+    fn a_window_on_an_empty_cell_is_dropped() {
+        let mut m = VoxelModel::new(4, 4, 4, 0.5);
+        m.window_kinds = vec!["panes".into()];
+        m.windows = vec![Window { cell: 5, dir: 0, kind: 0, variants: 1 }];
+        m.rebuild_window_lut();
+        assert!(m.window_at(5, 0).is_none(), "no plate, no hole in it");
     }
 
     #[test]
@@ -344,14 +559,20 @@ mod tests {
         let mut bad = VoxelModel::new(2, 2, 2, 1.0).to_ftvx();
         bad[0] = b'X';
         assert_eq!(VoxelModel::from_ftvx(&bad), Err(FtvxError::BadMagic));
-        let mut v2 = VoxelModel::new(2, 2, 2, 1.0).to_ftvx();
-        v2[4] = 2;
-        assert_eq!(VoxelModel::from_ftvx(&v2), Err(FtvxError::BadVersion(2)));
+        let mut v3 = VoxelModel::new(2, 2, 2, 1.0).to_ftvx();
+        v3[4] = 3;
+        assert_eq!(VoxelModel::from_ftvx(&v3), Err(FtvxError::BadVersion(3)));
         let mut m = VoxelModel::new(2, 2, 2, 1.0);
         m.set(1, 1, 1, mat::PLATE, 1);
         let mut oob = m.to_ftvx();
-        oob[FTVX_HEADER] = 200; // index 200 on an 8 cell lattice
+        // No strings, no surfaces: the first cell record starts right after
+        // the two zero counts and the cell count.
+        let first = FTVX_HEADER + 4 + 4 + 4;
+        oob[first] = 200; // index 200 on an 8 cell lattice
         assert_eq!(VoxelModel::from_ftvx(&oob), Err(FtvxError::IndexOutOfRange(200)));
+        let mut sur = m.clone();
+        sur.surfaces = vec![Surface { finish: "plate".into(), metal: 0.0, rough: 0.0 }];
+        assert_eq!(VoxelModel::from_ftvx(&sur.to_ftvx()), Err(FtvxError::BadSurface), "fifteen or none");
         let mut trunc = m.to_ftvx();
         trunc.truncate(trunc.len() - 1);
         assert_eq!(VoxelModel::from_ftvx(&trunc), Err(FtvxError::Truncated));
@@ -392,6 +613,33 @@ mod tests {
         assert_eq!(m.cell, RUNG_FRIGATE);
         assert_eq!(m.solid_count(), 8938);
         assert!(m.grid.iter().filter(|&&x| mat::is_armour(x)).count() > 6000);
+        // Its surfaces, as hull.ts builds its materials: the Terran plates
+        // riveted, its frame in composite weave, its machinery greebled.
+        assert_eq!(m.surfaces.len(), SURF_COUNT);
+        assert_eq!(m.surfaces[SURF_ARMOUR as usize].finish, "plate");
+        assert_eq!(m.surfaces[SURF_FRAME as usize].finish, "weave");
+        assert_eq!(m.surfaces[SURF_PART as usize].finish, "greeble");
+        assert!((m.surfaces[SURF_FRAME as usize].metal - 0.45).abs() < 1e-6);
+        // Every armour cell draws in a band, every frame cell as frame.
+        for n in 0..m.len() {
+            match m.grid[n] {
+                x if mat::is_armour(x) => assert!(m.surf[n] < SURF_FRAME || m.surf[n] >= SURF_SLOT, "cell {n}"),
+                mat::FRAME => assert_eq!(m.surf[n], SURF_FRAME, "cell {n}"),
+                mat::EMPTY => {}
+                _ => assert!((SURF_DRIVE..=SURF_PART).contains(&m.surf[n]), "cell {n}"),
+            }
+        }
+        // And its windows, the ones hull.ts derives: 240 cabin panes, 30
+        // running lights, 13 bridge viewport cells, 9 portholes, every one on
+        // a solid cell and none looking up or down.
+        assert_eq!(m.windows.len(), 292);
+        let by_kind = |k: &str| m.windows.iter().filter(|w| m.window_kinds[w.kind as usize] == k).count();
+        assert_eq!((by_kind("panes"), by_kind("beacons"), by_kind("bridge"), by_kind("porthole")), (240, 30, 13, 9));
+        for w in &m.windows {
+            assert_ne!(m.grid[w.cell as usize], mat::EMPTY);
+            assert!(w.dir != 2 && w.dir != 3, "a window looks along or across, never up or down");
+            assert!(m.window_at(w.cell as usize, w.dir as usize).is_some());
+        }
         // NOT asserted mirrored. The export is the hull exactly as redux-tribes
         // rasterises it, and that rasteriser is not symmetric: its CLAUDE.md
         // records that CX = 16 is a cell boundary on a lattice of 32, so

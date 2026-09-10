@@ -13,13 +13,16 @@
 //!   the heat ramp a fresh hole cools along, ported from `wound.ts`.
 //! - [`alien`]: seeded, symmetric, connected voxel motes on a small lattice.
 //! - [`rng`]: a deterministic generator and the hash a chunk's drift comes from.
+//! - [`sky`]: the nebula baked to a cubemap and the stars as points, from
+//!   `sky.ts`.
 
 pub mod alien;
 pub mod damage;
 pub mod mesh;
 pub mod rng;
+pub mod sky;
 pub mod voxel;
 
 pub use damage::DamageGrid;
 pub use mesh::{greedy_mesh, mesh_region, MeshData};
-pub use voxel::{mat, VoxelModel, HULL_NX, HULL_NY, HULL_NZ};
+pub use voxel::{mat, Surface, VoxelModel, Window, HULL_NX, HULL_NY, HULL_NZ, SURF_COUNT};
