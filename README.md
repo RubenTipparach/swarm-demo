@@ -3,6 +3,10 @@
 A real time space RTS against an alien swarm, in the voxel language of
 [redux-tribes](https://github.com/RubenTipparach/redux-tribes). Bevy 0.18.
 
+Right button opens a move order: the cursor picks a point on the plane
+through the ship, hold shift to lift it off that plane, release to commit.
+Left drag orbits, wheel zooms.
+
 ```sh
 cargo test -p swarm_core                           # the engine-free core
 cargo run --release -p swarm_app                   # a window: drag to orbit, wheel to zoom

@@ -133,6 +133,55 @@ plume from the middle would read as a chimney. Smoke is the one spark that
 must NOT bloom, so it is thrown at 0.30, 0.20, 0.16 and nothing else here is
 under one.
 
+## The swarm comes out of carriers, and you can move the ship
+
+**Motes launch from motherships.** The swarm used to come back at a shell
+round the target, which is a cloud that simply exists. Ten `Archetype::Mother`
+hulls stand at fourteen to twenty two hull radii, and every mote carries the
+index of the one it flies from in `state.z`: it appears at that carrier's
+skin, is shoved out hard, and the appetite takes over once it is clear. A
+mote that is killed goes back to its carrier and flies out again, so killing
+fighters is holding a line and killing a carrier is winning ground.
+
+The hive list in the params is compacted to the LIVE ones every frame, and a
+mote takes its index modulo the length. So a carrier dying shortens the list
+and every fighter that flew from it re-homes to whatever is left, and there is
+no rule about it anywhere. An empty list is the win condition and needs no
+rule either: `p.hives == 0` and a dead mote simply stays dead.
+
+**Everything starts inside.** Every mote is created dead with a staggered
+countdown over about eight seconds, so the first thing a player sees is ten
+carriers streaming fighters rather than a cloud that was already there.
+
+**Fighters have to be able to CROSS.** At the three to six units a second the
+swarm held when it lived on a shell round the ship, a fighter launched from
+seventy units out took twenty seconds to reach the fight and the cloud never
+built. Eight to sixteen makes the transit about five seconds. The pull toward
+the hull is also capped, or a fighter fifty units out accelerates at fifty and
+arrives as a bullet: it is the cap that makes an approach read as a flight.
+
+**A carrier is a siege.** `HIVE_HP` is twelve hundred, which is the better
+part of a minute of concentrated fire from three beams. At a tenth of that
+every mothership in the picture died inside two seconds and six simultaneous
+fireballs turned the screen white, which is also why the green a carrier burns
+is a MULTIPLIER on the ramp and not a term added to it: a constant added to
+nine hundred additive sparks puts a floor under the whole burst.
+
+**Moving the ship is Homeworld's own shape.** The right button opens an order:
+the cursor picks a point on the horizontal plane through the ship, and holding
+shift lifts the target off that plane and draws the line back down to it,
+which is what makes a flat screen able to name a place in three dimensions at
+all. Release commits. `fly_hull` is a real envelope, not a lerp: it
+accelerates, it has a top speed, it slows into the arrival and it turns to
+face the way it is going, so an order to a capital ship has weight. Left drag
+is the camera, which now follows the ship on `1 - exp(-k dt)` so the ease
+takes the same wall time at any frame rate.
+
+`publish_hull` hands the hull's live position to the swarm every frame, which
+is what makes moving it worth doing: the cloud is dragged along behind and a
+player who runs can watch the swarm string out. `--move x,y,z` issues one
+order at startup so a headless render can show it.
+
 ## Effects: what a shot is, and what comes off a thing that dies
 
 **A shot is a VOLUME, and the swarm shader is what resolves it.** The CPU
@@ -151,6 +200,19 @@ the reference and is pinned against a brute force answer that walks the
 segment (`the_capsule_test_agrees_with_walking_the_segment`, six thousand
 points over three beams). The WGSL is a transcription of that same
 expression. If it ever needs to change, change it in `fx.rs` first.
+
+**The ship shoots at two things and they are two weapons.** A BEAM goes for
+the nearest carrier the gun can bear on, slowly, at long range, with a little
+spread so some shots miss; a beam that reaches a carrier damages it and is CUT
+at the hit point, which is redux-tribes' rule that the full range endpoint is
+what a MISS looks like, and which also makes a carrier cover for the fighters
+behind it. FLAK is point defence: a burst every few ticks out at the standoff
+the swarm holds, walking round the hull.
+
+A flak burst needed no new kind of anything, and that is the payoff of
+resolving a shot as a volume: it is a `Blast`, which is a capsule of zero
+length, which is the shape the shot path already carried. The shader kills
+whatever is inside it and the CPU never learns where a mote was.
 
 **Guns are read off the ship.** `fx::guns_of` clusters the cells the export
 says are `SURF_WEAPON` and puts a muzzle at each cluster's outermost cell,

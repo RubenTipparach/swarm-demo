@@ -85,16 +85,45 @@ pub fn closest_on_segment(a: [f32; 3], b: [f32; 3], p: [f32; 3]) -> f32 {
 }
 
 impl Beam {
-    /// Is a point inside the capsule this beam swept?
-    pub fn kills(&self, p: [f32; 3]) -> bool {
+    /// How far a point is from the beam's own line, and how far along it the
+    /// nearest approach was.
+    ///
+    /// The fraction is what shortens a beam at what it hit: redux-tribes'
+    /// rule is that the full range endpoint is what a MISS looks like, and a
+    /// shot that connected is drawn only as far as the thing it connected
+    /// with.
+    pub fn nearest(&self, p: [f32; 3]) -> (f32, f32) {
         let t = closest_on_segment(self.from, self.to, p);
         let near = [
             self.from[0] + (self.to[0] - self.from[0]) * t,
             self.from[1] + (self.to[1] - self.from[1]) * t,
             self.from[2] + (self.to[2] - self.from[2]) * t,
         ];
-        let d = sub(p, near);
-        dot(d, d) <= self.radius * self.radius
+        (length(sub(p, near)), t)
+    }
+
+    /// Is a point inside the capsule this beam swept?
+    pub fn kills(&self, p: [f32; 3]) -> bool {
+        self.nearest(p).0 <= self.radius
+    }
+
+    /// Does it reach a sphere of radius `r` about `p`, and how far along?
+    pub fn reaches(&self, p: [f32; 3], r: f32) -> Option<f32> {
+        let (d, t) = self.nearest(p);
+        (d <= self.radius + r).then_some(t)
+    }
+
+    /// The same beam, cut short at a fraction of its length.
+    pub fn cut(&self, t: f32) -> Beam {
+        let t = t.clamp(0.0, 1.0);
+        Beam {
+            to: [
+                self.from[0] + (self.to[0] - self.from[0]) * t,
+                self.from[1] + (self.to[1] - self.from[1]) * t,
+                self.from[2] + (self.to[2] - self.from[2]) * t,
+            ],
+            ..*self
+        }
     }
 
     pub fn live(&self, tick: u32) -> bool {
@@ -439,6 +468,30 @@ mod tests {
             }
         }
         assert!(checked > 6000 && inside > 100, "{checked} points, {inside} inside");
+    }
+
+    #[test]
+    fn a_beam_is_cut_at_what_it_reached() {
+        let b = Beam { from: [0.0, 0.0, 0.0], to: [10.0, 0.0, 0.0], radius: 0.5, born: 0 };
+        // A sphere of radius 2 at x = 6: reached, six tenths along.
+        let t = b.reaches([6.0, 0.0, 0.0], 2.0).expect("reached");
+        assert!((t - 0.6).abs() < 1e-5, "{t}");
+        // Off to one side by more than both radii: not reached.
+        assert!(b.reaches([6.0, 3.0, 0.0], 2.0).is_none());
+        assert!(b.reaches([6.0, 2.4, 0.0], 2.0).is_some(), "the two radii add");
+        // Cut: the direction is kept, the length is not, and nothing else moves.
+        let c = b.cut(t);
+        assert_eq!(c.from, b.from);
+        assert_eq!(c.radius, b.radius);
+        assert_eq!(c.born, b.born);
+        assert!((c.to[0] - 6.0).abs() < 1e-4, "{:?}", c.to);
+        assert_eq!(c.direction(), b.direction());
+        // A cut beam kills nothing beyond where it was cut, which is what
+        // stops a carrier being cover for nothing.
+        assert!(b.kills([9.0, 0.0, 0.0]));
+        assert!(!c.kills([9.0, 0.0, 0.0]));
+        assert_eq!(b.cut(-1.0).to, b.from, "clamped at both ends");
+        assert_eq!(b.cut(4.0).to, b.to);
     }
 
     #[test]

@@ -87,6 +87,10 @@ pub struct SwarmConfig {
     /// The hull the swarm wants, as a sphere for now.
     pub hull_centre: Vec3,
     pub hull_radius: f32,
+    /// Where every LIVE mothership is (xyz) and how big it is (w). Compacted
+    /// by the app each frame, so a hive that dies shortens the list and the
+    /// motes that flew from it re-home to whatever is left.
+    pub hives: Vec<Vec4>,
     pub paused: bool,
     /// One tick a frame rather than the wall clock, so a headless render is a
     /// function of its frame count. See `--fixed-dt`.
@@ -101,11 +105,15 @@ impl Default for SwarmConfig {
             seed: 1,
             hull_centre: Vec3::ZERO,
             hull_radius: 3.5,
+            hives: Vec::new(),
             paused: false,
             fixed_dt: false,
         }
     }
 }
+
+/// How many motherships the swarm may fly from at once.
+pub const MAX_HIVES: usize = 16;
 
 /// The capsules that kill this tick, rebuilt by the app every frame.
 ///
@@ -187,7 +195,12 @@ struct Params {
     shots: u32,
     spark_base: u32,
     spark_cap: u32,
+    hives: u32,
+    pad0: u32,
+    pad1: u32,
+    pad2: u32,
     shot: [Vec4; MAX_SHOTS * 2],
+    hive: [Vec4; MAX_HIVES],
 }
 
 /// Put this on an entity with a `Mesh3d` and that mesh is drawn once per mote.
@@ -324,6 +337,9 @@ fn prepare_swarm_buffers(
         shot[i * 2] = c.from.extend(c.radius);
         shot[i * 2 + 1] = c.to.extend(0.0);
     }
+    let mut hive = [Vec4::ZERO; MAX_HIVES];
+    let hives = cfg.hives.len().min(MAX_HIVES);
+    hive[..hives].copy_from_slice(&cfg.hives[..hives]);
     let params = Params {
         dt: clock.dt,
         time: clock.time,
@@ -334,7 +350,12 @@ fn prepare_swarm_buffers(
         shots: n as u32,
         spark_base: CPU_SPARKS,
         spark_cap: GPU_SPARKS,
+        hives: hives as u32,
+        pad0: 0,
+        pad1: 0,
+        pad2: 0,
         shot,
+        hive,
     };
 
     let write_sparks = |buffer: &Buffer, cursor: &mut u32| {
@@ -364,21 +385,30 @@ fn prepare_swarm_buffers(
         }
     }
 
+    // Nothing to fly from yet: the app has not seated its carriers. Wait,
+    // rather than build a swarm at the origin that would then have to be
+    // thrown away.
+    if cfg.hives.is_empty() {
+        return;
+    }
     // Seeded, so the same swarm starts the same way on every run.
+    //
+    // Every mote starts DEAD, with a staggered countdown: they are all inside
+    // their carriers at t=0 and stream out over the first few seconds. The
+    // alternative is a cloud that exists on the first frame, which is the
+    // thing having carriers is meant to replace.
     let mut rng = Rng::new(cfg.seed);
-    let c = cfg.hull_centre;
-    let r = cfg.hull_radius;
+    let per = (cfg.count as usize).div_ceil(hives.max(1));
     let motes: Vec<Mote> = (0..cfg.count)
         .map(|i| {
-            let dir = Vec3::new(rng.range(-1.0, 1.0), rng.range(-0.5, 0.5), rng.range(-1.0, 1.0)).normalize_or_zero();
-            let dist = r * rng.range(2.0, 6.0);
-            let p = c + dir * dist;
-            let v = Vec3::new(rng.range(-1.0, 1.0), rng.range(-1.0, 1.0), rng.range(-1.0, 1.0));
             let scale = rng.range(0.7, 1.3);
+            let hive = (i as usize / per.max(1)).min(hives.saturating_sub(1)) as f32;
             Mote {
-                pos_scale: p.extend(scale),
-                vel_seed: v.extend((i as f32 + 0.5) / cfg.count as f32),
-                state: Vec4::new(0.0, scale, 1.0, 0.0),
+                pos_scale: Vec3::ZERO.extend(0.0),
+                vel_seed: Vec3::ZERO.extend((i as f32 + 0.5) / cfg.count as f32),
+                // Spread over about eight seconds, and never exactly nought,
+                // which the shader reads as "already out".
+                state: Vec4::new(0.02 + rng.range(0.0, 8.0), scale, hive, 0.0),
             }
         })
         .collect();

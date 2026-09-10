@@ -24,14 +24,23 @@ struct Params {
     shots: u32,             // how many capsules are live
     spark_base: u32,        // where the GPU's half of the spark ring starts
     spark_cap: u32,         // how many it may use
+    hives: u32,             // how many motherships are still flying
+    pad0: u32,
+    pad1: u32,
+    pad2: u32,
     // Pairs: even = from.xyz + radius, odd = to.xyz + spare.
     shot: array<vec4<f32>, 64>,
+    // Where each mothership is and how big it is. Compacted every frame to
+    // the LIVE ones, so a hive that dies simply shortens the list and the
+    // motes that flew from it re-home by modulo.
+    hive: array<vec4<f32>, 16>,
 };
 
 struct Mote {
     pos_scale: vec4<f32>,   // xyz, w = drawn scale, 0 while dead
     vel_seed: vec4<f32>,    // xyz, w = seed in 0..1
-    state: vec4<f32>,       // x = respawn countdown, y = the scale it had, zw spare
+    state: vec4<f32>,       // x = respawn countdown, y = the scale it had,
+                            // z = which mothership it flies from, w spare
 };
 
 struct Spark {
@@ -76,14 +85,16 @@ fn capsule_hit(a: vec3<f32>, b: vec3<f32>, r: f32, pt: vec3<f32>) -> bool {
     return dot(d, d) <= r * r;
 }
 
-/// A point on the shell the swarm holds, for a mote coming back.
-fn shell_point(seed: u32) -> vec3<f32> {
-    var d = vec3<f32>(hash(seed) - 0.5, (hash(seed + 7u) - 0.5) * 0.5, hash(seed + 19u) - 0.5);
-    let l = max(length(d), 1e-4);
-    d = d / l;
-    // Just outside the standoff the living ones hold, not far outside it: a
-    // shell at four radii is a cloud the camera has to sit inside of.
-    return p.hull.xyz + d * p.hull.w * (2.0 + 0.7 * hash(seed + 31u));
+/// Which way a mote leaves its mothership.
+///
+/// A direction rather than a point, because the launch needs both: where it
+/// appears is the hive's skin along this, and how it leaves is a shove along
+/// the same. The swarm used to come back at a shell round the target, which
+/// is a cloud that simply exists; it comes out of a carrier now, so what a
+/// player sees is a stream with a source they can go and kill.
+fn launch_dir(seed: u32) -> vec3<f32> {
+    var d = vec3<f32>(hash(seed) - 0.5, hash(seed + 7u) - 0.5, hash(seed + 19u) - 0.5);
+    return d / max(length(d), 1e-4);
 }
 
 @compute @workgroup_size(256)
@@ -93,13 +104,25 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     var m = motes[i];
     let seed = m.vel_seed.w;
 
-    // Dead and waiting: count down, then come back at the shell.
+    // Dead and waiting: count down, then launch out of a mothership.
     if (m.state.x > 0.0) {
         m.state.x = m.state.x - p.dt;
         if (m.state.x <= 0.0) {
+            // Nowhere to come from: every carrier is gone, so it stays gone.
+            // This is what winning looks like, and it needs no rule of its
+            // own beyond an empty list.
+            if (p.hives == 0u) {
+                m.state.x = 0.0001;
+                motes[i] = m;
+                return;
+            }
             m.state.x = 0.0;
-            m.pos_scale = vec4<f32>(shell_point(i * 2654435761u + p.tick), m.state.y);
-            m.vel_seed = vec4<f32>(0.0, 0.0, 0.0, seed);
+            let h = p.hive[u32(max(m.state.z, 0.0)) % p.hives];
+            let d = launch_dir(i * 2654435761u + p.tick);
+            m.pos_scale = vec4<f32>(h.xyz + d * h.w * 1.15, m.state.y);
+            // Shoved out hard, so a launch reads as a launch. The appetite
+            // below takes over once it is clear of the hull it came from.
+            m.vel_seed = vec4<f32>(d * h.w * (2.2 + 1.6 * hash(i + 5u)), seed);
         }
         motes[i] = m;
         return;
@@ -147,7 +170,10 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     let dist = max(length(to_hull), 0.001);
     let dir = to_hull / dist;
     let want = p.hull.w * (1.12 + 0.75 * hash(u32(seed * 65535.0)));
-    var acc = dir * clamp(dist - want, -3.0, 3.0) * 1.2;
+    // The pull is capped, or a fighter fifty units out would accelerate at
+    // fifty and arrive as a bullet. It is the CAP that makes the approach
+    // read as a flight rather than as a teleport.
+    var acc = dir * clamp(dist - want, -8.0, 8.0) * 1.6;
     let up = vec3<f32>(0.0, 1.0, 0.0);
     let swirl = normalize(cross(dir, up) + vec3<f32>(1e-4, 0.0, 0.0));
     acc = acc + swirl * 2.2;
@@ -170,7 +196,12 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     var v = (m.vel_seed.xyz + acc * p.dt) * 0.985;
     let s = length(v);
-    let vmax = 3.0 + 3.0 * hash(u32(seed * 1000.0));
+    // Fast enough to CROSS. The carriers stand fifty to seventy five units
+    // off now, and at the three to six units a second this used to allow, a
+    // fighter took twenty seconds to reach the fight and the cloud round the
+    // ship never built at all. Eight to sixteen makes the transit five
+    // seconds, which is a supply line a player can watch working.
+    let vmax = 8.0 + 8.0 * hash(u32(seed * 1000.0));
     if (s > vmax) { v = v * (vmax / s); }
     m.vel_seed = vec4<f32>(v, seed);
     m.pos_scale = vec4<f32>(me + v * p.dt, m.pos_scale.w);

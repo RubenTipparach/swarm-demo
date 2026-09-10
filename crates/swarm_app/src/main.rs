@@ -72,6 +72,14 @@ struct Args {
     explode: u32,
     /// Ticks between one gun firing and the next. Nought silences them.
     cadence: u32,
+    /// How many motherships the swarm flies from.
+    hives: usize,
+    /// Issue one move order at startup, so a headless render can show the
+    /// ship under way with its nav disc up.
+    order: Option<Vec3>,
+    /// Draw the four archetypes in a row beside the hull. Off by default now
+    /// that the carriers are the aliens on show.
+    showcase: bool,
     /// Advance exactly one tick a frame rather than by the wall clock.
     ///
     /// A software rasteriser draws at four frames a second, so a frame here
@@ -96,6 +104,9 @@ fn parse_args() -> Args {
         target: Vec3::ZERO,
         explode: 0,
         cadence: 70,
+        hives: 10,
+        order: None,
+        showcase: false,
         fixed_dt: false,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -126,6 +137,13 @@ fn parse_args() -> Args {
             "--explode" => { a.explode = next().parse().expect("--explode TICK"); i += 1; }
             "--cadence" => { a.cadence = next().parse().expect("--cadence TICKS"); i += 1; }
             "--fixed-dt" => a.fixed_dt = true,
+            "--hives" => { a.hives = next().parse().expect("--hives N"); i += 1; }
+            "--move" => {
+                let v: Vec<f32> = next().split(',').map(|x| x.parse().expect("--move x,y,z")).collect();
+                a.order = Some(Vec3::new(v[0], v[1], v[2]));
+                i += 1;
+            }
+            "--showcase" => a.showcase = true,
             other => panic!("unknown argument {other}"),
         }
         i += 1;
@@ -167,6 +185,9 @@ fn main() {
             target: args.target,
             explode: args.explode,
             cadence: args.cadence,
+            hives: args.hives.min(swarm::MAX_HIVES),
+            order: args.order,
+            showcase: args.showcase,
             fixed_dt: args.fixed_dt,
         })
         .init_resource::<Tick>()
@@ -175,14 +196,20 @@ fn main() {
         .init_resource::<Shots>()
         .init_resource::<SparkQueue>()
         .init_resource::<LiveFx>()
+        .init_resource::<NavOrder>()
         .init_resource::<BeamQuads>()
         .add_systems(Startup, (load_textures, setup).chain())
         .add_systems(
             Update,
             (
                 advance_tick,
-                (fire_guns, chew, vent_smoke, go_critical),
-                (age_fx, draw_beams),
+                (nav_input, fly_hull, publish_hull).chain(),
+                move_hives,
+                (fire_guns, fire_flak).chain(),
+                resolve_beams,
+                (chew, vent_smoke, go_critical, hives_critical, tint_hives),
+                publish_hives,
+                (age_fx, draw_beams, draw_nav),
                 remesh_dirty,
                 (fly_chunks, spin_showcase, orbit_camera, ride_the_eye),
             )
@@ -199,6 +226,9 @@ struct Scene {
     target: Vec3,
     explode: u32,
     cadence: u32,
+    hives: usize,
+    order: Option<Vec3>,
+    showcase: bool,
     fixed_dt: bool,
 }
 
@@ -332,6 +362,9 @@ struct Hull {
     /// Where this hull's weapons are and which way they look, read off the
     /// cells the export says are gunnery.
     guns: Vec<Gun>,
+    /// Where it has been told to go, in world units, or nothing.
+    order: Option<Vec3>,
+    vel: Vec3,
     breaches: usize,
     last_heat_key: u32,
     /// How many cells it started with, so "enough of it is gone" is a share
@@ -347,6 +380,38 @@ struct Chewer {
 
 #[derive(Component)]
 struct Showcase;
+
+/// How big a mothership is, in hull radii, and what it takes to kill one.
+const HIVE_RADIUS: f32 = 1.6;
+/// A carrier is a SIEGE, not a countdown. Three beams at the default cadence
+/// is about half a point a tick, so one takes the better part of a minute of
+/// concentrated fire: at a tenth of this every mothership in the picture died
+/// inside two seconds and the screen went white with six fireballs at once.
+const HIVE_HP: f32 = 1200.0;
+/// What one beam does to a carrier it reaches.
+const BEAM_DAMAGE: f32 = 13.0;
+/// How far a gun shoots, in hull radii. Far enough to reach the carriers,
+/// which stand well off.
+const BEAM_RANGE: f32 = 34.0;
+/// Where the carriers sit, in hull radii. They used to be at seven, which put
+/// them inside the swarm's own standoff and made the whole picture one clump;
+/// a carrier is a thing you have to CROSS the battlefield to reach.
+const HIVE_NEAR: f32 = 14.0;
+const HIVE_FAR: f32 = 22.0;
+
+/// A mothership: where the swarm comes from, and the thing worth killing.
+#[derive(Component)]
+struct Hive {
+    model: VoxelModel,
+    /// In world units, which is what the shader is told and what a beam is
+    /// tested against. The model's own radius times the scale it is drawn at.
+    radius: f32,
+    scale: f32,
+    vel: Vec3,
+    hp: f32,
+    max_hp: f32,
+    seed: u64,
+}
 
 #[derive(Component)]
 struct Debris {
@@ -548,6 +613,8 @@ fn setup(
         bricks: (0..damage.brick_count()).map(|_| Brick::default()).collect(),
         chewers: Vec::new(),
         guns,
+        order: scene.order,
+        vel: Vec3::ZERO,
         breaches: 0,
         last_heat_key: 0,
         cells,
@@ -601,17 +668,71 @@ fn setup(
         uv_transform: bevy::math::Affine2::from_scale(Vec2::splat(0.5)),
         ..default()
     });
-    for (n, arch) in Archetype::ALL.into_iter().enumerate() {
-        let m = generate(arch, 11 + n as u64);
-        let s = greedy_mesh(&m, None).skin_all();
-        let scale = 2.2 / (m.cell * m.nx as f32);
+    if scene.showcase {
+        for (n, arch) in Archetype::ALL.into_iter().enumerate() {
+            let m = generate(arch, 11 + n as u64);
+            let s = greedy_mesh(&m, None).skin_all();
+            let scale = 2.2 / (m.cell * m.nx as f32);
+            commands.spawn((
+                Mesh3d(meshes.add(to_mesh(&s))),
+                MeshMaterial3d(alien_mat.clone()),
+                Transform::from_xyz(-4.5 + n as f32 * 3.0, -radius * 0.75, radius * 1.15).with_scale(Vec3::splat(scale)),
+                Showcase,
+            ));
+        }
+    }
+
+    // ---- the motherships ----
+    //
+    // The swarm used to come back at a shell round the target, which is a
+    // cloud that simply exists. It comes out of these now, so the thing a
+    // player is actually fighting has a place they can go and kill.
+    //
+    // Each is the Mother archetype at its own seed, blown up until it is half
+    // again the size of the ship it is besieging: a carrier that a frigate
+    // dwarfed would read as another fighter.
+    let want = radius * HIVE_RADIUS;
+    for n in 0..scene.hives {
+        let m = generate(Archetype::Mother, 900 + n as u64);
+        let scale = want / m.radius();
+        // A golden angle spiral over the sphere, which spreads n points
+        // evenly without any two ending up in the same place, whatever n is.
+        let t = (n as f32 + 0.5) / scene.hives as f32;
+        let y = 1.0 - 2.0 * t;
+        let r = (1.0 - y * y).max(0.0).sqrt();
+        let a = n as f32 * 2.399_963_2;
+        let dir = Vec3::new(r * a.cos(), y * 0.45, r * a.sin()).normalize();
+        let at = dir * radius * (HIVE_NEAR + (HIVE_FAR - HIVE_NEAR) * ((n % 3) as f32 / 2.0));
+        let hp = HIVE_HP;
+        // Its own material: `tint_hives` reddens a carrier as it is worn
+        // down, and one shared material would redden all ten together.
+        let mat = materials.add(StandardMaterial {
+            base_color: Color::WHITE,
+            perceptual_roughness: 0.42,
+            metallic: 0.05,
+            normal_map_texture: tex.chitin.clone(),
+            uv_transform: bevy::math::Affine2::from_scale(Vec2::splat(0.5)),
+            ..default()
+        });
         commands.spawn((
-            Mesh3d(meshes.add(to_mesh(&s))),
-            MeshMaterial3d(alien_mat.clone()),
-            Transform::from_xyz(-4.5 + n as f32 * 3.0, -radius * 0.75, radius * 1.15).with_scale(Vec3::splat(scale)),
-            Showcase,
+            Mesh3d(meshes.add(to_mesh(&greedy_mesh(&m, None).skin_all()))),
+            MeshMaterial3d(mat),
+            Transform::from_translation(at).with_scale(Vec3::splat(scale)),
+            Hive {
+                // A slow drift ACROSS the line to the ship rather than toward
+                // it: a carrier that closed would arrive, and then there is
+                // nothing left to fly the fighters anywhere.
+                vel: dir.cross(Vec3::Y).normalize_or(Vec3::X) * radius * 0.07,
+                radius: want,
+                hp,
+                max_hp: hp,
+                model: m,
+                scale,
+                seed: 900 + n as u64,
+            },
         ));
     }
+    info!("{} motherships at {:.1} to {:.1} units, radius {:.2} each", scene.hives, radius * HIVE_NEAR, radius * HIVE_FAR, want);
 
     // The swarm's body: a drone, drawn once per mote off the GPU buffer.
     let drone = generate(Archetype::Drone, 1);
@@ -641,6 +762,24 @@ fn setup(
         BeamMesh,
     ));
     commands.insert_resource(BeamHandle(beam_mesh));
+
+    // The nav disc, on the same footing as the beams: one mesh rebuilt every
+    // frame, because it is a function of where the eye is and there are at
+    // most a few hundred vertices in it.
+    let nav_mesh = meshes.add(empty_mesh());
+    commands.spawn((
+        Mesh3d(nav_mesh.clone()),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::WHITE,
+            unlit: true,
+            alpha_mode: AlphaMode::Add,
+            cull_mode: None,
+            ..default()
+        })),
+        Transform::IDENTITY,
+        bevy::camera::visibility::NoFrustumCulling,
+    ));
+    commands.insert_resource(NavHandle(nav_mesh));
 
     // ---- the sky ----
     //
@@ -890,6 +1029,7 @@ struct LiveFx {
     /// beam in it and a picture of a beam that was never fired look the same,
     /// and only one of them is a bug in this file.
     fired: usize,
+    flak: usize,
     sparked: usize,
 }
 
@@ -898,6 +1038,9 @@ struct BeamMesh;
 
 #[derive(Resource)]
 struct BeamHandle(Handle<Mesh>);
+
+#[derive(Resource)]
+struct NavHandle(Handle<Mesh>);
 
 /// How many quads the beam mesh carried this frame.
 #[derive(Resource, Default)]
@@ -914,6 +1057,220 @@ fn empty_mesh() -> Mesh {
     mesh
 }
 
+/// Carriers drift across the line to the ship, and turn as they go.
+fn move_hives(time: Res<Time>, scene: Res<Scene>, mut hives: Query<(&Hive, &mut Transform)>) {
+    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(0.25) };
+    for (h, mut xf) in &mut hives {
+        xf.translation += h.vel * dt;
+        xf.rotate_y(dt * 0.13);
+    }
+}
+
+/// Tell the swarm where its carriers are.
+///
+/// Only the LIVE ones, compacted: the shader takes a mote's hive index modulo
+/// the length, so a carrier dying shortens this list and every fighter that
+/// flew from it re-homes to whatever is left. No rule about it anywhere.
+fn publish_hives(hives: Query<(&Hive, &Transform)>, mut cfg: ResMut<SwarmConfig>) {
+    cfg.hives.clear();
+    for (h, xf) in &hives {
+        cfg.hives.push(xf.translation.extend(h.radius));
+    }
+}
+
+/// A beam is fired at its full range and CUT at what it reached.
+///
+/// redux-tribes' own rule, and the reason for it: the full range endpoint is
+/// what a MISS looks like, so a beam that ran out into space is not a defect
+/// and a beam that carried on through what it hit is. Cutting it also means a
+/// carrier is cover: the capsule handed to the swarm is the short one, so the
+/// fighters behind it live.
+fn resolve_beams(
+    tick: Res<Tick>,
+    mut fx: ResMut<LiveFx>,
+    mut hives: Query<(Entity, &mut Hive, &Transform)>,
+    mut sparks: ResMut<SparkQueue>,
+) {
+    for b in fx.beams.iter_mut() {
+        // Only the ones fired this tick: a beam is resolved once, when it
+        // goes off, and lives out its nine ticks as whatever it became.
+        if b.born != tick.tick {
+            continue;
+        }
+        // The nearest carrier along it, by fraction of the beam rather than
+        // by distance from the muzzle, which is the same order and is the
+        // number the cut wants anyway.
+        let mut hit: Option<(f32, Entity)> = None;
+        for (e, h, xf) in &hives {
+            let Some(t) = b.reaches(xf.translation.to_array(), h.radius) else { continue };
+            if hit.map_or(true, |(bt, _)| t < bt) {
+                hit = Some((t, e));
+            }
+        }
+        let Some((t, target)) = hit else { continue };
+        *b = b.cut(t);
+
+        let end = Vec3::from(b.to);
+        // The splash where it landed, thrown back along the beam.
+        let back = (Vec3::from(b.from) - end).normalize_or(Vec3::Y);
+        let mut list = Vec::new();
+        breach_sparks(tick.tick.wrapping_mul(2_654_435_761), tick.tick, end.to_array(), back.to_array(), 0.5, &mut list);
+        for s in &mut list {
+            // Alien, not steel: what a beam splashes off a carrier is the
+            // same green its fighters throw when one of them is shot.
+            s.colour = [s.colour[0] * 0.3, s.colour[1] * 1.4, s.colour[2] * 0.7];
+            s.size *= 1.6;
+        }
+        sparks.extend(list);
+
+        if let Ok((_, mut h, _)) = hives.get_mut(target) {
+            h.hp -= BEAM_DAMAGE;
+        }
+    }
+}
+
+/// Point defence: the ship rakes the cloud around itself, constantly.
+///
+/// A flak burst is a `Blast`, which is to say a capsule of ZERO LENGTH, which
+/// is the shape the shot path already carries. So this needed no new kind of
+/// anything: it is placed out along a gun's own line at the standoff the
+/// swarm holds, the shader kills whatever is inside it, and the CPU never
+/// learns where a mote was. That is the whole point of resolving a shot as a
+/// volume rather than as a target.
+///
+/// Fast and weak against the long slow beams that go for the carriers, so the
+/// two read as two different weapons doing two different jobs.
+fn fire_flak(
+    tick: Res<Tick>,
+    scene: Res<Scene>,
+    hulls: Query<(&Hull, &Transform)>,
+    mut fx: ResMut<LiveFx>,
+    mut sparks: ResMut<SparkQueue>,
+) {
+    if scene.cadence == 0 {
+        return;
+    }
+    // A quarter of the beam cadence, so a hull is always putting something up.
+    let every = (scene.cadence / 4).max(2);
+    for (hull, xf) in &hulls {
+        if hull.dead_hull {
+            continue;
+        }
+        let radius = hull.model.radius();
+        for (n, g) in hull.guns.iter().enumerate() {
+            let phase = (swarm_core::rng::hash_cell(g.cell ^ 0x51A7) % every) as u32;
+            if (tick.tick + phase) % every != 0 {
+                continue;
+            }
+            let at = xf.transform_point(Vec3::from(g.at));
+            let out = (xf.rotation * Vec3::from(g.out)).normalize_or_zero();
+            // Swept fast and wide, so the bursts walk round the hull rather
+            // than punching the same hole in the cloud.
+            let t = tick.tick as f32 * 0.21 + n as f32 * 2.3;
+            let side = out.cross(Vec3::Y).normalize_or(Vec3::X);
+            let up = side.cross(out);
+            let dir = (out + side * (t.sin() * 0.8) + up * ((t * 1.3).cos() * 0.55)).normalize();
+            // Out where the swarm actually holds: a burst inside the standoff
+            // would go off in clear space every time.
+            let reach = radius * (1.2 + 0.7 * ((t * 0.37).sin() * 0.5 + 0.5));
+            let centre = at + dir * reach;
+            fx.blasts.push(Blast { at: centre.to_array(), radius: radius * 0.42, born: tick.tick });
+            fx.flak += 1;
+
+            // The puff. Small, hot and brief: it is a shell going off, not a
+            // ship coming apart, so it gets a fortieth of what a reactor does.
+            let mut list = Vec::new();
+            blast_sparks(tick.tick.wrapping_add(g.cell), centre.to_array(), radius * 0.42, 22, &mut list);
+            for s in &mut list {
+                s.life *= 0.30;
+                s.size *= 0.8;
+            }
+            sparks.extend(list);
+            let mut flash = Vec::new();
+            muzzle_sparks(g.cell ^ tick.tick, at.to_array(), dir.to_array(), hull.model.cell * 0.7, &mut flash);
+            sparks.extend(flash);
+        }
+    }
+}
+
+/// A carrier that has been hit shows it, by glowing hotter as it comes apart.
+///
+/// Its own material rather than one shared by all ten, which is what a health
+/// bar costs when there is no HUD: a player has to be able to see which of
+/// them is nearly dead, and the only place to say so is the thing itself.
+fn tint_hives(hives: Query<(&Hive, &MeshMaterial3d<StandardMaterial>)>, mut materials: ResMut<Assets<StandardMaterial>>) {
+    for (h, mat) in &hives {
+        let hurt = 1.0 - (h.hp / h.max_hp).clamp(0.0, 1.0);
+        if let Some(m) = materials.get_mut(&mat.0) {
+            m.emissive = LinearRgba::rgb(0.9 * hurt * hurt, 2.2 * hurt * hurt, 0.35 * hurt * hurt);
+        }
+    }
+}
+
+/// A carrier that has run out of hit points comes apart, the same way a hull
+/// does: a blast the swarm feels, a fireball of sparks, and a sample of its
+/// own cells thrown as debris.
+#[allow(clippy::too_many_arguments)]
+fn hives_critical(
+    tick: Res<Tick>,
+    hives: Query<(Entity, &Hive, &Transform)>,
+    mut fx: ResMut<LiveFx>,
+    mut sparks: ResMut<SparkQueue>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut chunk_mats: ResMut<ChunkMaterials>,
+) {
+    for (e, h, xf) in &hives {
+        if h.hp > 0.0 {
+            continue;
+        }
+        let centre = xf.translation;
+        let blast = Blast { at: centre.to_array(), radius: h.radius * 2.2, born: tick.tick };
+        info!("mothership down at tick {}: blast radius {:.2}", tick.tick, blast.radius);
+        fx.blasts.push(blast);
+
+        let mut list = Vec::new();
+        blast_sparks(tick.tick ^ h.seed as u32, centre.to_array(), blast.radius, 520, &mut list);
+        for s in &mut list {
+            // A carrier burns green, because what is in it is alive. A
+            // MULTIPLIER and not a term added on: adding a constant to nine
+            // hundred additive sparks puts a floor under the whole burst, and
+            // six of those at once is a white screen.
+            s.colour = [s.colour[0] * 0.35, s.colour[1] * 1.5, s.colour[2] * 0.6];
+        }
+        sparks.extend(list);
+
+        // Its own cells, thrown. One cube per cell at the scale it was drawn
+        // at, sampled to a cap: a mother is six hundred cells and all of them
+        // as entities is a stall rather than a wreck.
+        let cube = meshes.add(Cuboid::from_length(h.model.cell * h.scale * 0.9));
+        let solid: Vec<usize> = (0..h.model.len()).filter(|&n| h.model.grid[n] != swarm_core::mat::EMPTY).collect();
+        let step = (solid.len() / 260).max(1);
+        for &n in solid.iter().step_by(step) {
+            let local = Vec3::from(h.model.centre_of(n)) * h.scale;
+            let origin = centre + xf.rotation * local;
+            let away = (origin - centre).normalize_or_zero();
+            let d = drift_of(n as u32, tick.tick);
+            let mat = chunk_mats
+                .0
+                .entry(h.model.colour[n])
+                .or_insert_with(|| {
+                    let [r, g, b, _] = swarm_core::mesh::rgb_of(h.model.colour[n]);
+                    materials.add(StandardMaterial { base_color: Color::srgb(r, g, b), perceptual_roughness: 0.8, ..default() })
+                })
+                .clone();
+            commands.spawn((
+                Mesh3d(cube.clone()),
+                MeshMaterial3d(mat),
+                Transform::from_translation(origin).with_scale(Vec3::splat(h.scale)),
+                Debris { vel: away * h.radius * 1.4 + Vec3::from(d) * h.radius * 0.5, born: tick.tick },
+            ));
+        }
+        commands.entity(e).despawn();
+    }
+}
+
 /// Guns go off on their own cadence, staggered so a broadside is a rattle
 /// rather than one bang, and sweep so the beams rake the cloud instead of
 /// drilling the same hole in it forever.
@@ -921,6 +1278,7 @@ fn fire_guns(
     tick: Res<Tick>,
     scene: Res<Scene>,
     hulls: Query<(&Hull, &Transform)>,
+    hives: Query<(&Hive, &Transform)>,
     mut fx: ResMut<LiveFx>,
     mut sparks: ResMut<SparkQueue>,
 ) {
@@ -931,7 +1289,7 @@ fn fire_guns(
         if hull.dead_hull {
             continue;
         }
-        let reach = hull.model.radius() * 3.0;
+        let reach = hull.model.radius() * BEAM_RANGE;
         for (n, g) in hull.guns.iter().enumerate() {
             // Staggered by the gun's own cell, so two hulls of one class do
             // not fire in lockstep and the pattern does not read as a clock.
@@ -941,12 +1299,40 @@ fn fire_guns(
             }
             let at = xf.transform_point(Vec3::from(g.at));
             let out = (xf.rotation * Vec3::from(g.out)).normalize_or_zero();
-            // A slow rake across the shell. Trigonometry is fine here and
-            // nowhere near the core: this decides where a light is drawn.
+            // A gun looks for a CARRIER, because the CPU can see one: a hive
+            // is an entity and a mote is not. What it cannot do is pick a
+            // mote, which is the whole reason a shot is a volume the shader
+            // resolves rather than a target the CPU chose.
+            //
+            // Nearest one it can actually bear on, so a mount on the far
+            // flank does not swing through its own ship to reach something.
+            let mut target: Option<(f32, Vec3)> = None;
+            for (_, hxf) in &hives {
+                let to = hxf.translation - at;
+                if to.normalize_or_zero().dot(out) < 0.15 {
+                    continue;
+                }
+                let d = to.length_squared();
+                if target.map_or(true, |(bd, _)| d < bd) {
+                    target = Some((d, hxf.translation));
+                }
+            }
+            // A slow rake when there is nothing to shoot at, so the guns are
+            // not simply silent between carriers. Trigonometry is fine here
+            // and nowhere near the core: it decides where a light is drawn.
             let t = tick.tick as f32 * 0.03 + n as f32 * 1.7;
             let side = out.cross(Vec3::Y).normalize_or(Vec3::X);
             let up = side.cross(out);
-            let dir = (out + side * (t.sin() * 0.45) + up * ((t * 0.7).cos() * 0.30)).normalize();
+            let dir = match target {
+                // Aimed, with a little spread, so some shots miss and run out
+                // into space. A gun that never missed would make the carriers
+                // a countdown rather than a fight.
+                Some((_, to)) => {
+                    let aim = (to - at).normalize_or(out);
+                    (aim + side * (t.sin() * 0.06) + up * ((t * 0.7).cos() * 0.05)).normalize()
+                }
+                None => (out + side * (t.sin() * 0.45) + up * ((t * 0.7).cos() * 0.30)).normalize(),
+            };
             fx.beams.push(Beam {
                 from: at.to_array(),
                 to: (at + dir * reach).to_array(),
@@ -1189,6 +1575,262 @@ fn draw_beams(
     let _ = meshes.insert(handle.0.id(), mesh);
 }
 
+// ------------------------------------------------------------- flight --
+
+/// What a hull can do, in hull radii a second. Slow on purpose: a capital
+/// ship that darts is a fighter, and the whole point of moving one is that
+/// the swarm has time to follow and you have time to watch it.
+const HULL_SPEED: f32 = 1.15;
+const HULL_ACCEL: f32 = 0.85;
+/// Close enough to have arrived.
+const ARRIVE: f32 = 0.35;
+
+/// A move order being ISSUED: not the order itself, which lives on the hull,
+/// but the thing the player is still pointing at.
+///
+/// Homeworld's own shape. The cursor picks a point on the horizontal plane
+/// through the ship, and that alone can only ever name somewhere at the
+/// ship's own height; holding shift lifts the target off that plane and draws
+/// the line back down to it, which is what makes a flat screen able to say a
+/// place in three dimensions at all.
+#[derive(Resource, Default)]
+struct NavOrder {
+    active: bool,
+    /// On the plane, at the ship's height when the order was opened.
+    on_plane: Vec3,
+    /// How far off that plane, positive up.
+    lift: f32,
+    plane_y: f32,
+    /// Whether shift has been held at any point, so the vertical line is
+    /// drawn even when the lift is momentarily nought.
+    lifting: bool,
+}
+
+impl NavOrder {
+    fn target(&self) -> Vec3 {
+        self.on_plane + Vec3::Y * self.lift
+    }
+}
+
+/// Right button opens an order, the cursor aims it, shift lifts it, release
+/// commits it. Left drag is still the camera.
+fn nav_input(
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut motion: MessageReader<MouseMotion>,
+    windows: Query<&Window>,
+    cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    mut order: ResMut<NavOrder>,
+    mut hulls: Query<(&mut Hull, &Transform)>,
+) {
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    // Vertical mouse travel while shift is down, in pixels, which is the only
+    // thing the mouse can say once the cursor has stopped meaning a place.
+    let dy: f32 = motion.read().map(|m| m.delta.y).sum();
+
+    let Ok(window) = windows.single() else { return };
+    let Ok((cam, cam_xf)) = cams.single() else { return };
+    let Ok((mut hull, hull_xf)) = hulls.single_mut() else { return };
+
+    if buttons.just_pressed(MouseButton::Right) {
+        order.active = true;
+        order.lift = 0.0;
+        order.lifting = false;
+        order.plane_y = hull_xf.translation.y;
+        order.on_plane = hull_xf.translation;
+    }
+    if !order.active {
+        return;
+    }
+
+    if shift {
+        order.lifting = true;
+        // Up on the screen is up in the world. The scale is a fraction of the
+        // ship's own size per pixel, so the reach of a drag is the same on
+        // any hull and at any window size.
+        order.lift -= dy * hull.model.radius() * 0.02;
+    } else if let Some(cursor) = window.cursor_position() {
+        // The cursor names a place on the plane, and only while shift is not
+        // held: the two cannot both own the mouse.
+        if let Ok(ray) = cam.viewport_to_world(cam_xf, cursor) {
+            if let Some(d) = ray.intersect_plane(Vec3::new(0.0, order.plane_y, 0.0), InfinitePlane3d::new(Vec3::Y)) {
+                order.on_plane = ray.get_point(d);
+            }
+        }
+    }
+
+    if buttons.just_released(MouseButton::Right) {
+        hull.order = Some(order.target());
+        order.active = false;
+    }
+}
+
+/// Fly the hull to wherever it was told, and turn it to face the way it is
+/// going.
+///
+/// A real envelope rather than a lerp: it accelerates, it has a top speed, and
+/// it slows into the arrival, so a move has weight and a player can see that
+/// giving an order to a capital ship is a commitment.
+fn fly_hull(time: Res<Time>, scene: Res<Scene>, mut hulls: Query<(&mut Hull, &mut Transform)>) {
+    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(0.25) };
+    for (mut hull, mut xf) in &mut hulls {
+        let radius = hull.model.radius();
+        let (speed, accel, arrive) = (radius * HULL_SPEED, radius * HULL_ACCEL, radius * ARRIVE);
+        let want = match hull.order {
+            Some(t) => {
+                let to = t - xf.translation;
+                let d = to.length();
+                if d < arrive {
+                    hull.order = None;
+                    Vec3::ZERO
+                } else {
+                    // Slow into it: the speed asked for falls off over the
+                    // last few lengths, so it settles rather than overshooting
+                    // and hunting back and forth.
+                    to / d * speed * (d / (radius * 4.0)).min(1.0)
+                }
+            }
+            None => Vec3::ZERO,
+        };
+        let dv = want - hull.vel;
+        let step = accel * dt;
+        hull.vel += if dv.length() > step { dv.normalize() * step } else { dv };
+        xf.translation += hull.vel * dt;
+
+        // Face the way it is going, eased, and only while it is going
+        // anywhere: a ship at rest keeps the heading it stopped on.
+        if hull.vel.length() > radius * 0.05 {
+            let want = Transform::from_translation(xf.translation).looking_to(hull.vel.normalize(), Vec3::Y).rotation;
+            xf.rotation = xf.rotation.slerp(want, (dt * 1.6).min(1.0));
+        }
+    }
+}
+
+/// The swarm wants the ship, so it has to be told where the ship IS.
+///
+/// Which is what makes moving it worth doing: the cloud is pulled along
+/// behind, and a player who runs can watch the swarm string out.
+fn publish_hull(hulls: Query<(&Hull, &Transform)>, mut cfg: ResMut<SwarmConfig>) {
+    for (hull, xf) in &hulls {
+        cfg.hull_centre = xf.translation;
+        cfg.hull_radius = hull.model.radius();
+    }
+}
+
+/// One line as a quad turned edge on to the eye, which is the same trick the
+/// beams use and for the same reason: it is the same width from anywhere.
+#[allow(clippy::too_many_arguments)]
+fn add_line(
+    pos: &mut Vec<[f32; 3]>,
+    col: &mut Vec<[f32; 4]>,
+    idx: &mut Vec<u32>,
+    eye: Vec3,
+    a: Vec3,
+    b: Vec3,
+    w: f32,
+    c: [f32; 3],
+    alpha: f32,
+) {
+    let dir = (b - a).normalize_or_zero();
+    if dir == Vec3::ZERO {
+        return;
+    }
+    let across = dir.cross(eye - (a + b) * 0.5).normalize_or(Vec3::Y.cross(dir).normalize_or(Vec3::X));
+    let base = pos.len() as u32;
+    for s in [-1.0f32, 1.0] {
+        pos.push((a + across * w * s).to_array());
+        pos.push((b + across * w * s).to_array());
+        col.push([c[0], c[1], c[2], alpha]);
+        col.push([c[0], c[1], c[2], alpha]);
+    }
+    idx.extend_from_slice(&[base, base + 1, base + 3, base, base + 3, base + 2]);
+}
+
+/// Draw the order: a disc on the plane, the line back down to it, and the
+/// track from the ship.
+fn draw_nav(
+    order: Res<NavOrder>,
+    handle: Option<Res<NavHandle>>,
+    hulls: Query<(&Hull, &Transform)>,
+    cam: Query<&Transform, With<Camera3d>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
+    let Some(handle) = handle else { return };
+    let Ok(eye) = cam.single() else { return };
+    let Ok((hull, hull_xf)) = hulls.single() else { return };
+    let eye = eye.translation;
+    let radius = hull.model.radius();
+
+    let mut pos: Vec<[f32; 3]> = Vec::new();
+    let mut col: Vec<[f32; 4]> = Vec::new();
+    let mut idx: Vec<u32> = Vec::new();
+
+    let green = [0.35, 2.6, 0.9];
+    let (target, on_plane, show_disc) = match (order.active, hull.order) {
+        // Being issued: the live one, disc and all.
+        (true, _) => (order.target(), order.on_plane, true),
+        // Committed and under way: the track and a ring at the far end, so a
+        // player can see where a ship is going after they have let go.
+        (false, Some(t)) => (t, Vec3::new(t.x, hull_xf.translation.y, t.z), true),
+        (false, None) => (Vec3::ZERO, Vec3::ZERO, false),
+    };
+
+    if show_disc {
+        // The disc: a flat ribbon in the horizontal plane, because that is
+        // what it MEANS. Edge on from the side is correct and is exactly the
+        // cue that tells a player the plane is a plane.
+        const SEGMENTS: usize = 64;
+        let r = radius * 1.6;
+        for n in 0..SEGMENTS {
+            let a0 = n as f32 / SEGMENTS as f32 * std::f32::consts::TAU;
+            let a1 = (n + 1) as f32 / SEGMENTS as f32 * std::f32::consts::TAU;
+            let p0 = on_plane + Vec3::new(a0.cos(), 0.0, a0.sin()) * r;
+            let p1 = on_plane + Vec3::new(a1.cos(), 0.0, a1.sin()) * r;
+            let base = pos.len() as u32;
+            let w = radius * 0.03;
+            for (p, a) in [(p0, a0), (p1, a1)] {
+                let out = Vec3::new(a.cos(), 0.0, a.sin());
+                pos.push((p - out * w).to_array());
+                pos.push((p + out * w).to_array());
+                col.push([green[0], green[1], green[2], 0.85]);
+                col.push([green[0], green[1], green[2], 0.85]);
+            }
+            idx.extend_from_slice(&[base, base + 1, base + 3, base, base + 3, base + 2]);
+        }
+        // Ticks round the rim, so the disc reads as an instrument and its
+        // size is legible against the ship.
+        for n in 0..8 {
+            let a = n as f32 / 8.0 * std::f32::consts::TAU;
+            let out = Vec3::new(a.cos(), 0.0, a.sin());
+            add_line(&mut pos, &mut col, &mut idx, eye, on_plane + out * r * 0.86, on_plane + out * r * 1.14, radius * 0.02, green, 0.7);
+        }
+        // The lift: straight up from the plane to where the ship is actually
+        // being sent. This is the whole of what shift is for.
+        if (target.y - on_plane.y).abs() > 1e-3 || order.lifting {
+            add_line(&mut pos, &mut col, &mut idx, eye, on_plane, target, radius * 0.035, green, 0.9);
+            // A cross at the far end, so the point itself has a mark.
+            for d in [Vec3::X, Vec3::Z] {
+                add_line(&mut pos, &mut col, &mut idx, eye, target - d * radius * 0.35, target + d * radius * 0.35, radius * 0.03, green, 0.95);
+            }
+        }
+        // And the track from the ship, dimmer: where it is going FROM.
+        add_line(&mut pos, &mut col, &mut idx, eye, hull_xf.translation, target, radius * 0.02, [0.2, 1.1, 0.5], 0.35);
+    }
+
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    if pos.is_empty() {
+        mesh = empty_mesh();
+    } else {
+        let n = pos.len();
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n]);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32; 2]; n]);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, col);
+        mesh.insert_indices(Indices::U32(idx));
+    }
+    let _ = meshes.insert(handle.0.id(), mesh);
+}
+
 // -------------------------------------------------------------- camera --
 
 #[derive(Component)]
@@ -1207,7 +1849,9 @@ fn orbit_input(
 ) {
     let Ok(mut o) = q.single_mut() else { return };
     for m in motion.read() {
-        if buttons.pressed(MouseButton::Left) || buttons.pressed(MouseButton::Right) {
+        // LEFT drags the camera. Right belongs to the nav order now: the two
+        // cannot share a button, and Homeworld gives the world to the right.
+        if buttons.pressed(MouseButton::Left) {
             o.yaw -= m.delta.x * 0.005;
             o.pitch = (o.pitch + m.delta.y * 0.005).clamp(-1.4, 1.4);
         }
@@ -1217,8 +1861,21 @@ fn orbit_input(
     }
 }
 
-fn orbit_camera(mut q: Query<(&Orbit, &mut Transform)>) {
-    for (o, mut xf) in &mut q {
+fn orbit_camera(
+    time: Res<Time>,
+    scene: Res<Scene>,
+    hulls: Query<&Transform, (With<Hull>, Without<Camera3d>)>,
+    mut q: Query<(&mut Orbit, &mut Transform), With<Camera3d>>,
+) {
+    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(0.25) };
+    for (mut o, mut xf) in &mut q {
+        // Follow the ship, eased. Not locked: `1 - exp(-k dt)` so the ease
+        // takes the same wall time at twenty frames a second as at a hundred
+        // and twenty, which is the rule redux-tribes' camera keeps.
+        if let Ok(hull) = hulls.single() {
+            let k = 1.0 - (-2.2 * dt).exp();
+            o.target = o.target.lerp(hull.translation, k);
+        }
         let eye = o.target + Vec3::new(o.yaw.sin() * o.pitch.cos(), o.pitch.sin(), o.yaw.cos() * o.pitch.cos()) * o.dist;
         *xf = Transform::from_translation(eye).looking_at(o.target, Vec3::Y);
     }
@@ -1277,8 +1934,8 @@ fn headless_capture(
         *frames, *spent, *spent * 1000.0 / *frames as f32, clock.ticks, dead, breaches
     );
     println!(
-        "fx: {} beams fired, {} live and {} quads on the last frame, {} blasts live, {} sparks queued",
-        fx.fired, fx.beams.len(), quads.0, fx.blasts.len(), fx.sparked
+        "fx: {} beams fired and {} flak bursts, {} beams live and {} quads on the last frame, {} blasts live, {} sparks queued",
+        fx.fired, fx.flak, fx.beams.len(), quads.0, fx.blasts.len(), fx.sparked
     );
     // PROVE the textures loaded rather than asserting it: a normal map that
     // failed to decode is a material with no pixels in it, and a hull drawn
