@@ -60,6 +60,7 @@ baked at launch. See `CLAUDE.md` for the design and the rules.
 Effects: a hull burning where the swarm has chewed it, guns raking the cloud,
 and a reactor going three ticks in.
 
+![Ten carriers](docs/fx_hives.png)
 ![The nav disc](docs/fx_nav.png)
 ![A burning hull](docs/fx_wound.png)
 ![Beams](docs/fx_beams.png)
