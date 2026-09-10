@@ -63,6 +63,9 @@ struct Args {
     chewers: usize,
     /// Camera distance in hull radii.
     zoom: f32,
+    /// What the camera looks at, in world units. The hull's centre unless
+    /// asked otherwise: the showcase aliens sit below and ahead of it.
+    target: Vec3,
 }
 
 fn parse_args() -> Args {
@@ -76,6 +79,7 @@ fn parse_args() -> Args {
         height: 800,
         chewers: 48,
         zoom: 4.6,
+        target: Vec3::ZERO,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -88,6 +92,12 @@ fn parse_args() -> Args {
             "--out" => { a.out = next(); i += 1; }
             "--frames" => { a.frames = next().parse().expect("--frames N"); i += 1; }
             "--zoom" => { a.zoom = next().parse().expect("--zoom R"); i += 1; }
+            "--target" => {
+                let s = next();
+                let v: Vec<f32> = s.split(',').map(|x| x.parse().expect("--target x,y,z")).collect();
+                a.target = Vec3::new(v[0], v[1], v[2]);
+                i += 1;
+            }
             "--size" => {
                 let s = next();
                 let (w, h) = s.split_once('x').expect("--size WxH");
@@ -130,7 +140,7 @@ fn main() {
     }
     app.insert_resource(ClearColor(Color::BLACK))
         .insert_resource(SwarmConfig { count: args.motes, ..default() })
-        .insert_resource(Scene { hull: args.hull.clone(), chewers: args.chewers, zoom: args.zoom })
+        .insert_resource(Scene { hull: args.hull.clone(), chewers: args.chewers, zoom: args.zoom, target: args.target })
         .init_resource::<Tick>()
         .init_resource::<ChunkMaterials>()
         .add_plugins(SwarmPlugin)
@@ -144,6 +154,7 @@ struct Scene {
     hull: String,
     chewers: usize,
     zoom: f32,
+    target: Vec3,
 }
 
 /// Sixty a second, accumulated from wall time and clamped, so the chewers eat
@@ -474,11 +485,14 @@ fn setup(
     commands.entity(hull_entity).insert(hull);
 
     // ---- the showcase: one of each archetype, big, in chitin ----
+    // Chitin tiled at half the rate of a finish: a scale spans two cells, so
+    // on a body a few cells across it reads as scales and not as grain.
     let alien_mat = materials.add(StandardMaterial {
         base_color: Color::WHITE,
-        perceptual_roughness: 0.45,
+        perceptual_roughness: 0.42,
         metallic: 0.05,
         normal_map_texture: tex.chitin.clone(),
+        uv_transform: bevy::math::Affine2::from_scale(Vec2::splat(0.5)),
         ..default()
     });
     for (n, arch) in Archetype::ALL.into_iter().enumerate() {
@@ -599,8 +613,8 @@ fn setup(
     // ---- the camera: framed on the hull from ahead and above, OUTSIDE the
     // swarm, whose standoff reaches about two radii ----
     let dist = radius * scene.zoom;
-    let orbit = Orbit { yaw: 0.6, pitch: 0.38, dist, target: Vec3::ZERO };
-    let eye = Vec3::new(orbit.yaw.sin() * orbit.pitch.cos(), orbit.pitch.sin(), orbit.yaw.cos() * orbit.pitch.cos()) * dist;
+    let orbit = Orbit { yaw: 0.6, pitch: 0.38, dist, target: scene.target };
+    let eye = scene.target + Vec3::new(orbit.yaw.sin() * orbit.pitch.cos(), orbit.pitch.sin(), orbit.yaw.cos() * orbit.pitch.cos()) * dist;
     let mut cam = commands.spawn((
         Camera3d::default(),
         bevy::render::view::Hdr,
@@ -615,7 +629,7 @@ fn setup(
         // brightness: at the sky's level it washed a purple chitin grey.
         bevy::light::GeneratedEnvironmentMapLight { environment_map: sky, intensity: 250.0, ..default() },
         AmbientLight { color: Color::srgb(0.6, 0.7, 1.0), brightness: 40.0, ..default() },
-        Transform::from_translation(eye).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_translation(eye).looking_at(scene.target, Vec3::Y),
         orbit,
         bevy::render::view::NoIndirectDrawing,
     ));

@@ -61,8 +61,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let n0 = normalize(in.normal);
     let t = normalize(in.tangent.xyz);
     let bt = in.tangent.w * cross(n0, t);
-    // The map is +Y up, the OpenGL convention the generator writes.
-    let m = textureSample(chitin, chitin_sampler, in.uv).xyz * 2.0 - 1.0;
+    // The map is +Y up, the OpenGL convention the generator writes, and it is
+    // tiled at half the rate of a finish so a scale spans two cells.
+    let m = textureSample(chitin, chitin_sampler, in.uv * 0.5).xyz * 2.0 - 1.0;
     let n = normalize(t * m.x + bt * m.y + n0 * m.z);
     let lit = 0.22 + 0.78 * max(dot(n, key), 0.0) + 0.15 * max(dot(n, -key), 0.0);
     // A little specular off the wet looking chitin.
