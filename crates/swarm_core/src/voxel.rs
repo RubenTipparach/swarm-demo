@@ -244,7 +244,7 @@ impl VoxelModel {
         let i = (p[0] / self.cell + self.nx as f32 / 2.0).floor() as i32;
         let j = (p[1] / self.cell + self.ny as f32 / 2.0).floor() as i32;
         let k = (p[2] / self.cell + self.nz as f32 / 2.0).floor() as i32;
-        self.inside(i, j, k).then(|| (i as usize, j as usize, k as usize))
+        self.inside(i, j, k).then_some((i as usize, j as usize, k as usize))
     }
 
     /// The centre of a cell in the model's own frame.

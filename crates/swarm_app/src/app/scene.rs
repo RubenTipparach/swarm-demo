@@ -268,9 +268,9 @@ pub(crate) fn setup(
             .spawn((
                 Transform::from_translation(at).with_rotation(Quat::from_euler(
                     EulerRot::YXZ,
-                    rng.range(0.0, 6.283),
-                    rng.range(0.0, 6.283),
-                    rng.range(0.0, 6.283),
+                    rng.range(0.0, std::f32::consts::TAU),
+                    rng.range(0.0, std::f32::consts::TAU),
+                    rng.range(0.0, std::f32::consts::TAU),
                 )),
                 Visibility::default(),
                 Rock,

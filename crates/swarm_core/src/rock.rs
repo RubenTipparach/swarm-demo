@@ -36,7 +36,7 @@ const ORE_SHARE: f32 = 0.06;
 /// keeps it a pure function of its inputs with no state to carry.
 fn hash3(x: i32, y: i32, z: i32) -> f32 {
     let mut h = (x as u32).wrapping_mul(0x8DA6_B343)
-        ^ (y as u32).wrapping_mul(0xD8163_841u32)
+        ^ (y as u32).wrapping_mul(0xD816_3841_u32)
         ^ (z as u32).wrapping_mul(0xCB1A_B31F);
     h ^= h >> 13;
     h = h.wrapping_mul(0x2545_F491);

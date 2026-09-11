@@ -335,7 +335,7 @@ impl DamageGrid {
                     let n = m.index(i as usize, j as usize, k as usize);
                     let c = m.centre_of(n);
                     let d2 = (c[0] - p[0]).powi(2) + (c[1] - p[1]).powi(2) + (c[2] - p[2]).powi(2);
-                    if best.map_or(true, |(_, _, bd)| d2 < bd) {
+                    if best.is_none_or(|(_, _, bd)| d2 < bd) {
                         best = Some((n, outward, d2));
                     }
                 }

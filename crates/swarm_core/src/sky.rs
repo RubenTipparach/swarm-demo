@@ -143,11 +143,7 @@ pub fn sky_at(preset: &SkyPreset, dir: [f32; 3]) -> [f32; 3] {
     let density = remap(t1 * 1.4 + t2 * 0.8, REMAP_IN, REMAP_OUT);
     let gas = (mask * density).clamp(0.0, 1.0) * NEB_GAIN;
     let tint = 0.22 * smoothstep(0.72, 1.0, t2) * density * NEB_GAIN;
-    let mut out = [0.0; 3];
-    for c in 0..3 {
-        out[c] = preset.b[c] + preset.a[c] * gas + preset.a[c] * tint;
-    }
-    out
+    std::array::from_fn(|c| preset.b[c] + preset.a[c] * gas + preset.a[c] * tint)
 }
 
 /// The direction a texel of a cube face looks in, wgpu's face order (+x -x
@@ -235,11 +231,14 @@ fn hash33(x: f32, y: f32, z: f32) -> [f32; 3] {
     let d1 = x * 127.1 + y * 311.7 + z * 74.7;
     let d2 = x * 269.5 + y * 183.3 + z * 246.1;
     let d3 = x * 113.5 + y * 271.9 + z * 124.6;
-    let f = |v: f32| fract(v.sin() * 43758.5453123);
+    let f = |v: f32| fract(v.sin() * 43758.547);
     [f(d1), f(d2), f(d3)]
 }
 
+// 6.283 rather than TAU because sky.ts writes 6.283, and the port is line for
+// line: a star's phase off the archive's own number is the archive's star.
 /// The star field for a sky: the Voronoi feature points on the unit shell.
+#[allow(clippy::approx_constant)]
 pub fn starfield(preset: &SkyPreset) -> Vec<Star> {
     let mut out = Vec::new();
     let d = STAR_LATTICE;

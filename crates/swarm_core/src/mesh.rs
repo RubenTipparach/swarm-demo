@@ -250,7 +250,7 @@ pub fn mesh_region(
             return false;
         }
         let n = m.index(i as usize, j as usize, k as usize);
-        m.grid[n] != mat::EMPTY && damage.map_or(true, |(d, _)| !d.is_dead(n))
+        m.grid[n] != mat::EMPTY && damage.is_none_or(|(d, _)| !d.is_dead(n))
     };
     // A face whose neighbour is a cell that DIED rather than one that was never
     // there is the inside of the ship, and it is drawn as such.
@@ -465,7 +465,7 @@ pub fn exposed_faces(m: &VoxelModel, damage: Option<&DamageGrid>) -> usize {
             return false;
         }
         let n = m.index(i as usize, j as usize, k as usize);
-        m.grid[n] != mat::EMPTY && damage.map_or(true, |d| !d.is_dead(n))
+        m.grid[n] != mat::EMPTY && damage.is_none_or(|d| !d.is_dead(n))
     };
     let mut count = 0;
     for n in 0..m.len() {

@@ -218,7 +218,6 @@ pub(crate) fn orbit_camera(
 pub(crate) fn ride_the_eye(cam: Query<&Transform, (With<Camera3d>, Without<AtInfinity>)>, mut far: Query<&mut Transform, With<AtInfinity>>) {
     let Ok(c) = cam.single() else { return };
     for mut xf in &mut far {
-        let keep = xf.translation - xf.translation; // zero: everything here is placed about the eye
-        xf.translation = c.translation + keep + (xf.rotation * Vec3::ZERO);
+        xf.translation = c.translation;
     }
 }
