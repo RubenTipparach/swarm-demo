@@ -653,3 +653,231 @@ mod tests {
         eprintln!("terran_frigate: {} guns, {} engines, {} thruster cells", guns.len(), engines.len(), thrusters);
     }
 }
+
+// ------------------------------------------------------------- reactor --
+
+/// How big the reactor is, as a radius in cells about its own seed.
+///
+/// A ball rather than a share of the hull, because a reactor is a MACHINE of
+/// a size and not a proportion of whatever it was bolted into: the same
+/// vessel on a corvette and on a heavy cruiser is the point of a ladder built
+/// out of one cell size. It is scaled by the hull's own lattice all the same,
+/// so a model on a bigger grid gets a bigger ball of cells for the same
+/// physical thing.
+const REACTOR_R: f32 = 3.6;
+
+/// The cells of the hull's reactor: a compact core, as deep inside the ship
+/// as the ship goes.
+///
+/// Redux-tribes' eight purposes have no reactor in them (`PURPOSE_ORDER` is
+/// propulsion, attitude, gun, ordnance, command, crew, boarding, structure),
+/// so there is nothing in the export to read and inventing a ninth would mean
+/// changing that project, which is reference only. This DERIVES it instead,
+/// and derives it from the one thing the owner said about it: it is buried.
+///
+/// Depth is a multi source breadth first search inward from every empty cell,
+/// so a cell's depth is how many cells of solid material stand between it and
+/// the nearest gap, interior voids included. The deepest cell is therefore
+/// the most buried place in the ship by construction, and the reactor is the
+/// ball of solid cells around it. Nothing can reach it without chewing
+/// through everything over it, which is what the rule is for.
+///
+/// Ties are broken toward the cell nearest the lattice's own middle, so a
+/// hull with a long flat run of equally buried cells gets its reactor
+/// amidships rather than at whichever end the scan happened to reach first.
+pub fn reactor_of(m: &VoxelModel) -> Vec<usize> {
+    let n = m.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let solid: Vec<bool> = m.grid.iter().map(|&x| x != mat::EMPTY).collect();
+    // Multi source BFS: every empty cell is depth nought, and the wave walks
+    // inward through solid material one face step at a time.
+    let mut depth = vec![u32::MAX; n];
+    let mut queue: Vec<usize> = Vec::new();
+    for (i, &s) in solid.iter().enumerate() {
+        if !s {
+            depth[i] = 0;
+            queue.push(i);
+        }
+    }
+    // A model with no empty cell at all is a solid block: every cell is
+    // equally buried, so seed the wave from the lattice wall instead of
+    // returning nothing.
+    if queue.is_empty() {
+        for k in 0..m.nz {
+            for j in 0..m.ny {
+                for i in 0..m.nx {
+                    if i == 0 || j == 0 || k == 0 || i == m.nx - 1 || j == m.ny - 1 || k == m.nz - 1 {
+                        let q = m.index(i, j, k);
+                        depth[q] = 0;
+                        queue.push(q);
+                    }
+                }
+            }
+        }
+    }
+    let mut head = 0;
+    while head < queue.len() {
+        let c = queue[head];
+        head += 1;
+        let i = c % m.nx;
+        let j = (c / m.nx) % m.ny;
+        let k = c / (m.nx * m.ny);
+        let d = depth[c] + 1;
+        const STEPS: [(i32, i32, i32); 6] =
+            [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)];
+        for (dx, dy, dz) in STEPS {
+            let (a, b, e) = (i as i32 + dx, j as i32 + dy, k as i32 + dz);
+            if a < 0 || b < 0 || e < 0 || a >= m.nx as i32 || b >= m.ny as i32 || e >= m.nz as i32 {
+                continue;
+            }
+            let q = m.index(a as usize, b as usize, e as usize);
+            if solid[q] && depth[q] == u32::MAX {
+                depth[q] = d;
+                queue.push(q);
+            }
+        }
+    }
+
+    // The seed: deepest wins, and the nearest to the middle breaks a tie.
+    let mid = [m.nx as f32 * 0.5, m.ny as f32 * 0.5, m.nz as f32 * 0.5];
+    let from_mid = |c: usize| -> f32 {
+        let (i, j, k) = (c % m.nx, (c / m.nx) % m.ny, c / (m.nx * m.ny));
+        let d = [i as f32 - mid[0], j as f32 - mid[1], k as f32 - mid[2]];
+        d[0] * d[0] + d[1] * d[1] + d[2] * d[2]
+    };
+    let mut seed = usize::MAX;
+    let (mut best_d, mut best_m) = (0u32, f32::MAX);
+    for c in 0..n {
+        if !solid[c] || depth[c] == u32::MAX {
+            continue;
+        }
+        let t = from_mid(c);
+        if depth[c] > best_d || (depth[c] == best_d && t < best_m) {
+            best_d = depth[c];
+            best_m = t;
+            seed = c;
+        }
+    }
+    if seed == usize::MAX {
+        return Vec::new();
+    }
+
+    // The ball about it, scaled by the lattice so the reactor is the same
+    // physical machine on any grid this is asked about.
+    let scale = (m.nx.max(m.ny).max(m.nz) as f32 / 64.0).max(0.5);
+    let r = REACTOR_R * scale;
+    let (si, sj, sk) = (seed % m.nx, (seed / m.nx) % m.ny, seed / (m.nx * m.ny));
+    let reach = r.ceil() as i32;
+    let mut out = Vec::new();
+    for dk in -reach..=reach {
+        for dj in -reach..=reach {
+            for di in -reach..=reach {
+                let (a, b, e) = (si as i32 + di, sj as i32 + dj, sk as i32 + dk);
+                if a < 0 || b < 0 || e < 0 || a >= m.nx as i32 || b >= m.ny as i32 || e >= m.nz as i32 {
+                    continue;
+                }
+                if (di * di + dj * dj + dk * dk) as f32 > r * r {
+                    continue;
+                }
+                let q = m.index(a as usize, b as usize, e as usize);
+                // Solid cells only: a reactor is made of the ship, so the
+                // voids inside the ball are not part of it and counting them
+                // would mean a reactor that is already half destroyed.
+                if solid[q] {
+                    out.push(q);
+                }
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod reactor_tests {
+    use super::*;
+    use crate::voxel::{mat, VoxelModel};
+
+    fn block(nx: usize, ny: usize, nz: usize) -> VoxelModel {
+        let mut m = VoxelModel::new(nx, ny, nz, 0.1);
+        for k in 1..nz - 1 {
+            for j in 1..ny - 1 {
+                for i in 1..nx - 1 {
+                    let n = m.index(i, j, k);
+                    m.grid[n] = mat::PLATE;
+                }
+            }
+        }
+        m
+    }
+
+    /// The whole premise: nothing in the reactor may be touching space. If a
+    /// reactor cell has a face open to the outside then a single bite reaches
+    /// it, and "buried deep inside the ship" is a claim rather than a rule.
+    #[test]
+    fn the_reactor_is_buried() {
+        let m = block(20, 20, 28);
+        let core = reactor_of(&m);
+        assert!(!core.is_empty(), "no reactor at all");
+        for &c in &core {
+            let (i, j, k) = (c % m.nx, (c / m.nx) % m.ny, c / (m.nx * m.ny));
+            const STEPS: [(i32, i32, i32); 6] =
+                [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)];
+            for (dx, dy, dz) in STEPS {
+                let (a, b, e) = (i as i32 + dx, j as i32 + dy, k as i32 + dz);
+                assert!(
+                    a >= 0 && b >= 0 && e >= 0 && a < m.nx as i32 && b < m.ny as i32 && e < m.nz as i32,
+                    "a reactor cell sits on the lattice wall"
+                );
+                let q = m.index(a as usize, b as usize, e as usize);
+                assert_ne!(m.grid[q], mat::EMPTY, "a reactor cell has a face open to space");
+            }
+        }
+    }
+
+    /// It is a core, not a region: every cell of it is solid, and it is a
+    /// small enough part of the ship that reaching it is an achievement.
+    #[test]
+    fn the_reactor_is_a_small_solid_core() {
+        let m = block(20, 20, 28);
+        let core = reactor_of(&m);
+        let cells = m.solid_count();
+        for &c in &core {
+            assert_ne!(m.grid[c], mat::EMPTY, "a reactor cell is not solid");
+        }
+        let share = core.len() as f32 / cells as f32;
+        assert!(share > 0.002, "the reactor is {share} of the hull, which is nothing");
+        assert!(share < 0.25, "the reactor is {share} of the hull, which is most of it");
+    }
+
+    /// And it sits in the middle, which is what "deep inside" means on a
+    /// block: a reactor that came out at one end would pass every test above
+    /// and still be a reactor anybody can shoot from the front.
+    #[test]
+    fn the_reactor_is_amidships() {
+        let m = block(20, 20, 28);
+        let core = reactor_of(&m);
+        let mut mean = [0.0f32; 3];
+        for &c in &core {
+            mean[0] += (c % m.nx) as f32;
+            mean[1] += ((c / m.nx) % m.ny) as f32;
+            mean[2] += (c / (m.nx * m.ny)) as f32;
+        }
+        for v in mean.iter_mut() {
+            *v /= core.len() as f32;
+        }
+        let want = [m.nx as f32 * 0.5, m.ny as f32 * 0.5, m.nz as f32 * 0.5];
+        for a in 0..3 {
+            assert!((mean[a] - want[a]).abs() < 2.0, "axis {a}: reactor at {} of {}", mean[a], want[a]);
+        }
+    }
+
+    /// A model with nothing in it answers with nothing rather than panicking
+    /// on an index that was never found.
+    #[test]
+    fn an_empty_model_has_no_reactor() {
+        let m = VoxelModel::new(8, 8, 8, 0.1);
+        assert!(reactor_of(&m).is_empty());
+    }
+}

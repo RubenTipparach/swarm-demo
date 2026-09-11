@@ -5,8 +5,14 @@ A real time space RTS against an alien swarm, in the voxel language of
 
 Right button opens a move order: the cursor picks a point on the plane
 through the ship, hold shift to lift it off that plane, release to commit.
-Left drag orbits, wheel zooms. **R calls in reinforcements**, two per press up
-to a wing of six, which fly in from off the map and keep station on you.
+Left drag orbits, wheel zooms, **WASD and the arrows pan** the camera, Q and E
+lift and drop it, space snaps it to your ship. **R, or the button on screen,
+calls in reinforcements**, two per press up to a wing of six, which fly in from
+off the map and keep station on you. Your ship also puts up a squadron of
+fighters of its own.
+
+The carriers hold for ten seconds before the first fighter comes out, so there
+is a beat before the swarm arrives. `--launch-delay 0` removes it.
 
 ```sh
 cargo test -p swarm_core                           # the engine-free core
@@ -71,3 +77,4 @@ actually pulling, and a wing of reinforcements on station.
 ![A reactor going](docs/fx_boom.png)
 ![Geometric flames](docs/fx_flame.png)
 ![A wing on station](docs/fx_wing.png)
+![The whole battle](docs/fx_battle.png)
