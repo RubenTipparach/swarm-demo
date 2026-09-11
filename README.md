@@ -3,11 +3,15 @@
 A real time space RTS against an alien swarm, in the voxel language of
 [redux-tribes](https://github.com/RubenTipparach/redux-tribes). Bevy 0.18.
 
-**Left drag** selects, a click picks one ship, shift adds to the selection.
-**Right button** opens the move disc, the cursor aims it, **shift** lifts the
-target off the plane, and **right button again** confirms. **Esc** cancels the
-order; Esc again opens the pause menu. **Space** pauses, and you can still give
-orders while it is stopped.
+**Left drag** selects, a click picks one ship, shift adds to the selection. A
+selected ship wears a cyan ring and a health bar, and nothing else does.
+**Right click** opens the move disc on the selection: the large cyan disc is
+how far one order can send it, the small gold ring is where it will go, and
+holding **shift** lifts that point off the plane and draws the right angle
+triangle back down to it, with the distance in red. **Left click** confirms
+(a gold ring pings at the destination and an orange line and ring stand on
+each ship until it arrives), **Esc** cancels; Esc again opens the pause menu.
+**Space** pauses, and you can still give orders while it is stopped.
 
 **Middle drag** orbits (or alt and left), wheel zooms, **WASD and the arrows**
 pan, Q and E lift and drop, **F** snaps the camera to your ship. The ship
@@ -107,7 +111,8 @@ a reactor going three ticks in, the engines burning on the throttle they are
 actually pulling, and a wing of reinforcements on station.
 
 ![Ten carriers](docs/fx_hives.png)
-![The nav disc](docs/fx_nav.png)
+![A move order: the range disc, the destination, the triangle](docs/fx_order.png)
+![The same order, close: the lift, the red ring and the distance](docs/fx_order_close.png)
 ![A burning hull](docs/fx_wound.png)
 ![Beams](docs/fx_beams.png)
 ![A reactor going](docs/fx_boom.png)

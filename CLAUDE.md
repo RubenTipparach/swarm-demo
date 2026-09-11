@@ -167,15 +167,15 @@ fireballs turned the screen white, which is also why the green a carrier burns
 is a MULTIPLIER on the ramp and not a term added to it: a constant added to
 nine hundred additive sparks puts a floor under the whole burst.
 
-**Moving the ship is Homeworld's own shape.** The right button opens an order:
-the cursor picks a point on the horizontal plane through the ship, and holding
-shift lifts the target off that plane and draws the line back down to it,
-which is what makes a flat screen able to name a place in three dimensions at
-all. Release commits. `fly_hull` is a real envelope, not a lerp: it
-accelerates, it has a top speed, it slows into the arrival and it turns to
-face the way it is going, so an order to a capital ship has weight. Left drag
-is the camera, which now follows the ship on `1 - exp(-k dt)` so the ease
-takes the same wall time at any frame rate.
+**Moving the ship is Homeworld's own shape.** Right click opens an order on
+the selection: the cursor picks a point on the horizontal plane through the
+ships, and holding shift lifts the target off that plane and draws the right
+angle triangle back down to it, which is what makes a flat screen able to name
+a place in three dimensions at all. Left click commits. `fly_hull` is a real
+envelope, not a lerp: it accelerates, it has a top speed, it slows into the
+arrival and it turns to face the way it is going, so an order to a capital
+ship has weight. The full flow, and what the first cut of it got wrong, is
+under "The controls are an RTS's now".
 
 `publish_hull` hands the hull's live position to the swarm every frame, which
 is what makes moving it worth doing: the cloud is dragged along behind and a
@@ -411,18 +411,64 @@ shift adds rather than replaces, which is the one convention every RTS shares.
 Carriers are excluded even though they are hulls: they are not yours and cannot
 be ordered.
 
-**A move order is a MODE, not a drag.** Right button opens the disc, the cursor
-aims it on the plane through the selected ships, shift lifts it off that plane,
-and a SECOND right button commits. Holding a button while also moving the mouse
-to pick a point and then holding shift to lift it is three things one hand is
-doing at once; a mode costs one more click and lets the player take as long as
-they like over the part that is actually hard. Every selected ship gets the
-commit point offset by where it already stands relative to the group, so a
-formation arrives as a formation instead of piling onto one coordinate.
+**A move order is a MODE, not a drag, and it was prototyped before it was
+written.** The first cut shipped four defects the owner found in one session,
+so the flow was rebuilt as a three.js prototype and a design document, tested
+in a browser until it was approved, and only then ported. What is here is that
+prototype one to one. Right click opens the disc on the selection, the cursor
+aims it on the plane through the ships, shift lifts it off that plane, and
+LEFT click commits, which is Homeworld's own button and the one the first cut
+got wrong. Holding a button while also moving the mouse to pick a point and
+then holding shift to lift it is three things one hand is doing at once; a mode
+costs one more click and lets the player take as long as they like over the
+part that is actually hard. Every selected ship gets the commit point offset by
+where it already stands relative to the group, so a formation arrives as a
+formation instead of piling onto one coordinate. An escort that is given an
+order of its own stops keeping station, because one flown to a point and then
+straight back to its slot is an order that did nothing.
 
-**Escape belongs to the ORDER first.** One escape cancels an open move and does
-nothing else; the next, with nothing open, reaches the pause menu. Space is the
-plain pause. And `nav_input` sits OUTSIDE the run gate with the camera and the
+**`OrderMode` is the rule: a button press is read by exactly one system per
+frame, and the mode decides which.** The first cut read every button in every
+system, and every one of the four defects came from that.
+
+- **Confirming the order CLEARED the selection.** The left press was the
+  commit in `nav_input` and the start of a box in `select_input`, on the same
+  frame, so the release then selected nothing. `select_input` acts only in
+  `Idle` and `Box`, `nav_input` opens only from `Idle` and acts only in
+  `Move`, and the three input systems run menu, box, order, each reading the
+  mode the one before left.
+- **A box that stayed open with no button down.** `select_input` returned
+  early whenever the cursor was off the window, which is exactly where a drag
+  that started near the edge ends, so the release was never seen. The box
+  opens on the press and closes on the release, and the release is read off
+  the BUTTON, never off the cursor; the cursor is tracked wherever it reports
+  from and kept where it was last seen when it does not; and a window that
+  loses focus drops the box outright, selecting nothing.
+- **A bar on every ship says nothing about what is selected.** Bars and the
+  cyan ring are on SELECTED ships only, which is how every RTS says a unit is
+  selected. Three bar colours a player can name rather than a ramp.
+- **A confirmed order did nothing anybody could see.** A gold ring pings open
+  at the destination, the HUD says "2 ships under way" and fades, and an
+  orange line and ring stand on each ship until it arrives: the order is
+  visibly THERE.
+
+**The disc is the RANGE, and a point past its rim is clamped to it.** A large
+cyan disc on the plane through the selection, its rim at `MOVE_RANGE` radii
+of the biggest selected hull with an X across it; a small gold ring where the
+order lands and a gold line out to it; and lifted, the vertical, the direct
+line and a red ring at the raised point with the distance in red beside it.
+The elevation is read FROM THE CURSOR'S POSITION rather than from how far it
+moved: the plane point holds still and the target sits on the vertical through
+it at the closest point to the cursor's ray, `t = (b*e - d)/(1 - b*b)` with
+`w = P - O`. Not `O - P`, which negates `t` and put the target below the plane
+when the mouse went up, and was the prototype's own second bug. `--aim x,y,z`
+opens the disc headless so the picture can be taken.
+
+**Escape belongs to the ORDER first.** One escape cancels an open move, or an
+open box, and does nothing else; the next, with nothing open, reaches the pause
+menu. `toggle_pause` runs BEFORE the two input systems so it sees the mode the
+key was pressed in and not the `Idle` they leave behind. Space is the plain
+pause. And `nav_input` sits OUTSIDE the run gate with the camera and the
 drawing, because giving orders with the world stopped is the entire reason a
 pause key is worth having.
 
@@ -1047,6 +1093,22 @@ group at 3, and that is why the instance attributes moved to 8 and 9: they
 were at 3 and 4, which is fine for a cube and collides with the tangents the
 moment the mesh has any.
 
+**The motes are lit by the SUN, harshly, and their own shader does it.** A
+mote is not a `StandardMaterial`: a million of them are one instanced draw
+that binds the view and the chitin and nothing else, so `mote.wgsl` lights
+them itself with one hard coded key, and that key is the scene's sun vector
+(`0.42, 0.66, -0.62`, the same line `setup` aims the directional light from)
+so a mote's lit side is the same side as a hull's. The floor under it was cut
+by sixty percent (0.22 to 0.088 ambient, 0.15 to 0.06 back fill) with the
+direct term at a full one, and the scene's `AmbientLight` took the same cut
+(6.0 to 2.4): a sun in vacuum makes a hard terminator and a nearly black far
+side, and the grey lift both had before read as fog over the cloud. The
+drive glow came DOWN at the same time, from 1.1 to 4.3 to 0.5 to 1.9 by
+speed: at the old numbers every drive in the cloud was over the bloom
+threshold at any speed, so a million bloom sources were the green haze the
+swarm read as. A fighter at rest is an ember below the threshold now and only
+one at full transit crosses it.
+
 It is tiled at HALF the rate of a finish, a scale spanning two cells, in the
 material's `uv_transform` and in the mote shader alike. At one scale a cell,
 on a body a few cells across, the map was bound and loaded and read as grain:
@@ -1079,6 +1141,8 @@ cargo build --release -p swarm_app
     --frames 93 --zoom 6.0 --out boom.png               # three ticks after the reactor
 ./target/release/swarm_app --headless --fixed-dt --motes 800 --reinforce 4 \
     --move 30,3,-16 --chewers 0 --frames 320 --zoom 7 --out wing.png   # a wing on station
+./target/release/swarm_app --headless --fixed-dt --motes 800 --chewers 0 --hud \
+    --aim 40,14,-30 --frames 30 --zoom 30 --out order.png              # a move order being given
 ./target/release/swarm_app --headless --fixed-dt --motes 3000 --hives 3 --rocks 14 \
     --chewers 0 --frames 150 --zoom 5 --out battle.png     # the whole thing
 for y in 0.0 1.6 3.1; do                                   # the same tick, three angles

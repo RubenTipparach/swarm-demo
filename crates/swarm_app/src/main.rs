@@ -109,8 +109,12 @@ struct Args {
     /// How many motherships the swarm flies from.
     hives: usize,
     /// Issue one move order at startup, so a headless render can show the
-    /// ship under way with its nav disc up.
+    /// ship under way with its standing order drawn.
     order: Option<Vec3>,
+    /// Open the move disc at startup, aimed at this point, so a headless
+    /// render can show an order being GIVEN: the disc, the triangle, the
+    /// label.
+    aim: Option<Vec3>,
     /// Draw the four archetypes in a row beside the hull. Off by default now
     /// that the carriers are the aliens on show.
     showcase: bool,
@@ -151,6 +155,7 @@ fn parse_args() -> Args {
         cadence: 70,
         hives: 10,
         order: None,
+        aim: None,
         showcase: false,
         fps: 120,
         fixed_dt: false,
@@ -187,6 +192,11 @@ fn parse_args() -> Args {
             "--move" => {
                 let v: Vec<f32> = next().split(',').map(|x| x.parse().expect("--move x,y,z")).collect();
                 a.order = Some(Vec3::new(v[0], v[1], v[2]));
+                i += 1;
+            }
+            "--aim" => {
+                let v: Vec<f32> = next().split(',').map(|x| x.parse().expect("--aim x,y,z")).collect();
+                a.aim = Some(Vec3::new(v[0], v[1], v[2]));
                 i += 1;
             }
             "--showcase" => a.showcase = true,
@@ -249,10 +259,22 @@ fn main() {
     // way to PROVE it draws rather than assert it, which is the rule the
     // finishes and the window maps already keep.
     if !args.headless || args.hud {
+        // The menu, then the box, then the order, and each reads the mode the
+        // one before left. `nav_input` is in the main chain below because it
+        // runs headless too; the `before` is what keeps a left press from
+        // being a confirm AND the start of a box in the same frame.
         app.add_systems(Startup, build_hud)
             .add_systems(
                 Update,
-                (toggle_pause, hud_feedback, tick_fps, select_input, draw_marquee, draw_bars, pick_hull),
+                (
+                    (toggle_pause, select_input).chain().before(nav_input),
+                    hud_feedback,
+                    tick_fps,
+                    hud_orders.after(nav_input),
+                    draw_marquee,
+                    draw_bars,
+                    pick_hull,
+                ),
             );
     }
     if args.fps > 0 {
@@ -275,6 +297,7 @@ fn main() {
             cadence: args.cadence,
             hives: args.hives.min(swarm::MAX_HIVES),
             order: args.order,
+            aim: args.aim,
             showcase: args.showcase,
             fixed_dt: args.fixed_dt,
         })
@@ -285,6 +308,9 @@ fn main() {
         .init_resource::<SparkQueue>()
         .init_resource::<LiveFx>()
         .init_resource::<NavOrder>()
+        .init_resource::<OrderMode>()
+        .init_resource::<Pings>()
+        .init_resource::<Ack>()
         .init_resource::<BeamQuads>()
         .init_resource::<Lead>()
         .init_resource::<Marquee>()
@@ -386,6 +412,7 @@ struct Scene {
     cadence: u32,
     hives: usize,
     order: Option<Vec3>,
+    aim: Option<Vec3>,
     showcase: bool,
     fixed_dt: bool,
 }
@@ -1554,6 +1581,10 @@ fn setup(
     info!("stars: {}", stars.len());
 
     // ---- the backdrop: one sun, one key light, two bodies (skirmish) ----
+    //
+    // The same vector is the KEY in `mote.wgsl`, hard coded there because the
+    // mote draw binds nothing but the view and the chitin. Move one, move
+    // both, or the swarm is lit from a different sun than the fleet.
     let sun = Vec3::new(0.42, 0.66, -0.62).normalize();
     let sun_colour = Color::srgb_u8(0xff, 0xf0, 0xd2);
     commands.spawn((
@@ -1635,7 +1666,14 @@ fn setup(
         // silhouette with no interior is a hole in the picture rather than a
         // ship. Six is under a tenth of what it was: enough to keep a dark
         // side readable and far too little to lift the scene toward the sky.
-        AmbientLight { color: Color::srgb(0.55, 0.62, 0.80), brightness: 6.0, ..default() },
+        //
+        // And then DIMMED BY SIXTY PERCENT, to 2.4, for a harsher picture:
+        // the dark side of a hull is nearly the sky now and the terminator
+        // is a line, which is what a sun in vacuum does. The motes' own
+        // shader took the same cut to its floor (`mote.wgsl`), because a
+        // cloud lit softer than the ships it is attacking reads as a
+        // different picture laid over the first.
+        AmbientLight { color: Color::srgb(0.55, 0.62, 0.80), brightness: 2.4, ..default() },
         Transform::from_translation(eye).looking_at(scene.target, Vec3::Y),
         orbit,
         bevy::render::view::NoIndirectDrawing,
@@ -2139,56 +2177,65 @@ fn aim_turrets(
 #[derive(Component)]
 struct MarqueeBox;
 
-/// One bar over one ship.
+/// One bar over one selected ship.
 #[derive(Component)]
-struct HealthBar(Entity);
+struct HealthBar;
 
 /// The pool of bars, kept between frames rather than respawned.
 #[derive(Resource, Default)]
 struct BarPool(Vec<Entity>);
 
-fn draw_marquee(marquee: Res<Marquee>, mut q: Query<&mut Node, With<MarqueeBox>>) {
+fn draw_marquee(mode: Res<OrderMode>, marquee: Res<Marquee>, windows: Query<&Window>, mut q: Query<&mut Node, With<MarqueeBox>>) {
     let Ok(mut n) = q.single_mut() else { return };
-    match marquee.from {
-        Some(from) => {
-            let lo = from.min(marquee.to);
-            let hi = from.max(marquee.to);
-            // A few pixels is a click, not a box, and drawing one for it is a
-            // flicker on every single selection.
-            if (hi - lo).length() < 6.0 {
-                n.display = Display::None;
-                return;
-            }
-            n.display = Display::Flex;
-            n.left = Val::Px(lo.x);
-            n.top = Val::Px(lo.y);
-            n.width = Val::Px(hi.x - lo.x);
-            n.height = Val::Px(hi.y - lo.y);
-        }
-        None => n.display = Display::None,
+    if *mode != OrderMode::Box {
+        n.display = Display::None;
+        return;
     }
+    let (mut lo, mut hi) = (marquee.from.min(marquee.to), marquee.from.max(marquee.to));
+    // A few pixels is a click, not a box, and drawing one for it is a
+    // flicker on every single selection.
+    if (hi - lo).length() < CLICK_PX {
+        n.display = Display::None;
+        return;
+    }
+    // Clamped to the window for DRAWING only; the selection uses the true
+    // corners, so a drag that left the window still selects what it covered.
+    if let Ok(w) = windows.single() {
+        let size = Vec2::new(w.width(), w.height());
+        lo = lo.clamp(Vec2::ZERO, size);
+        hi = hi.clamp(Vec2::ZERO, size);
+    }
+    n.display = Display::Flex;
+    n.left = Val::Px(lo.x);
+    n.top = Val::Px(lo.y);
+    n.width = Val::Px(hi.x - lo.x);
+    n.height = Val::Px(hi.y - lo.y);
 }
 
-/// A bar over every ship of yours, and only yours.
+/// A bar over every SELECTED ship of yours, and nothing else.
 ///
-/// The swarm's carriers get none on purpose: a health bar over an enemy turns
-/// a siege into a progress bar, and what tells you a carrier is hurt is that it
-/// is bleeding and burning, which it already does.
+/// That is how an RTS says a unit is selected: the bar and the ring appear
+/// when you pick it and go when you pick something else. The first cut drew a
+/// bar over every ship you owned and brightened the selected ones, and a bar
+/// on everything says nothing about what is selected. The swarm's carriers get
+/// none either way: a health bar over an enemy turns a siege into a progress
+/// bar, and what tells you a carrier is hurt is that it is bleeding and
+/// burning, which it already does.
 fn draw_bars(
     mut commands: Commands,
     hud: Res<Hud>,
     cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     ships: Query<
-        (Entity, &Transform, Option<&Hull>, Option<&Fighter>, Option<&Selected>),
-        (Or<(With<Hull>, With<Fighter>)>, Without<Hive>),
+        (&Transform, Option<&Hull>, Option<&Fighter>),
+        (Or<(With<Hull>, With<Fighter>)>, Without<Hive>, With<Selected>),
     >,
     mut pool: ResMut<BarPool>,
-    mut bars: Query<(&mut Node, &mut BackgroundColor, &Children), With<HealthBar>>,
+    mut bars: Query<(&mut Node, &Children), With<HealthBar>>,
     mut fills: Query<(&mut Node, &mut BackgroundColor), Without<HealthBar>>,
 ) {
     let Ok((cam, cam_xf)) = cams.single() else { return };
-    let mut want: Vec<(Vec2, f32, bool)> = Vec::new();
-    for (_, xf, hull, fighter, sel) in &ships {
+    let mut want: Vec<(Vec2, f32)> = Vec::new();
+    for (xf, hull, fighter) in &ships {
         let (share, radius): (f32, f32) = match (hull, fighter) {
             (Some(h), _) => {
                 if h.dead_hull {
@@ -2202,11 +2249,11 @@ fn draw_bars(
                 // so it is the only honest thing to put on a bar.
                 (1.0 - (gone as f32 / core as f32) / REACTOR_LOSS, h.model.radius())
             }
-            (_, Some(f)) => (f.hp, 0.6),
+            (_, Some(f)) => (f.hp, FIGHTER_RADIUS),
             _ => continue,
         };
-        let Ok(p) = cam.world_to_viewport(cam_xf, xf.translation + Vec3::Y * radius * 0.75) else { continue };
-        want.push((p, share.clamp(0.0, 1.0), sel.is_some()));
+        let Ok(p) = cam.world_to_viewport(cam_xf, xf.translation + Vec3::Y * radius * 0.9) else { continue };
+        want.push((p, share.clamp(0.0, 1.0)));
     }
 
     while pool.0.len() < want.len() {
@@ -2224,10 +2271,12 @@ fn draw_bars(
                     width: Val::Px(BAR_W),
                     height: Val::Px(BAR_H),
                     display: Display::None,
+                    border: UiRect::all(Val::Px(1.0)),
                     ..default()
                 },
+                BorderColor::all(Color::srgba(0.0, 0.0, 0.0, 0.6)),
                 BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
-                HealthBar(Entity::PLACEHOLDER),
+                HealthBar,
                 Pickable::IGNORE,
                 children![],
             ))
@@ -2237,29 +2286,25 @@ fn draw_bars(
     }
 
     for (n, &bar) in pool.0.iter().enumerate() {
-        let Ok((mut node, mut bg, kids)) = bars.get_mut(bar) else { continue };
+        let Ok((mut node, kids)) = bars.get_mut(bar) else { continue };
         match want.get(n) {
-            Some(&(p, share, sel)) if hud.show_bars => {
+            Some(&(p, share)) if hud.show_bars => {
                 node.display = Display::Flex;
                 node.left = Val::Px(p.x - BAR_W * 0.5);
                 node.top = Val::Px(p.y);
-                // Selected reads as a brighter frame round the same bar rather
-                // than a second widget: one thing on screen per ship.
-                bg.0 = if sel {
-                    Color::srgba(0.55, 0.95, 1.0, 0.85)
-                } else {
-                    Color::srgba(0.0, 0.0, 0.0, 0.55)
-                };
                 if let Some(&fill) = kids.iter().next().as_ref() {
                     if let Ok((mut fnode, mut fbg)) = fills.get_mut(fill) {
                         fnode.width = Val::Percent(share * 100.0);
-                        // Green through amber to red, so the state reads
-                        // without anybody having to measure the length.
-                        fbg.0 = Color::srgb(
-                            (1.6 - share * 1.6).clamp(0.15, 1.0),
-                            (0.25 + share * 0.85).clamp(0.15, 1.0),
-                            0.25,
-                        );
+                        // Green over a half, gold over a quarter, red below:
+                        // three states a player can name, which is what the
+                        // prototype settled on over a ramp nobody can read.
+                        fbg.0 = if share > 0.5 {
+                            Color::srgb(0.21, 0.91, 0.35)
+                        } else if share > 0.25 {
+                            Color::srgb(0.91, 0.82, 0.29)
+                        } else {
+                            Color::srgb(1.0, 0.35, 0.29)
+                        };
                     }
                 }
             }
@@ -2269,8 +2314,11 @@ fn draw_bars(
 }
 
 /// How big a health bar is, in pixels.
-const BAR_W: f32 = 42.0;
+const BAR_W: f32 = 56.0;
 const BAR_H: f32 = 5.0;
+/// What a fighter is worth, in world units, wherever something has to be
+/// drawn round one: the ring, the bar's height.
+const FIGHTER_RADIUS: f32 = 0.6;
 
 /// The on screen controls.
 ///
@@ -2348,7 +2396,7 @@ fn toggle_pause(
     mut cfg: ResMut<SwarmConfig>,
     mut menu: Query<&mut Node, With<PauseMenu>>,
     resume: Query<&Interaction, (Changed<Interaction>, With<ResumeButton>)>,
-    order: Res<NavOrder>,
+    mode: Res<OrderMode>,
     mut started: Local<bool>,
 ) {
     // The menu is built hidden, so a session that was asked to START paused
@@ -2366,10 +2414,13 @@ fn toggle_pause(
         }
     }
     let clicked = resume.iter().any(|i| *i == Interaction::Pressed);
-    // Escape belongs to the ORDER first. One escape cancels an open move and
-    // does nothing else; the next one, with nothing open, reaches the menu.
+    // Escape belongs to the ORDER first. One escape cancels an open move, or
+    // an open box, and does nothing else; the next one, with nothing open,
+    // reaches the menu. This runs BEFORE `select_input` and `nav_input` so it
+    // sees the mode the key was pressed in and not the `Idle` they leave
+    // behind, or one escape would cancel the order AND open the menu.
     // Space is the plain pause, which is the key an RTS puts it on.
-    if keys.just_pressed(KeyCode::Space) || (keys.just_pressed(KeyCode::Escape) && !order.active) {
+    if keys.just_pressed(KeyCode::Space) || (keys.just_pressed(KeyCode::Escape) && *mode == OrderMode::Idle) {
         hud.paused = !hud.paused;
     } else if clicked {
         hud.paused = false;
@@ -2556,14 +2607,40 @@ fn build_hud(mut commands: Commands) {
                 // first came out indented by however far the code was.
                 Text::new(concat!(
                     "left drag select   middle drag orbit   WASD pan   Q E up down   F focus\n",
-                    "right button move disc, right again to confirm, esc cancels\n",
+                    "right button opens the move disc, left click confirms, esc cancels\n",
                     "shift lifts the target off the plane   space pauses   esc opens the menu",
                 )),
                 TextFont { font_size: 12.0, ..default() },
                 TextColor(Color::srgba(0.62, 0.74, 0.86, 0.72)),
                 Pickable::IGNORE,
             ));
+            // What the mouse does RIGHT NOW, which changes with the mode, and
+            // the acknowledgement of the last order, which fades.
+            p.spawn((
+                Text::new(""),
+                TextFont { font_size: 13.0, ..default() },
+                TextColor(Color::srgba(0.55, 0.92, 0.95, 0.95)),
+                ModeText,
+                Pickable::IGNORE,
+            ));
+            p.spawn((
+                Text::new(""),
+                TextFont { font_size: 14.0, ..default() },
+                TextColor(Color::srgba(1.0, 0.86, 0.45, 0.0)),
+                AckText,
+                Pickable::IGNORE,
+            ));
         });
+
+    // The distance beside a lifted target. Placed by `hud_orders`.
+    commands.spawn((
+        Node { position_type: PositionType::Absolute, display: Display::None, ..default() },
+        Text::new(""),
+        TextFont { font_size: 13.0, ..default() },
+        TextColor(Color::srgb(1.0, 0.40, 0.34)),
+        DistLabel,
+        Pickable::IGNORE,
+    ));
 
     // The band box. One node, moved and resized in screen pixels.
     commands.spawn((
@@ -2777,6 +2854,69 @@ fn hud_feedback(
         if t.0 != want {
             t.0 = want;
         }
+    }
+}
+
+/// The line under the buttons that says what the mouse does right now.
+#[derive(Component)]
+struct ModeText;
+
+/// The line that acknowledges an order and fades.
+#[derive(Component)]
+struct AckText;
+
+/// The distance beside a lifted target, red, following it on screen.
+#[derive(Component)]
+struct DistLabel;
+
+/// What the HUD says about the order flow: the mode line, the
+/// acknowledgement, and the distance label on a lifted target.
+///
+/// The label is UI text projected from the raised point every frame rather
+/// than a mesh, because a number has to stay the same size on screen at any
+/// zoom and a mesh would not. It is shown only while the target is off the
+/// plane, because on the plane the gold ring already says where, and a label
+/// on every aim is clutter.
+fn hud_orders(
+    mode: Res<OrderMode>,
+    order: Res<NavOrder>,
+    ack: Res<Ack>,
+    cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    mut mode_text: Query<&mut Text, (With<ModeText>, Without<AckText>, Without<DistLabel>)>,
+    mut ack_text: Query<(&mut Text, &mut TextColor), (With<AckText>, Without<ModeText>, Without<DistLabel>)>,
+    mut dist: Query<(&mut Node, &mut Text), (With<DistLabel>, Without<ModeText>, Without<AckText>)>,
+) {
+    if let Ok(mut t) = mode_text.single_mut() {
+        let want = match *mode {
+            OrderMode::Idle => "left drag selects   right click opens a move order",
+            OrderMode::Box => "release to select what is inside the box",
+            OrderMode::Move => "aim on the plane   hold shift to raise or lower   left click confirms   esc cancels",
+        };
+        if t.0 != want {
+            t.0 = want.into();
+        }
+    }
+    if let Ok((mut t, mut c)) = ack_text.single_mut() {
+        if t.0 != ack.text {
+            t.0 = ack.text.clone();
+        }
+        c.0 = Color::srgba(1.0, 0.86, 0.45, (ack.left / ACK_LIFE).clamp(0.0, 1.0));
+    }
+    let Ok((mut node, mut text)) = dist.single_mut() else { return };
+    let Ok((cam, cam_xf)) = cams.single() else { return };
+    let shown = *mode == OrderMode::Move && order.lifted();
+    let at = if shown { cam.world_to_viewport(cam_xf, order.target()).ok() } else { None };
+    match at {
+        Some(p) => {
+            node.display = Display::Flex;
+            node.left = Val::Px(p.x + 14.0);
+            node.top = Val::Px(p.y - 8.0);
+            let want = format!("{:.1} u", order.target().distance(order.anchor));
+            if text.0 != want {
+                text.0 = want;
+            }
+        }
+        None => node.display = Display::None,
     }
 }
 
@@ -3614,139 +3754,297 @@ fn glow_engines(hulls: Query<(&Hull, &Transform)>, mut materials: ResMut<Assets<
 
 // ------------------------------------------------------------- flight --
 
-/// What a hull can do, in hull radii a second. Slow on purpose: a capital
-/// ship that darts is a fighter, and the whole point of moving one is that
-/// the swarm has time to follow and you have time to watch it.
-const HULL_SPEED: f32 = 1.15;
-const HULL_ACCEL: f32 = 0.85;
-/// Close enough to have arrived.
-const ARRIVE: f32 = 0.35;
+/// What a hull can do, in hull radii a second.
+///
+/// The numbers are the approved prototype's, at its frigate's own radius:
+/// cruise at 1.65, accelerate at 1.15, ease the speed off over the last four
+/// lengths and turn at 2.2 radians a second. A capital ship turns before it
+/// moves and settles into an arrival rather than overshooting, and it is
+/// still slow enough that the swarm has time to follow and a player has time
+/// to watch it.
+const HULL_SPEED: f32 = 1.65;
+const HULL_ACCEL: f32 = 1.15;
+/// Close enough to have arrived, in hull radii.
+const ARRIVE: f32 = 0.6;
+/// How fast a hull turns onto its heading, in radians a second, eased.
+const HULL_TURN: f32 = 2.2;
+/// How far one order may send a ship, in radii of the biggest hull in the
+/// selection: the radius of the move disc. Past the carriers' standoff band
+/// (`HIVE_FAR` is twenty two), so an order can reach the fight and a little
+/// beyond it, and no further. The disc IS the range: a point past its rim is
+/// not an order the ship can take, so the cursor is clamped to the rim rather
+/// than refused.
+const MOVE_RANGE: f32 = 24.0;
+/// Under this much drag, in pixels, a press is a click and not a box.
+const CLICK_PX: f32 = 6.0;
+/// How far from a ship's centre on screen, in pixels, a click still takes it.
+const PICK_PX: f32 = 48.0;
+/// Seconds the confirmation ring lives.
+const PING_LIFE: f32 = 0.55;
+/// Seconds a line of acknowledgement stays on the HUD.
+const ACK_LIFE: f32 = 0.9;
+
+/// Which system owns the mouse this frame.
+///
+/// This is the whole of the fix for the first cut, which read every button in
+/// every system. The left button confirmed an order in one system and started
+/// a selection in another on the same press, so confirming a move CLEARED the
+/// selection it was for; a release off the window never reached the box, so
+/// the box stayed open with no button down. A button press is read by exactly
+/// one system per frame, and the mode is what decides which: `select_input`
+/// acts only in `Idle` and `Box`, `nav_input` opens only from `Idle` and acts
+/// only in `Move`, and `toggle_pause` reaches the menu only from `Idle`.
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq, Debug)]
+enum OrderMode {
+    #[default]
+    Idle,
+    /// The left button is down and a band box is open.
+    Box,
+    /// A move order is being aimed: the disc is up.
+    Move,
+}
 
 /// A move order being ISSUED: not the order itself, which lives on the hull,
-/// but the thing the player is still pointing at.
+/// but the thing the player is still pointing at. Live only in `Move`.
 ///
 /// Homeworld's own shape. The cursor picks a point on the horizontal plane
-/// through the ship, and that alone can only ever name somewhere at the
-/// ship's own height; holding shift lifts the target off that plane and draws
-/// the line back down to it, which is what makes a flat screen able to say a
-/// place in three dimensions at all.
+/// through the selection, and that alone can only ever name somewhere at the
+/// ships' own height; holding shift lifts the target off that plane and draws
+/// the right angle triangle back down to it, which is what makes a flat screen
+/// able to say a place in three dimensions at all.
 #[derive(Resource, Default)]
 struct NavOrder {
-    active: bool,
-    /// On the plane, at the ship's height when the order was opened.
+    /// The centre of the selection when the order was opened: the disc's
+    /// centre, the plane's height, and the point every ship's offset is kept
+    /// from so a formation arrives as one.
+    anchor: Vec3,
+    /// On the plane through the anchor, inside the disc.
     on_plane: Vec3,
     /// How far off that plane, positive up.
     lift: f32,
-    plane_y: f32,
-    /// Whether shift has been held at any point, so the vertical line is
-    /// drawn even when the lift is momentarily nought.
+    /// Whether shift has been held at any point, so the vertical is drawn
+    /// even when the lift is momentarily nought.
     lifting: bool,
+    /// The biggest selected hull's radius, which every mark is sized by.
+    radius: f32,
 }
 
 impl NavOrder {
     fn target(&self) -> Vec3 {
         self.on_plane + Vec3::Y * self.lift
     }
+
+    /// The disc's radius, in world units.
+    fn range(&self) -> f32 {
+        self.radius * MOVE_RANGE
+    }
+
+    /// Is the target far enough off the plane to draw the triangle?
+    fn lifted(&self) -> bool {
+        self.lifting && self.lift.abs() > self.radius * 0.015
+    }
+
+    /// Aim on the plane, clamped to the disc.
+    fn aim_on_plane(&mut self, hit: Vec3) {
+        let mut off = hit - self.anchor;
+        off.y = 0.0;
+        let d = off.length();
+        if d > self.range() && d > 1e-6 {
+            off *= self.range() / d;
+        }
+        self.on_plane = self.anchor + off;
+    }
+
+    /// Aim the lift FROM THE CURSOR'S POSITION, not from how far it moved.
+    ///
+    /// The plane point holds still and the raised target lives on the
+    /// vertical through it, at whatever height puts it under the pointer: the
+    /// closest point on that line to the cursor's ray. So the target is where
+    /// the mouse is, every frame, and lifting reads as dragging the point up
+    /// the pole rather than as winding a dial, which is what a per pixel
+    /// delta felt like and what the prototype replaced.
+    ///
+    /// Closest points between the pole `P + t*up` and the ray `O + s*D`, with
+    /// `w = P - O`. NOT `O - P`: that negates `d` and `e` and therefore `t`,
+    /// which put the target below the plane when the mouse went up, and was
+    /// the second cut's bug. For unit `up` and `D`, `t = (b*e - d)/(1 - b*b)`
+    /// with `b = up.D`, `d = up.w`, `e = D.w`.
+    fn aim_lift(&mut self, ray: Ray3d) {
+        self.lifting = true;
+        let dir: Vec3 = *ray.direction;
+        let w = self.on_plane - ray.origin;
+        let (b, d, e) = (dir.y, w.y, dir.dot(w));
+        let denom = 1.0 - b * b;
+        if denom > 1e-6 {
+            self.lift = (b * e - d) / denom;
+        }
+    }
+}
+
+/// The rings that open and fade where an order was confirmed: the
+/// acknowledgement, in the world, that the click did something. Each is where,
+/// how old, and the hull radius it is scaled by.
+#[derive(Resource, Default)]
+struct Pings(Vec<(Vec3, f32, f32)>);
+
+/// What the HUD says about the last order, and for how much longer.
+#[derive(Resource, Default)]
+struct Ack {
+    text: String,
+    left: f32,
 }
 
 /// Homeworld's own move flow, which is a MODE rather than a drag.
 ///
-/// Right button opens the disc, the cursor aims it on the plane through the
-/// selected ships, shift lifts it off that plane, and a SECOND right button
-/// commits it. Escape cancels the order and leaves the mode; escape again,
-/// with no order open, is what opens the pause menu.
-///
-/// A press and drag is what this was, and it is the wrong shape for a
-/// three dimensional order: holding a button while also moving the mouse to
-/// pick a point and then holding shift to lift it off the plane is three
-/// things one hand is doing at once. A mode costs one more click and lets the
-/// player take as long as they like over the part that is actually hard.
+/// Right button opens the disc on the selection, the cursor aims it on the
+/// plane through the ships, shift lifts it off that plane, and the LEFT button
+/// commits, which is the button Homeworld confirms with and the one the first
+/// cut got wrong. Escape cancels the order and leaves the mode; escape again,
+/// with nothing open, is what opens the pause menu. The right button inside an
+/// open order does nothing at all.
 ///
 /// It runs while PAUSED, deliberately. Giving orders with the world stopped is
 /// the whole reason a pause key is worth having in an RTS.
+///
+/// It runs AFTER `select_input` and `toggle_pause`, and that order is the
+/// design: a left press in `Move` is refused by `select_input` because of the
+/// mode, then taken here as the confirm, and the mode goes back to `Idle` only
+/// once nothing else this frame can read the same press as the start of a
+/// box. Escape in `Move` has already been left alone by the menu.
+#[allow(clippy::too_many_arguments)]
 fn nav_input(
+    real: Res<Time<Real>>,
+    scene: Res<Scene>,
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
-    mut motion: MessageReader<MouseMotion>,
     windows: Query<&Window>,
     cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     over_ui: Query<&Interaction>,
+    mut mode: ResMut<OrderMode>,
     mut order: ResMut<NavOrder>,
-    mut hulls: Query<(&mut Hull, &Transform, Option<&Selected>)>,
+    mut pings: ResMut<Pings>,
+    mut ack: ResMut<Ack>,
+    mut commands: Commands,
+    mut hulls: Query<(Entity, &mut Hull, &Transform, Option<&Selected>, Option<&Escort>), Without<Hive>>,
+    mut aimed: Local<bool>,
 ) {
-    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-    // Vertical mouse travel while shift is down, in pixels, which is the only
-    // thing the mouse can say once the cursor has stopped meaning a place.
-    let dy: f32 = motion.read().map(|m| m.delta.y).sum();
-
-    let Ok(window) = windows.single() else { return };
-    let Ok((cam, cam_xf)) = cams.single() else { return };
-    if over_ui.iter().any(|i| *i != Interaction::None) {
-        return;
+    // The acknowledgements age on the REAL clock: a ping plays out whether or
+    // not the world is running, because it is about the click and not about
+    // the simulation.
+    let dt = real.delta_secs().min(0.1);
+    for p in &mut pings.0 {
+        p.1 += dt;
     }
+    pings.0.retain(|p| p.1 < PING_LIFE);
+    ack.left = (ack.left - dt).max(0.0);
 
-    // Whose order this is: everything selected, or the flagship if nothing is.
+    // Whose order this is: the live hulls that are selected. Fighters can be
+    // selected too, for their bars, and fly their own patrol regardless.
     let mut chosen: Vec<Vec3> = Vec::new();
-    let mut radius = 1.0f32;
-    for (hull, xf, sel) in &hulls {
+    let mut radius = 0.0f32;
+    for (_, hull, xf, sel, _) in &hulls {
         if sel.is_some() && !hull.dead_hull {
             chosen.push(xf.translation);
             radius = radius.max(hull.model.radius());
         }
     }
-    if chosen.is_empty() {
+    let centre = if chosen.is_empty() { Vec3::ZERO } else { chosen.iter().copied().sum::<Vec3>() / chosen.len() as f32 };
+
+    // `--aim x,y,z` opens the disc on the first frame, aimed at that point, so
+    // a headless run can photograph an order being given: the disc, the
+    // triangle and the label are the picture this whole flow is judged by.
+    if !*aimed {
+        *aimed = true;
+        if let (Some(aim), false) = (scene.aim, chosen.is_empty()) {
+            *mode = OrderMode::Move;
+            *order = NavOrder { anchor: centre, on_plane: centre, lift: 0.0, lifting: false, radius: radius.max(1e-3) };
+            order.aim_on_plane(Vec3::new(aim.x, centre.y, aim.z));
+            order.lift = aim.y - centre.y;
+            order.lifting = order.lift.abs() > 1e-3;
+        }
+    }
+
+    // Escape cancels, and only cancels. `toggle_pause` has already run this
+    // frame and left the menu alone because the mode was `Move`.
+    if keys.just_pressed(KeyCode::Escape) && *mode == OrderMode::Move {
+        *mode = OrderMode::Idle;
+        ack.text = "move order cancelled".into();
+        ack.left = ACK_LIFE;
         return;
     }
-    let centre = chosen.iter().copied().sum::<Vec3>() / chosen.len() as f32;
 
-    if buttons.just_pressed(MouseButton::Right) {
-        if order.active {
-            // The second press is the commit. Every selected ship gets the
-            // same point offset by where it already stands relative to the
-            // group, so a formation arrives as a formation instead of all
-            // piling onto one coordinate.
-            let to = order.target();
-            for (mut hull, xf, sel) in &mut hulls {
-                if sel.is_some() && !hull.dead_hull {
-                    hull.order = Some(to + (xf.translation - centre));
+    let Ok(window) = windows.single() else { return };
+    let Ok((cam, cam_xf)) = cams.single() else { return };
+    // The pointer over a button belongs to the button.
+    if over_ui.iter().any(|i| *i != Interaction::None) {
+        return;
+    }
+    let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+
+    match *mode {
+        // The left button is down on a band box, and nothing here may read
+        // the mouse until it comes back up.
+        OrderMode::Box => return,
+        OrderMode::Idle => {
+            if !(buttons.just_pressed(MouseButton::Right) && !alt) {
+                return;
+            }
+            if chosen.is_empty() {
+                ack.text = "nothing to order: select a ship first".into();
+                ack.left = ACK_LIFE * 2.0;
+                return;
+            }
+            *mode = OrderMode::Move;
+            *order = NavOrder { anchor: centre, on_plane: centre, lift: 0.0, lifting: false, radius };
+            // And aim it straight away, below, so the disc opens under the
+            // cursor rather than a frame later.
+        }
+        OrderMode::Move => {
+            if buttons.just_pressed(MouseButton::Left) && !alt {
+                // The commit. Every selected ship gets the same point offset
+                // by where it already stands relative to the group, so a
+                // formation arrives as a formation instead of all piling
+                // onto one coordinate.
+                let to = order.target();
+                let mut n = 0;
+                for (e, mut hull, xf, sel, escort) in &mut hulls {
+                    if sel.is_some() && !hull.dead_hull {
+                        hull.order = Some(to + (xf.translation - order.anchor));
+                        n += 1;
+                        // A ship that is given an order of its own stops
+                        // keeping station: an escort ordered somewhere and
+                        // then flown straight back to its slot would be an
+                        // order that did nothing. It is a ship of the line
+                        // from here on, and R can call another.
+                        if escort.is_some() {
+                            commands.entity(e).remove::<Escort>();
+                        }
+                    }
                 }
+                pings.0.push((to, 0.0, order.radius));
+                ack.text = format!("{n} {} under way", if n == 1 { "ship" } else { "ships" });
+                ack.left = ACK_LIFE;
+                *mode = OrderMode::Idle;
+                info!("move order: {n} ships to ({:.1}, {:.1}, {:.1})", to.x, to.y, to.z);
+                return;
             }
-            order.active = false;
-            return;
+            // The right button inside an open order does nothing. It was
+            // the confirm once, and a player who reaches for it by habit
+            // should find it inert rather than find it committing.
         }
-        order.active = true;
-        order.lift = 0.0;
-        order.lifting = false;
-        order.plane_y = centre.y;
-        order.on_plane = centre;
-        return;
     }
 
-    if keys.just_pressed(KeyCode::Escape) && order.active {
-        // Cancelled. `toggle_pause` sees the order was open and leaves the
-        // menu alone this frame, so one escape does one thing.
-        order.active = false;
-        return;
-    }
-
-    if !order.active {
-        return;
-    }
-
+    // Aim, with what the cursor says right now. Off the window there is
+    // nothing to say and the last aim stands.
+    let Some(cursor) = window.cursor_position() else { return };
+    let Ok(ray) = cam.viewport_to_world(cam_xf, cursor) else { return };
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
     if shift {
-        order.lifting = true;
-        // Up on the screen is up in the world. The scale is a fraction of the
-        // ship's own size per pixel, so the reach of a drag is the same on
-        // any hull and at any window size.
-        order.lift -= dy * radius * 0.02;
-    } else if let Some(cursor) = window.cursor_position() {
-        // The cursor names a place on the plane, and only while shift is not
-        // held: the two cannot both own the mouse.
-        if let Ok(ray) = cam.viewport_to_world(cam_xf, cursor) {
-            if let Some(d) = ray.intersect_plane(Vec3::new(0.0, order.plane_y, 0.0), InfinitePlane3d::new(Vec3::Y)) {
-                order.on_plane = ray.get_point(d);
-            }
-        }
+        // The plane point holds still and the cursor names a height on the
+        // vertical through it: the two cannot both own the mouse.
+        order.aim_lift(ray);
+    } else if let Some(d) = ray.intersect_plane(Vec3::new(0.0, order.anchor.y, 0.0), InfinitePlane3d::new(Vec3::Y)) {
+        order.aim_on_plane(ray.get_point(d));
     }
 }
 
@@ -3754,10 +4052,10 @@ fn nav_input(
 #[derive(Component)]
 struct Selected;
 
-/// The band box, in screen pixels, while the left button is down.
+/// The band box, in screen pixels, while the mode is `Box`.
 #[derive(Resource, Default)]
 struct Marquee {
-    from: Option<Vec2>,
+    from: Vec2,
     to: Vec2,
 }
 
@@ -3767,12 +4065,26 @@ struct Marquee {
 /// up: orbit is the MIDDLE button now, with alt and left as an alias for a
 /// mouse that has no middle. Holding shift adds to the selection rather than
 /// replacing it, which is the one convention every RTS shares.
+///
+/// The box OPENS on the press and CLOSES on the release, and the release is
+/// read off the BUTTON, never off the cursor. The first cut returned early
+/// whenever the cursor was off the window, which is exactly where a drag that
+/// started near the edge ends, so the release was never seen and the box
+/// stayed open with no button down. Here the cursor is tracked wherever it
+/// reports from and kept where it was last seen when it does not, and a
+/// window that loses focus drops the box outright: a lost window is a lost
+/// drag, and nothing is selected by it.
+///
+/// It never opens a move order. The release closes the box and that is all it
+/// does; the order is the next right click's job.
+#[allow(clippy::too_many_arguments)]
 fn select_input(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     windows: Query<&Window>,
     cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     over_ui: Query<&Interaction>,
+    mut mode: ResMut<OrderMode>,
     mut marquee: ResMut<Marquee>,
     mut commands: Commands,
     ships: Query<(Entity, &Transform, Option<&Hull>, Option<&Fighter>), Or<(With<Hull>, With<Fighter>)>>,
@@ -3780,26 +4092,40 @@ fn select_input(
 ) {
     let Ok(window) = windows.single() else { return };
     let Ok((cam, cam_xf)) = cams.single() else { return };
-    let Some(cursor) = window.cursor_position() else { return };
-    if over_ui.iter().any(|i| *i != Interaction::None) {
-        return;
-    }
-    if keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight) {
-        return;
+    let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+
+    match *mode {
+        // In `Move` the left button is the confirm and nothing else. It does
+        // not start a selection, which is the bug that emptied the order.
+        OrderMode::Move => return,
+        OrderMode::Idle => {
+            if over_ui.iter().any(|i| *i != Interaction::None) || alt {
+                return;
+            }
+            if !buttons.just_pressed(MouseButton::Left) {
+                return;
+            }
+            let Some(cursor) = window.cursor_position() else { return };
+            marquee.from = cursor;
+            marquee.to = cursor;
+            *mode = OrderMode::Box;
+            // The release is another frame's.
+            return;
+        }
+        OrderMode::Box => {}
     }
 
-    if buttons.just_pressed(MouseButton::Left) {
-        marquee.from = Some(cursor);
+    if let Some(cursor) = window.cursor_position() {
         marquee.to = cursor;
     }
-    if marquee.from.is_some() {
-        marquee.to = cursor;
-    }
-    let Some(from) = marquee.from else { return };
-    if !buttons.just_released(MouseButton::Left) {
+    if !window.focused || keys.just_pressed(KeyCode::Escape) {
+        *mode = OrderMode::Idle;
         return;
     }
-    marquee.from = None;
+    if buttons.pressed(MouseButton::Left) {
+        return;
+    }
+    *mode = OrderMode::Idle;
 
     let add = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
     if !add {
@@ -3807,11 +4133,14 @@ fn select_input(
             commands.entity(e).remove::<Selected>();
         }
     }
-    let lo = from.min(marquee.to);
-    let hi = from.max(marquee.to);
+    let (from, to) = (marquee.from, marquee.to);
+    let lo = from.min(to);
+    let hi = from.max(to);
     // A click rather than a drag: take whatever is nearest the pointer instead
-    // of whatever is inside a box a few pixels across.
-    let click = (hi - lo).length() < 6.0;
+    // of whatever is inside a box a few pixels across. The TRUE corners, not
+    // the drawn ones: a drag that left the window still selects what it
+    // covered.
+    let click = (hi - lo).length() < CLICK_PX;
     let mut best: Option<(f32, Entity)> = None;
 
     for (e, xf, hull, _) in &ships {
@@ -3824,8 +4153,8 @@ fn select_input(
         }
         let Ok(p) = cam.world_to_viewport(cam_xf, xf.translation) else { continue };
         if click {
-            let d = p.distance(cursor);
-            if d < 60.0 && best.map_or(true, |(bd, _)| d < bd) {
+            let d = p.distance(to);
+            if d < PICK_PX && best.map_or(true, |(bd, _)| d < bd) {
                 best = Some((d, e));
             }
         } else if p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y {
@@ -3952,7 +4281,7 @@ fn fly_hull(
         // accelerating and was what made the flames look wrong.
         if hull.vel.length() > radius * 0.05 {
             let want = Transform::from_translation(xf.translation).looking_to(-hull.vel.normalize(), Vec3::Y).rotation;
-            xf.rotation = xf.rotation.slerp(want, (dt * 1.6).min(1.0));
+            xf.rotation = xf.rotation.slerp(want, (dt * HULL_TURN).min(1.0));
         }
     }
 }
@@ -4090,75 +4419,140 @@ fn add_line(
     idx.extend_from_slice(&[base, base + 1, base + 3, base, base + 3, base + 2]);
 }
 
-/// Draw the order: a disc on the plane, the line back down to it, and the
-/// track from the ship.
+/// The colours of the order picture, as vertex colours on an additive unlit
+/// mesh: a little over one so the rim and the lines read against a lit hull
+/// without going through the bloom threshold the flames sit over.
+const CYAN: [f32; 3] = [0.35, 1.25, 1.30];
+const GOLD: [f32; 3] = [1.30, 1.15, 0.40];
+const ORANGE: [f32; 3] = [1.40, 0.80, 0.30];
+const RED: [f32; 3] = [1.40, 0.45, 0.38];
+
+/// A ring in the horizontal plane through `centre`: a flat ribbon, because
+/// that is what it MEANS. Edge on from the side is correct and is exactly the
+/// cue that tells a player the plane is a plane.
+#[allow(clippy::too_many_arguments)]
+fn add_ring(
+    pos: &mut Vec<[f32; 3]>,
+    col: &mut Vec<[f32; 4]>,
+    idx: &mut Vec<u32>,
+    centre: Vec3,
+    r: f32,
+    w: f32,
+    c: [f32; 3],
+    alpha: f32,
+    segments: usize,
+) {
+    for n in 0..segments {
+        let a0 = n as f32 / segments as f32 * std::f32::consts::TAU;
+        let a1 = (n + 1) as f32 / segments as f32 * std::f32::consts::TAU;
+        let base = pos.len() as u32;
+        for a in [a0, a1] {
+            let out = Vec3::new(a.cos(), 0.0, a.sin());
+            pos.push((centre + out * (r - w)).to_array());
+            pos.push((centre + out * (r + w)).to_array());
+            col.push([c[0], c[1], c[2], alpha]);
+            col.push([c[0], c[1], c[2], alpha]);
+        }
+        idx.extend_from_slice(&[base, base + 1, base + 3, base, base + 3, base + 2]);
+    }
+}
+
+/// A filled disc in the horizontal plane, as a fan.
+fn add_disc(pos: &mut Vec<[f32; 3]>, col: &mut Vec<[f32; 4]>, idx: &mut Vec<u32>, centre: Vec3, r: f32, c: [f32; 3], alpha: f32, segments: usize) {
+    let base = pos.len() as u32;
+    pos.push(centre.to_array());
+    col.push([c[0], c[1], c[2], alpha]);
+    for n in 0..=segments {
+        let a = n as f32 / segments as f32 * std::f32::consts::TAU;
+        pos.push((centre + Vec3::new(a.cos(), 0.0, a.sin()) * r).to_array());
+        col.push([c[0], c[1], c[2], alpha]);
+    }
+    for n in 0..segments as u32 {
+        idx.extend_from_slice(&[base, base + 1 + n, base + 2 + n]);
+    }
+}
+
+/// Draw the order picture, all of it in one mesh rebuilt every frame: the
+/// selection rings, the standing orders, the move disc and the pings.
+///
+/// The disc is the approved prototype's, one to one. A LARGE cyan disc on the
+/// plane through the selection, its rim at the move range with an X across
+/// it, which is what says "this far and no further" without a number; a
+/// small gold ring where the order will land, with a gold line from the
+/// selection to it; and when shift has lifted the point, the right angle
+/// triangle: the vertical from the plane point up to the target, the direct
+/// line from the selection to it, and a red ring at the raised point with the
+/// distance beside it (`hud_orders` draws the label). A standing order is an
+/// orange line and ring per ship until it arrives, which is the
+/// acknowledgement: the order is visibly THERE after the click.
 fn draw_nav(
+    mode: Res<OrderMode>,
     order: Res<NavOrder>,
+    pings: Res<Pings>,
     handle: Option<Res<NavHandle>>,
-    hulls: Query<(&Hull, &Transform), With<Flagship>>,
+    hulls: Query<(&Hull, &Transform, Option<&Selected>), Without<Hive>>,
+    fighters: Query<&Transform, (With<Fighter>, With<Selected>)>,
     cam: Query<&Transform, With<Camera3d>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let Some(handle) = handle else { return };
     let Ok(eye) = cam.single() else { return };
-    let Ok((hull, hull_xf)) = hulls.single() else { return };
     let eye = eye.translation;
-    let radius = hull.model.radius();
 
     let mut pos: Vec<[f32; 3]> = Vec::new();
     let mut col: Vec<[f32; 4]> = Vec::new();
     let mut idx: Vec<u32> = Vec::new();
 
-    let green = [0.35, 2.6, 0.9];
-    let (target, on_plane, show_disc) = match (order.active, hull.order) {
-        // Being issued: the live one, disc and all.
-        (true, _) => (order.target(), order.on_plane, true),
-        // Committed and under way: the track and a ring at the far end, so a
-        // player can see where a ship is going after they have let go.
-        (false, Some(t)) => (t, Vec3::new(t.x, hull_xf.translation.y, t.z), true),
-        (false, None) => (Vec3::ZERO, Vec3::ZERO, false),
-    };
+    // ---- what is selected, and where each ship has been sent ----
+    for (hull, xf, sel) in &hulls {
+        if hull.dead_hull {
+            continue;
+        }
+        let r = hull.model.radius();
+        if sel.is_some() {
+            add_ring(&mut pos, &mut col, &mut idx, xf.translation, r * 1.25, r * 0.03, CYAN, 0.85, 48);
+        }
+        if let Some(t) = hull.order {
+            add_line(&mut pos, &mut col, &mut idx, eye, xf.translation, t, r * 0.02, ORANGE, 0.85);
+            add_ring(&mut pos, &mut col, &mut idx, t, r * 0.9, r * 0.03, ORANGE, 0.9, 48);
+        }
+    }
+    for xf in &fighters {
+        let r = FIGHTER_RADIUS;
+        add_ring(&mut pos, &mut col, &mut idx, xf.translation, r * 1.25, r * 0.06, CYAN, 0.85, 24);
+    }
 
-    if show_disc {
-        // The disc: a flat ribbon in the horizontal plane, because that is
-        // what it MEANS. Edge on from the side is correct and is exactly the
-        // cue that tells a player the plane is a plane.
-        const SEGMENTS: usize = 64;
-        let r = radius * 1.6;
-        for n in 0..SEGMENTS {
-            let a0 = n as f32 / SEGMENTS as f32 * std::f32::consts::TAU;
-            let a1 = (n + 1) as f32 / SEGMENTS as f32 * std::f32::consts::TAU;
-            let p0 = on_plane + Vec3::new(a0.cos(), 0.0, a0.sin()) * r;
-            let p1 = on_plane + Vec3::new(a1.cos(), 0.0, a1.sin()) * r;
-            let base = pos.len() as u32;
-            let w = radius * 0.03;
-            for (p, a) in [(p0, a0), (p1, a1)] {
-                let out = Vec3::new(a.cos(), 0.0, a.sin());
-                pos.push((p - out * w).to_array());
-                pos.push((p + out * w).to_array());
-                col.push([green[0], green[1], green[2], 0.85]);
-                col.push([green[0], green[1], green[2], 0.85]);
-            }
-            idx.extend_from_slice(&[base, base + 1, base + 3, base, base + 3, base + 2]);
+    // ---- the move disc ----
+    if *mode == OrderMode::Move {
+        let r = order.radius;
+        let range = order.range();
+        let at = order.anchor;
+        // The fill is ADDITIVE and in linear light, so the prototype's 0.13
+        // of alpha blended sRGB is about 0.03 here: at 0.13 the whole field
+        // went teal and the ships inside it read as under water.
+        add_disc(&mut pos, &mut col, &mut idx, at, range, CYAN, 0.03, 96);
+        add_ring(&mut pos, &mut col, &mut idx, at, range, r * 0.045, CYAN, 0.95, 96);
+        // The X: two diameters at forty five and a hundred and thirty five
+        // degrees, so neither lies along the line to the target.
+        for a in [std::f32::consts::FRAC_PI_4, 3.0 * std::f32::consts::FRAC_PI_4] {
+            let d = Vec3::new(a.cos(), 0.0, a.sin()) * range;
+            add_line(&mut pos, &mut col, &mut idx, eye, at - d, at + d, r * 0.03, CYAN, 0.75);
         }
-        // Ticks round the rim, so the disc reads as an instrument and its
-        // size is legible against the ship.
-        for n in 0..8 {
-            let a = n as f32 / 8.0 * std::f32::consts::TAU;
-            let out = Vec3::new(a.cos(), 0.0, a.sin());
-            add_line(&mut pos, &mut col, &mut idx, eye, on_plane + out * r * 0.86, on_plane + out * r * 1.14, radius * 0.02, green, 0.7);
+        // Where it lands on the plane, and the line out to it.
+        add_ring(&mut pos, &mut col, &mut idx, order.on_plane, r * 0.85, r * 0.035, GOLD, 0.95, 64);
+        add_line(&mut pos, &mut col, &mut idx, eye, at, order.on_plane, r * 0.03, GOLD, 0.95);
+        if order.lifted() {
+            let to = order.target();
+            add_line(&mut pos, &mut col, &mut idx, eye, order.on_plane, to, r * 0.03, GOLD, 0.95);
+            add_line(&mut pos, &mut col, &mut idx, eye, at, to, r * 0.03, GOLD, 0.95);
+            add_ring(&mut pos, &mut col, &mut idx, to, r * 0.67, r * 0.035, RED, 0.95, 64);
         }
-        // The lift: straight up from the plane to where the ship is actually
-        // being sent. This is the whole of what shift is for.
-        if (target.y - on_plane.y).abs() > 1e-3 || order.lifting {
-            add_line(&mut pos, &mut col, &mut idx, eye, on_plane, target, radius * 0.035, green, 0.9);
-            // A cross at the far end, so the point itself has a mark.
-            for d in [Vec3::X, Vec3::Z] {
-                add_line(&mut pos, &mut col, &mut idx, eye, target - d * radius * 0.35, target + d * radius * 0.35, radius * 0.03, green, 0.95);
-            }
-        }
-        // And the track from the ship, dimmer: where it is going FROM.
-        add_line(&mut pos, &mut col, &mut idx, eye, hull_xf.translation, target, radius * 0.02, [0.2, 1.1, 0.5], 0.35);
+    }
+
+    // ---- the pings: open on a square root and fade ----
+    for &(at, age, r) in &pings.0 {
+        let t = (age / PING_LIFE).clamp(0.0, 1.0);
+        add_ring(&mut pos, &mut col, &mut idx, at, r * (0.9 + 4.2 * t.sqrt()), r * 0.05, GOLD, 1.0 - t, 64);
     }
 
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());

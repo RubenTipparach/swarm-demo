@@ -80,14 +80,25 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     //
     // Engines burn harder the faster it is going, so a launch is a flare and
     // a fighter holding station is an ember.
+    //
+    // TONED DOWN. It was 1.1 to 4.3, which put every drive in the cloud
+    // through the bloom threshold at any speed, so a million motes were a
+    // million bloom sources and the swarm read as a green haze with bodies
+    // somewhere in it. Half to just under two now: a fighter at rest is an
+    // ember below the threshold, and only one at full transit crosses it.
     let speed = length(vertex.i_vel_seed.xyz);
-    out.glow = (1.0 - vertex.color.a) * (1.1 + 3.2 * clamp(speed / 14.0, 0.0, 1.0));
+    out.glow = (1.0 - vertex.color.a) * (0.5 + 1.4 * clamp(speed / 14.0, 0.0, 1.0));
     return out;
 }
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    let key = normalize(vec3<f32>(0.4, 0.8, 0.3));
+    // The SUN's direction, not a light of its own: the same vector the scene's
+    // key light is aimed from, so a mote's lit side is the same side as a
+    // hull's. It is hard coded because the mote draw binds the view and the
+    // chitin and nothing else, and one constant shared with `setup` is
+    // cheaper than a uniform for a value that never changes in a match.
+    let key = normalize(vec3<f32>(0.42, 0.66, -0.62));
     let n0 = normalize(in.normal);
     let t = normalize(in.tangent.xyz);
     let bt = in.tangent.w * cross(n0, t);
@@ -95,10 +106,17 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // tiled at half the rate of a finish so a scale spans two cells.
     let m = textureSample(chitin, chitin_sampler, in.uv * 0.5).xyz * 2.0 - 1.0;
     let n = normalize(t * m.x + bt * m.y + n0 * m.z);
-    let shade = 0.22 + 0.78 * max(dot(n, key), 0.0) + 0.15 * max(dot(n, -key), 0.0);
-    // A little specular off the wet looking chitin.
+    // HARSH, on purpose. The ambient floor and the back fill are both at
+    // forty percent of what they were (0.22 to 0.088, 0.15 to 0.06), and the
+    // direct term is a full one: a mote is lit by a sun in vacuum, so the
+    // side away from it is nearly black and the terminator is a hard line.
+    // The old floor gave every body a grey lift that read as fog over the
+    // cloud, which is the same complaint the hulls' ambient had.
+    let shade = 0.088 + 1.0 * max(dot(n, key), 0.0) + 0.06 * max(dot(n, -key), 0.0);
+    // A tighter, brighter specular off the wet looking chitin, since a harsh
+    // key is what a highlight needs to read.
     let h = normalize(key + vec3<f32>(0.0, 0.0, 1.0));
-    let spec = pow(max(dot(n, h), 0.0), 24.0) * 0.35;
+    let spec = pow(max(dot(n, h), 0.0), 40.0) * 0.5;
     // A lit cell is not shaded at all: it makes its own light, so the key has
     // nothing to say about it and the sum is well over one on purpose, which
     // is what puts a drive through the bloom threshold.
