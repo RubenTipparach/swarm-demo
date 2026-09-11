@@ -13,7 +13,7 @@
 //! that glow, and is the thing worth killing.
 
 use crate::rng::Rng;
-use crate::voxel::{mat, VoxelModel};
+use crate::voxel::{mat, purpose, VoxelModel, SURF_DRIVE};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Archetype {
@@ -64,6 +64,11 @@ pub mod palette {
     pub const GLOW: u32 = 0x9BFF4A;
     pub const GLOW_HOT: u32 = 0xE8FFB0;
     pub const MAW: u32 = 0x1A0A22;
+    /// What a drive burns. Cold blue against the green everything ALIVE about
+    /// a mote is lit with, so an engine reads as machinery and an eye reads as
+    /// an animal even at one pixel.
+    pub const DRIVE: u32 = 0x6FE8FF;
+    pub const DRIVE_HOT: u32 = 0xD8FBFF;
 }
 
 struct Builder {
@@ -131,6 +136,10 @@ impl Builder {
                     let dst = self.m.index(n - 1 - i, j, k);
                     self.m.grid[dst] = self.m.grid[src];
                     self.m.colour[dst] = self.m.colour[src];
+                    // The SURFACE too, or a mote's port engines come back
+                    // as chitin and only one side of it lights up.
+                    self.m.surf[dst] = self.m.surf[src];
+                    self.m.purp[dst] = self.m.purp[src];
                 }
             }
         }
@@ -155,6 +164,41 @@ impl Builder {
         (0..n).find(|&j| self.filled(i, j, k))
     }
 
+    /// The aftmost filled cell in a line along the hull.
+    fn stern(&self, i: i32, j: i32) -> Option<i32> {
+        let n = self.m.nz as i32;
+        (0..n).find(|&k| self.filled(i, j, k))
+    }
+
+    /// Mark a cell as SELF LIT.
+    ///
+    /// `surf` is what the mesher keys its passes on, so a cell marked here
+    /// comes back in its own mesh for nothing: the app draws `skin[SURF_DRIVE]`
+    /// with an unlit emissive material and the rest with chitin, and neither
+    /// has to know which cells those were.
+    fn light(&mut self, i: i32, j: i32, k: i32) {
+        if self.m.inside(i, j, k) {
+            let n = self.m.index(i as usize, j as usize, k as usize);
+            self.m.surf[n] = SURF_DRIVE;
+        }
+    }
+
+    /// An engine: the aftmost cell of its column, relit and marked.
+    ///
+    /// Marked as PROPULSION as well as lit, because that is what makes it an
+    /// engine rather than a light: `engines_of` clusters on the purpose, so a
+    /// mote's plume comes off the same query a ship's does.
+    fn engine(&mut self, i: i32, j: i32, colour: u32) -> bool {
+        let Some(k) = self.stern(i, j) else { return false };
+        if !self.put(i, j, k, mat::GLOW, colour) {
+            return false;
+        }
+        self.light(i, j, k);
+        let n = self.m.index(i as usize, j as usize, k as usize);
+        self.m.purp[n] = purpose::PROPULSION;
+        true
+    }
+
     /// An eye is a body cell relit, on the crown of its column, so it is in
     /// the skin and cannot float beside it. Asked for a column with nothing
     /// in it, it walks inboard until it finds one: a narrow head still gets
@@ -163,7 +207,11 @@ impl Builder {
         let mid = (self.m.nx / 2) as i32;
         for ii in (mid..=i).rev() {
             if let Some(j) = self.crown(ii, k) {
-                return self.put(ii, j, k, mat::GLOW, colour);
+                let ok = self.put(ii, j, k, mat::GLOW, colour);
+                if ok {
+                    self.light(ii, j, k);
+                }
+                return ok;
             }
         }
         false
@@ -215,6 +263,10 @@ fn drone(b: &mut Builder, rng: &mut Rng, c: f32) {
     b.eye(c as i32 + 1, hz, GLOW);
     // Mandibles hang under the head and reach forward.
     b.hang(c as i32 + 1, hz - 1, &[[0, -1, 0], [0, 0, 1], [0, 0, 1], [1, 0, 0]], mat::MACHINE, BONE);
+    // The drives, at the stern, either side of the centreline.
+    b.engine(c as i32, c as i32, DRIVE_HOT);
+    b.engine(c as i32 + 1, c as i32, DRIVE);
+    b.engine(c as i32, c as i32 - 1, DRIVE);
     // Legs: two or three pairs off the flank, out then down.
     let pairs = rng.int(2, 3);
     for p in 0..pairs {
@@ -250,6 +302,10 @@ fn lancer(b: &mut Builder, rng: &mut Rng, c: f32) {
             b.walk([i, c as i32, k], &vec![[1, 0, 0]; span as usize], mat::ACCENT, CHITIN_LIT);
         }
     }
+    // One big drive on the axis and two outriggers: a lancer is mostly engine.
+    b.engine(c as i32, c as i32, DRIVE_HOT);
+    b.engine(c as i32 + 1, c as i32, DRIVE_HOT);
+    b.engine(c as i32, c as i32 + 1, DRIVE);
     // One leg pair, tucked.
     if let Some(i) = b.flank(c as i32 - 1, c as i32) {
         b.walk([i, c as i32 - 1, c as i32], &[[1, 0, 0], [0, -1, 0]], mat::ACCENT, CHITIN_DARK);
@@ -277,6 +333,10 @@ fn chewer(b: &mut Builder, rng: &mut Rng, c: f32) {
             b.walk([i, j, k], &[[0, 1, 0], [0, 1, 0]], mat::ACCENT, BONE);
         }
     }
+    // Drives low and wide: a chewer is pushed rather than flown.
+    b.engine(c as i32, c as i32 - 1, DRIVE);
+    b.engine(c as i32 + 1, c as i32 - 1, DRIVE);
+    b.engine(c as i32 + 2, c as i32 - 1, DRIVE_HOT);
     // Four pairs of short legs.
     for p in 0..4 {
         let k = (c - r + 1.0 + p as f32 * (2.0 * r - 2.0) / 4.0) as i32;
@@ -327,6 +387,11 @@ fn mother(b: &mut Builder, rng: &mut Rng, c: f32) {
             b.walk([i, j, k], &[[1, 0, 0], [1, 0, 0], [1, 0, 0], [0, -1, 0], [0, -1, 0], [0, -1, 0]], mat::ACCENT, CHITIN_DARK);
         }
     }
+    // A carrier's drive block: six across the stern, hottest on the axis.
+    for (n, i) in (c as i32..c as i32 + 4).enumerate() {
+        b.engine(i, c as i32, if n == 0 { DRIVE_HOT } else { DRIVE });
+        b.engine(i, c as i32 - 2, DRIVE);
+    }
     // Mandibles.
     b.hang(c as i32 + 1, hz, &[[0, -1, 0], [0, 0, 1], [0, 0, 1], [0, -1, 0], [0, 0, 1]], mat::MACHINE, BONE);
 }
@@ -345,6 +410,25 @@ mod tests {
                 assert_eq!(m.components(), 1, "{} seed {seed} is in pieces", arch.name());
                 let glow = m.grid.iter().filter(|&&x| x == mat::GLOW).count();
                 assert!(glow >= 2, "{} seed {seed} has {glow} glow cells", arch.name());
+                // Everything self lit is on the lit SURFACE, which is what
+                // gives it its own mesh, and every drive is at the stern.
+                let lit: Vec<usize> = (0..m.len()).filter(|&n| m.surf[n] == SURF_DRIVE).collect();
+                assert!(lit.len() >= 4, "{} seed {seed}: {} lit cells", arch.name(), lit.len());
+                for &n in &lit {
+                    assert_eq!(m.grid[n], mat::GLOW, "a lit cell that is not a light");
+                }
+                let drives: Vec<usize> = (0..m.len()).filter(|&n| m.purp[n] == crate::voxel::purpose::PROPULSION).collect();
+                assert!(drives.len() >= 2, "{} seed {seed} has {} engines", arch.name(), drives.len());
+                // Aft of the middle, which is what makes them engines: one on
+                // the nose would push the wrong way.
+                let mid = m.nz / 2;
+                for &n in &drives {
+                    assert!(m.at(n).2 < mid, "{} engine at z {}", arch.name(), m.at(n).2);
+                    assert_eq!(m.surf[n], SURF_DRIVE);
+                }
+                // And the same query the ships use finds them.
+                let found = crate::fx::engines_of(&m);
+                assert!(!found.is_empty(), "{} seed {seed}: engines_of found none", arch.name());
                 let cells = m.solid_count();
                 let (lo, hi) = match arch {
                     Archetype::Drone => (60, 400),

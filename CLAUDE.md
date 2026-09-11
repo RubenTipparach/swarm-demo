@@ -133,6 +133,147 @@ plume from the middle would read as a chimney. Smoke is the one spark that
 must NOT bloom, so it is thrown at 0.30, 0.20, 0.16 and nothing else here is
 under one.
 
+## The swarm comes out of carriers, and you can move the ship
+
+**Motes launch from motherships.** The swarm used to come back at a shell
+round the target, which is a cloud that simply exists. Ten `Archetype::Mother`
+hulls stand at fourteen to twenty two hull radii, and every mote carries the
+index of the one it flies from in `state.z`: it appears at that carrier's
+skin, is shoved out hard, and the appetite takes over once it is clear. A
+mote that is killed goes back to its carrier and flies out again, so killing
+fighters is holding a line and killing a carrier is winning ground.
+
+The hive list in the params is compacted to the LIVE ones every frame, and a
+mote takes its index modulo the length. So a carrier dying shortens the list
+and every fighter that flew from it re-homes to whatever is left, and there is
+no rule about it anywhere. An empty list is the win condition and needs no
+rule either: `p.hives == 0` and a dead mote simply stays dead.
+
+**Everything starts inside.** Every mote is created dead with a staggered
+countdown over about eight seconds, so the first thing a player sees is ten
+carriers streaming fighters rather than a cloud that was already there.
+
+**Fighters have to be able to CROSS.** At the three to six units a second the
+swarm held when it lived on a shell round the ship, a fighter launched from
+seventy units out took twenty seconds to reach the fight and the cloud never
+built. Eight to sixteen makes the transit about five seconds. The pull toward
+the hull is also capped, or a fighter fifty units out accelerates at fifty and
+arrives as a bullet: it is the cap that makes an approach read as a flight.
+
+**A carrier is a siege.** `HIVE_HP` is twelve hundred, which is the better
+part of a minute of concentrated fire from three beams. At a tenth of that
+every mothership in the picture died inside two seconds and six simultaneous
+fireballs turned the screen white, which is also why the green a carrier burns
+is a MULTIPLIER on the ramp and not a term added to it: a constant added to
+nine hundred additive sparks puts a floor under the whole burst.
+
+**Moving the ship is Homeworld's own shape.** The right button opens an order:
+the cursor picks a point on the horizontal plane through the ship, and holding
+shift lifts the target off that plane and draws the line back down to it,
+which is what makes a flat screen able to name a place in three dimensions at
+all. Release commits. `fly_hull` is a real envelope, not a lerp: it
+accelerates, it has a top speed, it slows into the arrival and it turns to
+face the way it is going, so an order to a capital ship has weight. Left drag
+is the camera, which now follows the ship on `1 - exp(-k dt)` so the ease
+takes the same wall time at any frame rate.
+
+`publish_hull` hands the hull's live position to the swarm every frame, which
+is what makes moving it worth doing: the cloud is dragged along behind and a
+player who runs can watch the swarm string out. `--move x,y,z` issues one
+order at startup so a headless render can show it.
+
+## Engines burn, and a flame is GEOMETRY
+
+**A drive plumes on the throttle it is actually pulling.** `Hull.accel` is
+last frame's change in velocity, and `throttle_of` resolves it against the
+hull's forward axis: the main engines burn on acceleration over a low idle,
+and the retros, which are propulsion cells forward of the middle, burn only on
+deceleration. So a ship slowing into an arrival lights the guns at its bow
+rather than the bells at its stern, which is what a Homeworld capital ship
+does and what nothing else in the picture says is happening.
+
+That needed the heading fixed first, and the bug is worth keeping. Bevy's
+`forward` is `-Z` and `looking_to` aims THAT at whatever direction it is
+given; a hull's bow is `+Z`, because the lattice runs stern to bow. Aimed
+straight, the ship flew stern first with its main drives leading, so the
+throttle logic was correct and the picture was a retro at full burn while
+accelerating. `looking_to(-vel, Y)` is the fix, and the lesson is that an
+engine's own axis convention is a fact to look up, not to assume.
+
+**A flame is a stack of faceted frustums, and three things make it read.**
+
+- **Flat facets, which means unshared vertices.** The first cut was a ring of
+  six vertices fanning to a tip, with a little colour variation per vertex to
+  suggest facets. A shared vertex is a colour the rasteriser interpolates
+  ACROSS the edge between two facets, so every hard line in the mesh came out
+  as a smooth ramp: the cone read as a horn of smoke. Three vertices per
+  triangle, all of them their band's own colour, is flat shading, and flat
+  shading is the whole of the look.
+- **Bands, not a gradient.** `FLAME_BANDS` is four stations, so three bands,
+  each one flat colour across its whole width, stepping at the ring. A player
+  can point at three parts of a flame; nobody can point at a part of a ramp.
+- **BACK FACE CULLED, which the nav disc is not.** Additive on a closed
+  surface lays its colour down twice per ray, once on the way in and once on
+  the way out, so the silhouette and the middle arrive the same brightness and
+  the shape dissolves. This is redux-tribes' own reach shell lesson on a
+  different mesh. Culled, a ray crosses one facet and that facet's flat colour
+  is what arrives.
+
+And the values came DOWN. `NeutralToneMapping` desaturates a highlight by
+scaling every channel by `newPeak / peak`, so a flame authored at 7.0 red
+against 1.5 blue is a flame that arrives white with a bloom halo round it,
+which is the same pale plume by another route. The body is 3.0 red now and
+only the nested core is allowed over four, which is what leaves a white hot
+centre inside an orange jet instead of one white smear.
+
+Carriers and the ship use the same builder, on the same engine cells: a
+carrier's drives come off `engines_of` exactly as a frigate's do, because an
+alien's propulsion cells carry `purpose::PROPULSION` too. The motes do NOT:
+there are a million of them, so a fighter's glow is a term in `mote.wgsl`
+scaled by its own speed, and geometry is for the dozens.
+
+## A wing: the flagship, and what keeps station on it
+
+**R calls in a wave.** Two more of the flagship's class per press, up to
+`WING_MAX` of six, spawned well outside the formation and flying in past the
+camera. `--reinforce N` does it at startup so a headless run can photograph
+one.
+
+**One hull became several, and `single()` is where that hurts.** Three
+systems wanted THE ship rather than A ship: the nav disc, the camera and the
+swarm's target. With one hull `single()` was right; with two it returns an
+error and every one of them silently became "do nothing at all", which is a
+ship that cannot be steered and a camera that stops following. A `Flagship`
+marker is what those three ask for now, and `publish_hull` asks for it too
+rather than iterating and keeping the last, which would have pointed the whole
+swarm at whichever escort the query happened to yield last.
+
+**The formation target is a RESOURCE, because Bevy will not lend it twice.**
+`fly_hull` holds every hull's `Transform` mutably, so it cannot also read the
+flagship's: the same component in the same system is refused. `Lead` carries
+the flagship's pose and velocity, published a frame behind, which a formation
+cannot see. A ship a sixtieth of a second stale is a ship a centimetre out of
+place.
+
+**An escort has no order, so its goal is never reached.** A station is an
+offset in the FLAGSHIP's own frame, so the formation turns with the ship it is
+flying beside instead of sliding round it, and the goal moves every frame.
+Station keeping is the leader's velocity plus a steering term: steering alone
+would leave an escort permanently behind by however far it takes to close the
+gap. A reinforcement also ARRIVES, at three times cruise easing back over the
+last eight lengths, because a capital ship's cruise would take a minute to
+cross the gap it is called in over.
+
+**And a wave is not free.** The GPU swarm knows one hull centre and chases the
+flagship alone, so an escort with no chewers of its own is a ship that adds
+guns and can never be hurt. An escort carries a third of the flagship's, which
+is what makes calling one a decision.
+
+**Two ships of a class have the same cells.** Every phase hashed off a cell
+came out identical on every hull in the wing, so four frigates fired in one
+volley, on the same tick, for ever, and their flames flickered in lockstep.
+`Hull.seed` is per ship and is mixed into all of them.
+
 ## Effects: what a shot is, and what comes off a thing that dies
 
 **A shot is a VOLUME, and the swarm shader is what resolves it.** The CPU
@@ -151,6 +292,19 @@ the reference and is pinned against a brute force answer that walks the
 segment (`the_capsule_test_agrees_with_walking_the_segment`, six thousand
 points over three beams). The WGSL is a transcription of that same
 expression. If it ever needs to change, change it in `fx.rs` first.
+
+**The ship shoots at two things and they are two weapons.** A BEAM goes for
+the nearest carrier the gun can bear on, slowly, at long range, with a little
+spread so some shots miss; a beam that reaches a carrier damages it and is CUT
+at the hit point, which is redux-tribes' rule that the full range endpoint is
+what a MISS looks like, and which also makes a carrier cover for the fighters
+behind it. FLAK is point defence: a burst every few ticks out at the standoff
+the swarm holds, walking round the hull.
+
+A flak burst needed no new kind of anything, and that is the payoff of
+resolving a shot as a volume: it is a `Blast`, which is a capsule of zero
+length, which is the shape the shot path already carried. The shader kills
+whatever is inside it and the CPU never learns where a mote was.
 
 **Guns are read off the ship.** `fx::guns_of` clusters the cells the export
 says are `SURF_WEAPON` and puts a muzzle at each cluster's outermost cell,
@@ -276,10 +430,11 @@ the same failure as one that never loaded.
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 42, the core
+cargo test -p swarm_core                                   # 43, the core
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
 cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png
+./target/release/swarm_app --fps 60          # a window, capped; --fps 0 lifts the cap
 ./target/release/swarm_app --headless --motes 1 --chewers 0 --zoom 1.7 --out close.png
 # The effects, aimed: one frame is one tick, so a shot can be taken AT a tick.
 ./target/release/swarm_app --headless --fixed-dt --motes 1 --chewers 80 --cadence 0 \
@@ -288,6 +443,8 @@ cargo build --release -p swarm_app
     --frames 140 --zoom 3.4 --out beams.png             # guns into the swarm
 ./target/release/swarm_app --headless --fixed-dt --motes 900 --explode 90 \
     --frames 93 --zoom 6.0 --out boom.png               # three ticks after the reactor
+./target/release/swarm_app --headless --fixed-dt --motes 800 --reinforce 4 \
+    --move 30,3,-16 --chewers 0 --frames 320 --zoom 7 --out wing.png   # a wing on station
 node tools/export_hulls.mjs ../redux-tribes assets/hulls   # re-export the fleet (needs npm install in tools/)
 ```
 
@@ -303,6 +460,38 @@ And what it cannot catch: driver specific behaviour. Redux-tribes learned that
 SwiftShader gives `pow` of a negative base a defined answer while a real driver
 gives a NaN. Same trap here. Guard every expression at the point it can leave
 its domain, and test invariants headless and performance on silicon.
+
+## A frame cap, and why the numbers before it were wrong
+
+`--fps N` caps the frame loop, defaulting to 120; nought lifts it. Vsync is
+not a cap, it is the MONITOR's cap: on a 144 or 240 hertz panel a scene this
+cheap to simulate draws at the refresh rate and holds the GPU at full clock
+the whole time, which is a hot room for frames nobody asked for.
+
+It is a DEADLINE rather than a fixed sleep, so the cap does not drift, and a
+frame that has already overrun resyncs the deadline to now rather than chasing
+it: catching up means running the next few flat out, which is the thing the
+cap exists to prevent. `sleep` and not a spin, because a spin paces better and
+burns a core doing it, and burning a core is the problem.
+
+**And it looked broken when it was working, which is the part worth keeping.**
+Capped at two frames a second the report still said four. `Time` in Bevy
+clamps the virtual delta at 250 ms so one stalled frame cannot make everything
+jump, so a frame SLOWER than that is reported as 250 ms however long it really
+took. The headless report was a sum of those deltas, which means it quietly
+stopped counting at four frames a second, which is exactly the range a
+software rasteriser lives in.
+
+So every frame time this file recorded before the fix is a LOWER BOUND wherever
+it approaches 250 ms, and the ones that sat just under it were the clamp rather
+than a measurement. Re-measured off an `Instant`: the nine thousand mote scene
+is **479 ms a frame**, not the 239.8 the delta sum reported. Exactly double,
+because most of its frames were over the clamp.
+
+The rule that comes out of it: **time a thing with a clock, not with the
+engine's idea of how long a frame was allowed to be.** An engine's delta is
+shaped for the simulation that reads it, and every shaping is a lie to a
+harness.
 
 ## Measure, then decide
 

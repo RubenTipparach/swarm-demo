@@ -28,6 +28,9 @@ struct VertexOutput {
     @location(1) normal: vec3<f32>,
     @location(2) tangent: vec4<f32>,
     @location(3) uv: vec2<f32>,
+    // How much of its OWN light this fragment makes. Nought for chitin, and
+    // well over one for a drive at speed.
+    @location(4) glow: f32,
 };
 
 @group(3) @binding(0) var chitin: texture_2d<f32>;
@@ -52,6 +55,15 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     out.normal = b * vertex.normal;
     out.tangent = vec4<f32>(b * vertex.tangent.xyz, vertex.tangent.w);
     out.uv = vertex.uv;
+    // The lit marker rides in the vertex colour's ALPHA: nought means this
+    // cell is its own light. There is nowhere else to put it, because nine
+    // thousand motes are one instanced draw and a second mesh for their
+    // engines would be a second draw per mote.
+    //
+    // Engines burn harder the faster it is going, so a launch is a flare and
+    // a fighter holding station is an ember.
+    let speed = length(vertex.i_vel_seed.xyz);
+    out.glow = (1.0 - vertex.color.a) * (1.1 + 3.2 * clamp(speed / 14.0, 0.0, 1.0));
     return out;
 }
 
@@ -65,9 +77,13 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // tiled at half the rate of a finish so a scale spans two cells.
     let m = textureSample(chitin, chitin_sampler, in.uv * 0.5).xyz * 2.0 - 1.0;
     let n = normalize(t * m.x + bt * m.y + n0 * m.z);
-    let lit = 0.22 + 0.78 * max(dot(n, key), 0.0) + 0.15 * max(dot(n, -key), 0.0);
+    let shade = 0.22 + 0.78 * max(dot(n, key), 0.0) + 0.15 * max(dot(n, -key), 0.0);
     // A little specular off the wet looking chitin.
     let h = normalize(key + vec3<f32>(0.0, 0.0, 1.0));
     let spec = pow(max(dot(n, h), 0.0), 24.0) * 0.35;
-    return vec4<f32>(in.color.rgb * lit + vec3<f32>(spec), 1.0);
+    // A lit cell is not shaded at all: it makes its own light, so the key has
+    // nothing to say about it and the sum is well over one on purpose, which
+    // is what puts a drive through the bloom threshold.
+    let body = in.color.rgb * shade + vec3<f32>(spec);
+    return vec4<f32>(mix(body, in.color.rgb * in.glow, min(in.glow, 1.0)), 1.0);
 }
