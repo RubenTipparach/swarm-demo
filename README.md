@@ -5,7 +5,8 @@ A real time space RTS against an alien swarm, in the voxel language of
 
 Right button opens a move order: the cursor picks a point on the plane
 through the ship, hold shift to lift it off that plane, release to commit.
-Left drag orbits, wheel zooms.
+Left drag orbits, wheel zooms. **R calls in reinforcements**, two per press up
+to a wing of six, which fly in from off the map and keep station on you.
 
 ```sh
 cargo test -p swarm_core                           # the engine-free core
@@ -13,6 +14,7 @@ cargo run --release -p swarm_app                   # a window: drag to orbit, wh
 cargo run --release -p swarm_app -- --fps 60      # frames are capped at 120 by default
 cargo run --release -p swarm_app -- --headless \
     --motes 5000 --frames 60 --out shot.png        # no window: render, screenshot, exit
+cargo run --release -p swarm_app -- --reinforce 4  # start with a wing already inbound
 ```
 
 ## Building and running
@@ -59,10 +61,13 @@ baked at launch. See `CLAUDE.md` for the design and the rules.
 ![Karisen cruiser](docs/karisen_close.png)
 
 Effects: a hull burning where the swarm has chewed it, guns raking the cloud,
-and a reactor going three ticks in.
+a reactor going three ticks in, the engines burning on the throttle they are
+actually pulling, and a wing of reinforcements on station.
 
 ![Ten carriers](docs/fx_hives.png)
 ![The nav disc](docs/fx_nav.png)
 ![A burning hull](docs/fx_wound.png)
 ![Beams](docs/fx_beams.png)
 ![A reactor going](docs/fx_boom.png)
+![Geometric flames](docs/fx_flame.png)
+![A wing on station](docs/fx_wing.png)

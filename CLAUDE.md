@@ -182,6 +182,98 @@ is what makes moving it worth doing: the cloud is dragged along behind and a
 player who runs can watch the swarm string out. `--move x,y,z` issues one
 order at startup so a headless render can show it.
 
+## Engines burn, and a flame is GEOMETRY
+
+**A drive plumes on the throttle it is actually pulling.** `Hull.accel` is
+last frame's change in velocity, and `throttle_of` resolves it against the
+hull's forward axis: the main engines burn on acceleration over a low idle,
+and the retros, which are propulsion cells forward of the middle, burn only on
+deceleration. So a ship slowing into an arrival lights the guns at its bow
+rather than the bells at its stern, which is what a Homeworld capital ship
+does and what nothing else in the picture says is happening.
+
+That needed the heading fixed first, and the bug is worth keeping. Bevy's
+`forward` is `-Z` and `looking_to` aims THAT at whatever direction it is
+given; a hull's bow is `+Z`, because the lattice runs stern to bow. Aimed
+straight, the ship flew stern first with its main drives leading, so the
+throttle logic was correct and the picture was a retro at full burn while
+accelerating. `looking_to(-vel, Y)` is the fix, and the lesson is that an
+engine's own axis convention is a fact to look up, not to assume.
+
+**A flame is a stack of faceted frustums, and three things make it read.**
+
+- **Flat facets, which means unshared vertices.** The first cut was a ring of
+  six vertices fanning to a tip, with a little colour variation per vertex to
+  suggest facets. A shared vertex is a colour the rasteriser interpolates
+  ACROSS the edge between two facets, so every hard line in the mesh came out
+  as a smooth ramp: the cone read as a horn of smoke. Three vertices per
+  triangle, all of them their band's own colour, is flat shading, and flat
+  shading is the whole of the look.
+- **Bands, not a gradient.** `FLAME_BANDS` is four stations, so three bands,
+  each one flat colour across its whole width, stepping at the ring. A player
+  can point at three parts of a flame; nobody can point at a part of a ramp.
+- **BACK FACE CULLED, which the nav disc is not.** Additive on a closed
+  surface lays its colour down twice per ray, once on the way in and once on
+  the way out, so the silhouette and the middle arrive the same brightness and
+  the shape dissolves. This is redux-tribes' own reach shell lesson on a
+  different mesh. Culled, a ray crosses one facet and that facet's flat colour
+  is what arrives.
+
+And the values came DOWN. `NeutralToneMapping` desaturates a highlight by
+scaling every channel by `newPeak / peak`, so a flame authored at 7.0 red
+against 1.5 blue is a flame that arrives white with a bloom halo round it,
+which is the same pale plume by another route. The body is 3.0 red now and
+only the nested core is allowed over four, which is what leaves a white hot
+centre inside an orange jet instead of one white smear.
+
+Carriers and the ship use the same builder, on the same engine cells: a
+carrier's drives come off `engines_of` exactly as a frigate's do, because an
+alien's propulsion cells carry `purpose::PROPULSION` too. The motes do NOT:
+there are a million of them, so a fighter's glow is a term in `mote.wgsl`
+scaled by its own speed, and geometry is for the dozens.
+
+## A wing: the flagship, and what keeps station on it
+
+**R calls in a wave.** Two more of the flagship's class per press, up to
+`WING_MAX` of six, spawned well outside the formation and flying in past the
+camera. `--reinforce N` does it at startup so a headless run can photograph
+one.
+
+**One hull became several, and `single()` is where that hurts.** Three
+systems wanted THE ship rather than A ship: the nav disc, the camera and the
+swarm's target. With one hull `single()` was right; with two it returns an
+error and every one of them silently became "do nothing at all", which is a
+ship that cannot be steered and a camera that stops following. A `Flagship`
+marker is what those three ask for now, and `publish_hull` asks for it too
+rather than iterating and keeping the last, which would have pointed the whole
+swarm at whichever escort the query happened to yield last.
+
+**The formation target is a RESOURCE, because Bevy will not lend it twice.**
+`fly_hull` holds every hull's `Transform` mutably, so it cannot also read the
+flagship's: the same component in the same system is refused. `Lead` carries
+the flagship's pose and velocity, published a frame behind, which a formation
+cannot see. A ship a sixtieth of a second stale is a ship a centimetre out of
+place.
+
+**An escort has no order, so its goal is never reached.** A station is an
+offset in the FLAGSHIP's own frame, so the formation turns with the ship it is
+flying beside instead of sliding round it, and the goal moves every frame.
+Station keeping is the leader's velocity plus a steering term: steering alone
+would leave an escort permanently behind by however far it takes to close the
+gap. A reinforcement also ARRIVES, at three times cruise easing back over the
+last eight lengths, because a capital ship's cruise would take a minute to
+cross the gap it is called in over.
+
+**And a wave is not free.** The GPU swarm knows one hull centre and chases the
+flagship alone, so an escort with no chewers of its own is a ship that adds
+guns and can never be hurt. An escort carries a third of the flagship's, which
+is what makes calling one a decision.
+
+**Two ships of a class have the same cells.** Every phase hashed off a cell
+came out identical on every hull in the wing, so four frigates fired in one
+volley, on the same tick, for ever, and their flames flickered in lockstep.
+`Hull.seed` is per ship and is mixed into all of them.
+
 ## Effects: what a shot is, and what comes off a thing that dies
 
 **A shot is a VOLUME, and the swarm shader is what resolves it.** The CPU
@@ -338,7 +430,7 @@ the same failure as one that never loaded.
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 42, the core
+cargo test -p swarm_core                                   # 43, the core
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
 cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png
@@ -351,6 +443,8 @@ cargo build --release -p swarm_app
     --frames 140 --zoom 3.4 --out beams.png             # guns into the swarm
 ./target/release/swarm_app --headless --fixed-dt --motes 900 --explode 90 \
     --frames 93 --zoom 6.0 --out boom.png               # three ticks after the reactor
+./target/release/swarm_app --headless --fixed-dt --motes 800 --reinforce 4 \
+    --move 30,3,-16 --chewers 0 --frames 320 --zoom 7 --out wing.png   # a wing on station
 node tools/export_hulls.mjs ../redux-tribes assets/hulls   # re-export the fleet (needs npm install in tools/)
 ```
 

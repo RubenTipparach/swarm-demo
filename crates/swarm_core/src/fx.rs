@@ -13,7 +13,7 @@
 //! threw it, so two screens watching one explosion throw the same debris.
 
 use crate::rng::{drift_of, hash_cell, Rng};
-use crate::voxel::{mat, VoxelModel, SURF_WEAPON};
+use crate::voxel::{mat, purpose, VoxelModel, SURF_DRIVE, SURF_WEAPON};
 
 /// A beam, as the volume it sweeps: a capsule from `from` to `to`.
 ///
@@ -325,24 +325,23 @@ pub struct Gun {
     pub cell: u32,
 }
 
-/// Every gun on a hull, from the cells that are gunnery.
+/// Every connected cluster of cells drawing in one surface, as a placement.
 ///
-/// The export carries which surface each cell draws in, and `SURF_WEAPON` is
-/// exactly the cells redux-tribes counts as a gun. So the guns are read off
-/// the ship rather than authored beside it, and a hull with no weapons has
-/// none rather than having some invented for it.
-///
-/// One gun per connected cluster of weapon cells, at the cluster's OUTERMOST
-/// cell rather than its centre, because a barrel fires from its end and a
-/// muzzle flash inside a barbette is a light under a box.
-pub fn guns_of(m: &VoxelModel) -> Vec<Gun> {
+/// `guns_of` and `drives_of` are the same walk with a different surface and a
+/// different idea of which way the thing points, so they are this walk twice
+/// rather than two copies of it. `aft` is what separates them: a gun looks
+/// out from the hull's own axis, and a drive looks backwards along it,
+/// because that is what a drive is.
+fn clusters_of(m: &VoxelModel, surf: u8, purp: Option<u8>, least: usize, aft: bool) -> Vec<Gun> {
     let n = m.len();
-    let is_gun = |c: usize| m.grid[c] != mat::EMPTY && m.surf[c] == SURF_WEAPON;
+    let is = |c: usize| {
+        m.grid[c] != mat::EMPTY && m.surf[c] == surf && purp.is_none_or(|p| m.purp[c] == p)
+    };
     let mut seen = vec![false; n];
     let mut out = Vec::new();
     let mut stack = Vec::new();
     for start in 0..n {
-        if !is_gun(start) || seen[start] {
+        if !is(start) || seen[start] {
             continue;
         }
         seen[start] = true;
@@ -357,19 +356,16 @@ pub fn guns_of(m: &VoxelModel) -> Vec<Gun> {
                     continue;
                 }
                 let x = m.index(ni as usize, nj as usize, nk as usize);
-                if is_gun(x) && !seen[x] {
+                if is(x) && !seen[x] {
                     seen[x] = true;
                     stack.push(x);
                 }
             }
         }
-        // A stray cell or two is a fitting, not a gun.
-        if cells.len() < 6 {
+        // A stray cell or two is a fitting, not a placement.
+        if cells.len() < least {
             continue;
         }
-        // The cluster's centre, then the cell furthest from the hull's own
-        // axis through it: that is the muzzle, and the way out is the way
-        // from the centre to it.
         let mut mid = [0.0f32; 3];
         for &c in &cells {
             let p = m.centre_of(c);
@@ -377,23 +373,61 @@ pub fn guns_of(m: &VoxelModel) -> Vec<Gun> {
                 mid[a] += p[a] / cells.len() as f32;
             }
         }
-        let mut best = (f32::MIN, cells[0], [0.0f32, 1.0, 0.0]);
+        // Which way this cluster points. A gun looks out from the hull's own
+        // axis; a drive looks along it, AWAY from the middle of the ship,
+        // which is what makes a retro point forward and a main engine aft
+        // without either being a special case.
+        let along: [f32; 3] = if aft {
+            [0.0, 0.0, if mid[2] < 0.0 { -1.0 } else { 1.0 }]
+        } else {
+            [0.0, 0.0, 0.0]
+        };
+        let mut best = (f32::MIN, cells[0], along);
         for &c in &cells {
             let p = m.centre_of(c);
-            // Outward from the hull's centreline, which is the direction a
-            // mount on a flank or a deck actually looks.
-            let radial = normalise([p[0], p[1], p[2] * 0.35]);
-            let reach = dot(sub(p, mid), radial);
+            let dir = if aft { along } else { normalise([p[0], p[1], p[2] * 0.35]) };
+            let reach = dot(sub(p, mid), dir);
             if reach > best.0 {
-                best = (reach, c, radial);
+                best = (reach, c, dir);
             }
         }
-        let p = m.centre_of(best.1);
-        out.push(Gun { at: p, out: best.2, cell: best.1 as u32 });
+        out.push(Gun { at: m.centre_of(best.1), out: best.2, cell: best.1 as u32 });
     }
-    // In cell order, so two runs give the same guns in the same order.
+    // In cell order, so two runs give the same placements in the same order.
     out.sort_by_key(|g| g.cell);
     out
+}
+
+/// Every ENGINE on a hull: the main drive, and not the attitude thrusters.
+///
+/// Both wear `SURF_DRIVE`, because a finish cannot tell a bell from a bell,
+/// and clustering on the surface alone put an "engine" half way up the bow of
+/// a Terran frigate. What separates them is what they are FOR, which the
+/// export carries beside the surface. A plume comes out of an engine; a
+/// thruster plumed constantly would be a ship that never stops spinning.
+///
+/// It points AFT, which is the other difference from a gun: a plume leaves the
+/// back of an engine and a muzzle flash the front of a barrel, and each is the
+/// outermost cell of its cluster along its own line.
+pub fn engines_of(m: &VoxelModel) -> Vec<Gun> {
+    // Two cells, not six: the purpose is already the filter that matters, and
+    // a mote's engines are single cells that only touch where their columns
+    // happen to end level with each other.
+    clusters_of(m, SURF_DRIVE, Some(purpose::PROPULSION), 2, true)
+}
+
+/// Every gun on a hull, from the cells that are gunnery.
+///
+/// The export carries which surface each cell draws in, and `SURF_WEAPON` is
+/// exactly the cells redux-tribes counts as a gun. So the guns are read off
+/// the ship rather than authored beside it, and a hull with no weapons has
+/// none rather than having some invented for it.
+///
+/// One gun per connected cluster of weapon cells, at the cluster's OUTERMOST
+/// cell rather than its centre, because a barrel fires from its end and a
+/// muzzle flash inside a barbette is a light under a box.
+pub fn guns_of(m: &VoxelModel) -> Vec<Gun> {
+    clusters_of(m, SURF_WEAPON, None, 6, false)
 }
 
 #[cfg(test)]
@@ -595,6 +629,27 @@ mod tests {
             }
         }
         assert_eq!(guns_of(&m), guns, "the same hull gives the same guns");
-        eprintln!("terran_frigate: {} guns", guns.len());
+
+        // And its ENGINES, which are the same walk over a different surface
+        // and point AFT rather than out.
+        let engines = engines_of(&m);
+        assert!(!engines.is_empty(), "a frigate has engines");
+        for e in &engines {
+            assert_eq!(m.surf[e.cell as usize], SURF_DRIVE);
+            assert_eq!(m.purp[e.cell as usize], purpose::PROPULSION);
+            // Its plume leaves along the hull's axis, AWAY from the middle.
+            // Aft for a main engine and forward for a RETRO, which is also
+            // propulsion and also an engine and sits in the bow: asserting
+            // every engine was aft failed on exactly those, and the assertion
+            // was what was wrong.
+            assert_eq!(e.out[0], 0.0);
+            assert_eq!(e.out[1], 0.0);
+            assert_eq!(e.out[2].abs(), 1.0);
+            assert_eq!(e.out[2] < 0.0, e.at[2] < 0.0, "engine at z {} plumes {}", e.at[2], e.out[2]);
+        }
+        assert!(engines.iter().any(|e| e.at[2] < 0.0), "a ship has a main drive at the stern");
+        let thrusters = (0..m.len()).filter(|&n| m.purp[n] == purpose::ATTITUDE).count();
+        assert!(thrusters > 0, "and it has thrusters, which are not engines");
+        eprintln!("terran_frigate: {} guns, {} engines, {} thruster cells", guns.len(), engines.len(), thrusters);
     }
 }

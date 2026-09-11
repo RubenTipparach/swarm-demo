@@ -53,6 +53,28 @@ pub const SURF_PART: u8 = 6;
 pub const SURF_SLOT: u8 = 7;
 pub const SURF_COUNT: usize = 15;
 
+/// What a cell is FOR, as the export writes it.
+///
+/// redux-tribes keeps two words apart on purpose and so does this: ENGINES are
+/// the main drive, the thing that makes speed; THRUSTERS are attitude
+/// authority, the thing that makes heading. They wear one surface because both
+/// are bells and a finish cannot tell them apart, and they are not the same
+/// thing: a plume comes out of an engine, and a thruster firing constantly
+/// would be a ship that never stops spinning. "Jets" is wrong and is not used.
+pub mod purpose {
+    pub const NONE: u8 = 0;
+    /// Engines.
+    pub const PROPULSION: u8 = 1;
+    /// Thrusters.
+    pub const ATTITUDE: u8 = 2;
+    pub const GUN: u8 = 3;
+    pub const ORDNANCE: u8 = 4;
+    pub const COMMAND: u8 = 5;
+    pub const CREW: u8 = 6;
+    pub const BOARDING: u8 = 7;
+    pub const STRUCTURE: u8 = 8;
+}
+
 /// What one surface is made of: the finish is the key of a normal map
 /// (`armour_<finish>_n.png`, or `smooth` for none), and the pair is what a
 /// PBR shader calls metalness and roughness.
@@ -315,7 +337,7 @@ impl VoxelModel {
             .filter(|&n| {
                 let (i, j, k) = self.at(n);
                 let m = self.index(self.nx - 1 - i, j, k);
-                self.grid[n] != self.grid[m] || self.colour[n] != self.colour[m]
+                self.grid[n] != self.grid[m] || self.colour[n] != self.colour[m] || self.surf[n] != self.surf[m]
             })
             .count()
     }
