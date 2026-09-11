@@ -20,6 +20,129 @@ The six asks, in the order they were given:
    explosives and projectiles kill outright, beams wound.
 7. A sandbox: shoot a ship with different kinds of gun and watch it tumble,
    and a physics engine, with a recommendation for this kind of voxel game.
+8. Clean code, SOLID and readable code as principles of this project: a file
+   thousands of lines long is unacceptable, and the rules redux-tribes keeps
+   about writing effective code are ported here.
+
+## 0. The code itself, first
+
+This is the section that goes before every other, because every feature
+below would land in a file that is already too big to read.
+
+**Measured**, with `tools/shape.py`, which is new and is the check:
+
+| what | today | the limit |
+| --- | ---: | ---: |
+| `crates/swarm_app/src/main.rs` | 5088 lines, 68 functions | 900 lines a file |
+| `crates/swarm_core/src/fx.rs` | 1144 lines | 900 |
+| `crates/swarm_app/src/swarm.rs` | 1001 lines | 900 |
+| functions over 100 lines | 11: `setup` 466, `build_hud` 238, `go_critical` 233, `mesh_region` 224, `spawn_ship` 180, `main` 145, `nav_input` 135, `prepare_swarm_buffers` 131, `orbit_input` 129, `fly_hull` 114, `reactor_of` 108 | 100 lines a function |
+| `rustfmt` | 339 hunks it would change, 167 of them in `main.rs`; the code has never been formatted | zero |
+| `clippy` | the core does not pass: one error (`6.283` in `sky.rs` where `TAU` is meant, a lint clippy denies by default) and 7 warnings; the app cannot be linted until the core compiles under clippy | the core clean at `-D warnings`; the app's count never rising |
+
+**The rules**, ported from redux-tribes' `GUIDELINES.md` section 5 and its
+`CLAUDE.md`, and adapted to Rust and Bevy. They go into this project's
+`CLAUDE.md` in the same change as this document, under "How the code is
+written", so they are the project's and not this proposal's.
+
+- **Limits are checks, not promises.** A file under 900 lines, a function
+  under 100, `python3 tools/shape.py --check` in the suites, red on any
+  regression. The list above is the debt, paid in step 0 below.
+- **rustfmt is the format.** `cargo fmt --all -- --check` in the suites. The
+  first format is its own commit with nothing else in it, listed in
+  `.git-blame-ignore-revs`, so the history stays readable.
+- **clippy** clean at `-D warnings` for the core, counted and never rising
+  for the app until the split lands, then clean there too.
+- **Single responsibility, per module and per system.** A module owns one
+  thing and says so in its first line; a system does one thing and is named
+  as a verb phrase (`fly_hull`, `draw_nav`); a component is a noun and a
+  marker is an adjective. A function that needs a section comment inside it
+  (`// ---- the guns ----`) is two functions. `#[allow(clippy::too_many_arguments)]`
+  is the smell that says a struct is missing: `spawn_ship` takes thirteen
+  arguments and wants a `ShipSpec`.
+- **Divergent paths for like functionality are a defect** (GUIDELINES 5.1).
+  Where two places need one behaviour they call one function. Found in this
+  tree today: the fixed step `dt` is computed by the same three line
+  expression in six systems (one `fn step(time, scene)`); the debris cube is
+  spawned by the same code in `chew` and `go_critical` (one `throw_chunk`);
+  `if hull.dead_hull { continue }` is written in twelve systems, which is the
+  ECS's job: a `Dead` marker and `Without<Dead>` on the queries, so a system
+  that must not see a wreck cannot. The one duplicate that stays is the
+  capsule test in `fx.rs` and `swarm.wgsl`, because the boundary is real, and
+  it stays under the rule that the Rust one is the reference and the shader
+  is a transcription.
+- **Open for extension, closed for modification.** A new weapon is a shot
+  kind and one match arm; a new mission is a row; a new class is a file in
+  `assets/hulls`. The ship picker reads `manifest.json` rather than a typed
+  list. Tuning numbers and scenario contents belong in data files (5.3): a
+  Rust table is the first step and `assets/*.ron` is where they go when the
+  campaign lands.
+- **Liskov.** A wreck is a `Hull` and keeps every invariant a hull has (cells,
+  a damage grid, bricks, a heat key), which is why `remesh_dirty` cools its
+  burns without knowing. A fighter is not a hull, has no grid, and no query
+  pretends otherwise.
+- **Interface segregation.** A query names exactly the components it reads,
+  and its filters (`Without<Hive>`, `Without<Wreck>`, `Without<Turret>`) ARE
+  the interface: they are what lets Bevy prove two systems disjoint.
+  Resources stay narrow (`Lead`, `Shots`, `OrderMode`), one fact each.
+- **Dependency inversion.** The core depends on nothing but `std`; the app
+  depends on the core's public functions and never the other way; a rule has
+  one implementation and it is in the core. The test is unchanged: if two
+  clients computed this differently, would the match diverge?
+- **Rust, specifically.** `f32` wherever state lives; no `HashMap` in
+  anything that will be hashed or replayed (the core has none; the app's
+  material caches are render side and fine); no `unwrap` past startup, and
+  every `expect` says what was assumed; every `pub fn` in the core carries a
+  doc comment and a test; a constant lives beside the one system that reads
+  it with its unit in the comment; guard every expression at the point it
+  can leave its domain; `single()` only where exactly one can exist, which
+  the flagship taught; and comments say WHY while the code says what, which
+  is the house style and stays.
+- **A mockup before a large feature** (GUIDELINES 2), which the move order
+  already went through: every screen in this proposal (the menu, the setup,
+  the result, the range) is a rendered page linked for approval before it is
+  built.
+- **Two skills run on every diff before a push**: `/simplify` for reuse and
+  altitude, `/code-review` for correctness. No skill in the account covers
+  clean code or Rust (searched), so the repository carries its own:
+  `.claude/skills/tidy/SKILL.md` runs the shape, the format, the lints, the
+  dash grep and the core suite in one command and reports what fails.
+
+**The split of `main.rs`**, one module per responsibility, every function it
+has today assigned:
+
+| module | owns | what moves there |
+| --- | --- | --- |
+| `main.rs` | arguments and the `App`: plugins, resources, the schedule | `main`, `parse_args`, `Args` (about 250 lines) |
+| `scene.rs` | the launch record and the clocks | `Scene`, `Tick`, `advance_tick`, `FrameLimit`, `limit_frames`, `Headless`, `headless_capture` |
+| `assets.rs` | textures, samplers, hull files, materials per surface | `load_textures`, `sampler`, `load_hull`, `surface_materials`, `window_materials`, `ChunkMaterials` |
+| `hull.rs` | a ship's cells on the map | `Hull`, `Brick`, `Piece`, `spawn_hull`, `spawn_ship` split into `ShipSpec`, `spawn_bricks`, `spawn_turrets`, `place_chewers`; `place_brick`, `upsert`, `remesh_dirty`, `to_mesh` and friends |
+| `damage.rs` | what happens to cells | `chew`, `vent_smoke`, `go_critical` split into `reactor_blast`, `throw_dust`, `spawn_wreck_piece`, `free_turrets`; `Debris`, `fly_chunks`, `Wreck`, `drift_wrecks` |
+| `fleet.rs` | who flies where | `Flagship`, `Escort`, `Lead`, `NavTo`, `fly_hull`, `publish_hull`, `apply_nav_to`, `call_reinforcements`, `call_one` |
+| `orders.rs` | selection and move orders | `OrderMode`, `NavOrder`, `Selected`, `Marquee`, `Pings`, `Ack`, `nav_input`, `select_input`, `draw_nav`, the ring and line builders |
+| `hud.rs` | every UI node | `Hud`, `build_hud` as one function per panel, `hud_feedback`, `hud_orders`, `tick_fps`, `toggle_pause`, `pick_hull`, `draw_marquee`, `draw_bars` |
+| `camera.rs` | the orbit | `Orbit`, `orbit_input`, `orbit_camera`, `ride_the_eye`, `AtInfinity` |
+| `weapons.rs` | what a ship fires | `fire_guns`, `fire_flak`, `resolve_beams`, `fly_tracers`, `age_fx`, `draw_beams`, `Turret`, `aim_turrets`, `LiveFx` |
+| `fighters.rs` | the squadron | `Fighter`, `launch_fighters`, `fly_fighters`, `wear_fighters`, `fighters_fire` |
+| `hives.rs` | the carriers | `Hive`, `move_hives`, `publish_hives`, `bleed_hives` |
+| `flames.rs` | drives that burn | `FLAME_BANDS`, `add_flame`, `draw_flames`, `throttle_of`, `glow_engines` |
+| `backdrop.rs` | the sky, the stars, the sun, the planets, the lights | the half of `setup` that is scenery |
+| `swarm/` | the GPU swarm in three files: the plugin, the buffers, the pipeline | `swarm.rs` split; `prepare_swarm_buffers` into one function per buffer |
+
+And in the core, `fx.rs` becomes `fx/` with `shots.rs` (the capsules and
+their tests), `sparks.rs`, `guns.rs` (`clusters_of` and what it derives),
+`reactor.rs` and `wreck.rs`; `mesh_region` splits the greedy pass from the
+window and wound passes.
+
+**It is proved by the pictures not changing.** The split moves code and
+changes no behaviour, so every headless render in the suites is taken
+before and after at a fixed step and compared. A byte identical picture is
+the acceptance test, and a picture that differs is a change that has to be
+explained.
+
+Cost: a session for the split and the format, its own pull request, before
+any feature. Half a day of it is moving functions; the rest is the four
+functions over two hundred lines, which do not move so much as come apart.
 
 ## 1. The Karisen question, measured first
 
@@ -352,6 +475,8 @@ request, when the contacts ask for it.
 
 ## 8. The order to build it in
 
+0. **The split, the format and the checks** (section 0), because everything
+   after it lands in `main.rs`, and `main.rs` is five thousand lines.
 1. **Subsystems** (section 4) and the **reactor burial fix** (section 1),
    because every scenario is a ship that can be disabled and a swarm that has
    to reach the core.
@@ -388,3 +513,6 @@ commit message, as the rest of the project is.
   rich (proposed), or Avian from the start and the tumble through it?
 - **The new guns**: a slug and a torpedo for the range (proposed). Do they
   also go on the ships, as classes that carry `ORDNANCE` cells already could?
+- **The limits**: 900 lines a file and 100 a function (proposed). Tighter?
+  Bevy systems with the house style's comments run long, and the comments
+  are worth more than the limit.

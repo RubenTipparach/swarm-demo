@@ -22,6 +22,69 @@ moves again, or the engine is swapped, the game is untouched.
 The test is the same one: if two clients computed this differently, would the
 match diverge? Then it belongs in the core.
 
+## How the code is written
+
+Ported from redux-tribes' `GUIDELINES.md` (section 5, reuse and SOLID) and
+its `CLAUDE.md`, and adapted to Rust and Bevy. These are rules, and the
+first three are checks: `.claude/skills/tidy/SKILL.md` runs them all.
+
+- **A file is under 900 lines and a function under 100.** `python3
+  tools/shape.py --check` fails on either. A file thousands of lines long is
+  a file nobody can hold in their head and a function hundreds of lines long
+  is a function nobody can test. The list it prints is work, never a reason
+  to raise the limit.
+- **rustfmt is the format**, `cargo fmt --all -- --check` in the suites. A
+  formatting commit carries nothing else and goes in `.git-blame-ignore-revs`.
+- **clippy is clean at `-D warnings` in the core**, and its count in the app
+  never rises.
+- **No em dashes or en dashes anywhere**, checked by
+  `LC_ALL=C.UTF-8 git ls-files -z | xargs -0 grep -lP '[\x{2013}\x{2014}]'`.
+- **Single responsibility.** A module owns one thing and its first line says
+  what; a Bevy system does one thing and is named as a verb phrase
+  (`fly_hull`, `draw_nav`), a component is a noun, a marker is an adjective.
+  A function that needs a section comment inside it is two functions, and
+  `#[allow(clippy::too_many_arguments)]` is the smell that says a struct is
+  missing.
+- **Divergent paths for like functionality are a defect.** Two places that
+  need one behaviour call one function; a second caller that needs a
+  variation parameterises the one implementation. The single allowed
+  duplicate is the capsule test in `fx.rs` and `swarm.wgsl`, because the GPU
+  cannot be asked, and it lives under the rule that the Rust one is the
+  reference and the shader is its transcription.
+- **Open for extension, closed for modification.** A new weapon is a shot
+  kind and one match arm, a new mission is a row, a new class is a file in
+  `assets/hulls`, and lists a player picks from are read off the manifest
+  rather than typed. Tuning numbers and scenario contents are data, never
+  inline in a system.
+- **Liskov.** Anything standing in for a `Hull` keeps every invariant a hull
+  has: a wreck is a hull with its cells, its damage grid and its bricks, which
+  is why `remesh_dirty` cools its burns without knowing. A fighter is not one
+  and no query pretends it is.
+- **Interface segregation.** A query names exactly the components it reads,
+  and its filters (`Without<Hive>`, `Without<Wreck>`, `Without<Turret>`) ARE
+  the interface: they are what lets Bevy prove two systems disjoint, and a
+  rule a system must not see ("skip a dead hull") is a marker and a filter,
+  not an `if` in twelve systems. Resources stay narrow, one fact each.
+- **Dependency inversion.** The core depends on nothing but `std`; the app
+  depends on the core's public functions; that direction never reverses.
+- **Rust, specifically.** `f32` wherever state lives. No `HashMap` in
+  anything that will be hashed or replayed (the core has none; a render side
+  material cache is fine). No `unwrap` past startup, and every `expect` says
+  what was assumed. Every `pub fn` in the core has a doc comment and a test.
+  A constant lives beside the one system that reads it, with its unit in the
+  comment. Guard every expression at the point it can leave its domain: a NaN
+  is not a wrong picture, it is every picture wrong from then on. `single()`
+  only where exactly one can exist. Comments say WHY; the code says what.
+- **A mockup before a large feature.** A new screen, a new mechanic's feel,
+  a new hull, a scenario: rendered, linked, approved, then built. The move
+  order was rebuilt as a three.js prototype after the first cut shipped four
+  defects, and that is the rule now rather than the exception.
+- **Measure, then decide.** Numbers in the commit message, a clock rather
+  than the engine's delta, and never "faster" without a before and an after.
+  The section of that name at the end of this file is the long form.
+- **Before a push**: `/simplify` on the diff for reuse and altitude,
+  `/code-review` for correctness, then the suites.
+
 ## The swarm is a field, not a million entities
 
 Do the arithmetic before adding anything per mote. Sixteen milliseconds over a
@@ -1165,8 +1228,12 @@ the same failure as one that never loaded.
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 53, the core
+cargo test -p swarm_core                                   # 55, the core
+python3 tools/shape.py --check                             # no file over 900 lines, no function over 100
+cargo fmt --all -- --check                                 # the format
+cargo clippy -p swarm_core -- -D warnings                  # the core's lints
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
+cargo run --release -p swarm_core --example hull_stats -- assets/hulls   # what makes a hull tough
 cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png
 # A headless run defaults the launch delay to NOUGHT and a window defaults it
