@@ -24,7 +24,12 @@ pub enum Archetype {
 }
 
 impl Archetype {
-    pub const ALL: [Archetype; 4] = [Archetype::Drone, Archetype::Lancer, Archetype::Chewer, Archetype::Mother];
+    pub const ALL: [Archetype; 4] = [
+        Archetype::Drone,
+        Archetype::Lancer,
+        Archetype::Chewer,
+        Archetype::Mother,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -81,7 +86,9 @@ struct Builder {
 
 impl Builder {
     fn new(n: usize, cell: f32) -> Self {
-        Builder { m: VoxelModel::new(n, n, n, cell) }
+        Builder {
+            m: VoxelModel::new(n, n, n, cell),
+        }
     }
 
     fn put(&mut self, i: i32, j: i32, k: i32, mt: u8, colour: u32) -> bool {
@@ -118,10 +125,17 @@ impl Builder {
     /// A limb: from a cell that is already filled, a run of steps each one
     /// cell from the last, so it is connected by construction.
     fn walk(&mut self, from: [i32; 3], steps: &[[i32; 3]], mt: u8, colour: u32) {
-        debug_assert!(self.filled(from[0], from[1], from[2]), "a limb starts on the body");
+        debug_assert!(
+            self.filled(from[0], from[1], from[2]),
+            "a limb starts on the body"
+        );
         let mut p = from;
         for s in steps {
-            debug_assert_eq!(s[0].abs() + s[1].abs() + s[2].abs(), 1, "a limb step is one face, not a corner");
+            debug_assert_eq!(
+                s[0].abs() + s[1].abs() + s[2].abs(),
+                1,
+                "a limb step is one face, not a corner"
+            );
             p = [p[0] + s[0], p[1] + s[1], p[2] + s[2]];
             if !self.put(p[0], p[1], p[2], mt, colour) {
                 return;
@@ -279,13 +293,24 @@ fn drone(b: &mut Builder, rng: &mut Rng, c: f32) {
     let rx = rng.range(2.2, 2.9);
     let rz = rng.range(3.0, 3.8);
     b.ellipsoid([c, c, c - 0.5], [rx, 2.0, rz], mat::CASE, CHITIN);
-    b.ellipsoid([c, c + 0.3, c + 3.5], [1.8, 1.6, 1.9], mat::CASE, CHITIN_LIT);
+    b.ellipsoid(
+        [c, c + 0.3, c + 3.5],
+        [1.8, 1.6, 1.9],
+        mat::CASE,
+        CHITIN_LIT,
+    );
     b.mottle(rng, mat::CASE, 0.18, CHITIN_DARK);
     // Eyes, a mirrored pair, forward and high on the head.
     let hz = (c + 4.5) as i32;
     b.eye(c as i32 + 1, hz, GLOW);
     // Mandibles hang under the head and reach forward.
-    b.hang(c as i32 + 1, hz - 1, &[[0, -1, 0], [0, 0, 1], [0, 0, 1], [1, 0, 0]], mat::MACHINE, BONE);
+    b.hang(
+        c as i32 + 1,
+        hz - 1,
+        &[[0, -1, 0], [0, 0, 1], [0, 0, 1], [1, 0, 0]],
+        mat::MACHINE,
+        BONE,
+    );
     // The drive: ONE light, on the centreline, a row down from the middle.
     //
     // It was three calls and six cells, two of them the hot white, and against
@@ -335,9 +360,17 @@ fn lancer(b: &mut Builder, rng: &mut Rng, c: f32) {
     b.ellipsoid([c, c, c + 2.5], [1.4, 1.3, 1.6], mat::CASE, CHITIN_LIT);
     b.mottle(rng, mat::CASE, 0.12, CHITIN_DARK);
     // The lance, from the nose to the front of the lattice.
-    let nose = (0..b.m.nz as i32).rev().find(|&k| b.filled(c as i32, c as i32, k)).unwrap();
+    let nose = (0..b.m.nz as i32)
+        .rev()
+        .find(|&k| b.filled(c as i32, c as i32, k))
+        .unwrap();
     let len = (b.m.nz as i32 - 1 - nose).min(rng.int(4, 6));
-    b.walk([c as i32, c as i32, nose], &vec![[0, 0, 1]; len as usize], mat::MACHINE, BONE);
+    b.walk(
+        [c as i32, c as i32, nose],
+        &vec![[0, 0, 1]; len as usize],
+        mat::MACHINE,
+        BONE,
+    );
     // Eyes either side of the lance root.
     b.eye(c as i32 + 1, nose - 1, GLOW);
     // Fins swept back from the tail: a wedge that widens aft.
@@ -346,7 +379,12 @@ fn lancer(b: &mut Builder, rng: &mut Rng, c: f32) {
         let k = tail + step;
         if let Some(i) = b.flank(c as i32, k) {
             let span = 3 - step;
-            b.walk([i, c as i32, k], &vec![[1, 0, 0]; span as usize], mat::ACCENT, CHITIN_LIT);
+            b.walk(
+                [i, c as i32, k],
+                &vec![[1, 0, 0]; span as usize],
+                mat::ACCENT,
+                CHITIN_LIT,
+            );
         }
     }
     // One big drive on the axis and two outriggers: a lancer is mostly engine.
@@ -355,7 +393,12 @@ fn lancer(b: &mut Builder, rng: &mut Rng, c: f32) {
     b.engine(c as i32, c as i32 + 1, DRIVE);
     // One leg pair, tucked.
     if let Some(i) = b.flank(c as i32 - 1, c as i32) {
-        b.walk([i, c as i32 - 1, c as i32], &[[1, 0, 0], [0, -1, 0]], mat::ACCENT, CHITIN_DARK);
+        b.walk(
+            [i, c as i32 - 1, c as i32],
+            &[[1, 0, 0], [0, -1, 0]],
+            mat::ACCENT,
+            CHITIN_DARK,
+        );
     }
 }
 
@@ -368,7 +411,13 @@ fn chewer(b: &mut Builder, rng: &mut Rng, c: f32) {
     let front = (c - 0.5 + r) as i32;
     b.put(c as i32, c as i32 - 1, front, mat::CASE, MAW);
     b.put(c as i32, c as i32, front, mat::CASE, MAW);
-    b.hang(c as i32 + 2, front - 1, &[[0, -1, 0], [0, 0, 1], [0, 0, 1], [0, 0, 1], [-1, 0, 0]], mat::MACHINE, BONE);
+    b.hang(
+        c as i32 + 2,
+        front - 1,
+        &[[0, -1, 0], [0, 0, 1], [0, 0, 1], [0, 0, 1], [-1, 0, 0]],
+        mat::MACHINE,
+        BONE,
+    );
     // Eyes above the maw.
     b.eye(c as i32 + 1, front - 1, GLOW);
     // Dorsal spines along the crown.
@@ -389,7 +438,12 @@ fn chewer(b: &mut Builder, rng: &mut Rng, c: f32) {
         let k = (c - r + 1.0 + p as f32 * (2.0 * r - 2.0) / 4.0) as i32;
         let j = c as i32 - 2;
         if let Some(i) = b.flank(j, k) {
-            b.walk([i, j, k], &[[1, 0, 0], [0, -1, 0]], mat::ACCENT, CHITIN_DARK);
+            b.walk(
+                [i, j, k],
+                &[[1, 0, 0], [0, -1, 0]],
+                mat::ACCENT,
+                CHITIN_DARK,
+            );
         }
     }
 }
@@ -400,7 +454,12 @@ fn mother(b: &mut Builder, rng: &mut Rng, c: f32) {
     let ra = rng.range(4.2, 4.9);
     b.ellipsoid([c, c, c - 6.0], [ra, ra * 0.85, 5.0], mat::CASE, CHITIN);
     b.ellipsoid([c, c, c], [3.6, 3.2, 3.6], mat::CASE, CHITIN);
-    b.ellipsoid([c, c + 0.5, c + 5.0], [2.8, 2.5, 2.8], mat::CASE, CHITIN_LIT);
+    b.ellipsoid(
+        [c, c + 0.5, c + 5.0],
+        [2.8, 2.5, 2.8],
+        mat::CASE,
+        CHITIN_LIT,
+    );
     b.mottle(rng, mat::CASE, 0.2, CHITIN_DARK);
     // Egg sacs: glowing cells on the abdomen's skin, a seeded scatter.
     let sacs = rng.int(6, 10);
@@ -412,7 +471,13 @@ fn mother(b: &mut Builder, rng: &mut Rng, c: f32) {
         let k = rng.int((c - 10.0) as i32, (c - 2.0) as i32);
         let Some(j) = b.crown(i, k) else { continue };
         if b.m.get(i, j, k) == mat::CASE {
-            b.put(i, j, k, mat::GLOW, if rng.chance(0.3) { GLOW_HOT } else { GLOW });
+            b.put(
+                i,
+                j,
+                k,
+                mat::GLOW,
+                if rng.chance(0.3) { GLOW_HOT } else { GLOW },
+            );
             placed += 1;
         }
     }
@@ -431,7 +496,19 @@ fn mother(b: &mut Builder, rng: &mut Rng, c: f32) {
         let k = (c - 6.0 + p as f32 * 3.0) as i32;
         let j = c as i32 - 1;
         if let Some(i) = b.flank(j, k) {
-            b.walk([i, j, k], &[[1, 0, 0], [1, 0, 0], [1, 0, 0], [0, -1, 0], [0, -1, 0], [0, -1, 0]], mat::ACCENT, CHITIN_DARK);
+            b.walk(
+                [i, j, k],
+                &[
+                    [1, 0, 0],
+                    [1, 0, 0],
+                    [1, 0, 0],
+                    [0, -1, 0],
+                    [0, -1, 0],
+                    [0, -1, 0],
+                ],
+                mat::ACCENT,
+                CHITIN_DARK,
+            );
         }
     }
     // A carrier's drive block: six across the stern, hottest on the axis.
@@ -440,7 +517,13 @@ fn mother(b: &mut Builder, rng: &mut Rng, c: f32) {
         b.engine(i, c as i32 - 2, DRIVE);
     }
     // Mandibles.
-    b.hang(c as i32 + 1, hz, &[[0, -1, 0], [0, 0, 1], [0, 0, 1], [0, -1, 0], [0, 0, 1]], mat::MACHINE, BONE);
+    b.hang(
+        c as i32 + 1,
+        hz,
+        &[[0, -1, 0], [0, 0, 1], [0, 0, 1], [0, -1, 0], [0, 0, 1]],
+        mat::MACHINE,
+        BONE,
+    );
 }
 
 #[cfg(test)]
@@ -454,18 +537,39 @@ mod tests {
             for seed in 0..8u64 {
                 let m = generate(arch, seed);
                 assert!(m.symmetric_x(), "{} seed {seed} is lopsided", arch.name());
-                assert_eq!(m.components(), 1, "{} seed {seed} is in pieces", arch.name());
+                assert_eq!(
+                    m.components(),
+                    1,
+                    "{} seed {seed} is in pieces",
+                    arch.name()
+                );
                 let glow = m.grid.iter().filter(|&&x| x == mat::GLOW).count();
-                assert!(glow >= 2, "{} seed {seed} has {glow} glow cells", arch.name());
+                assert!(
+                    glow >= 2,
+                    "{} seed {seed} has {glow} glow cells",
+                    arch.name()
+                );
                 // Everything self lit is on the lit SURFACE, which is what
                 // gives it its own mesh, and every drive is at the stern.
                 let lit: Vec<usize> = (0..m.len()).filter(|&n| m.surf[n] == SURF_DRIVE).collect();
-                assert!(lit.len() >= 4, "{} seed {seed}: {} lit cells", arch.name(), lit.len());
+                assert!(
+                    lit.len() >= 4,
+                    "{} seed {seed}: {} lit cells",
+                    arch.name(),
+                    lit.len()
+                );
                 for &n in &lit {
                     assert_eq!(m.grid[n], mat::GLOW, "a lit cell that is not a light");
                 }
-                let drives: Vec<usize> = (0..m.len()).filter(|&n| m.purp[n] == crate::voxel::purpose::PROPULSION).collect();
-                assert!(drives.len() >= 2, "{} seed {seed} has {} engines", arch.name(), drives.len());
+                let drives: Vec<usize> = (0..m.len())
+                    .filter(|&n| m.purp[n] == crate::voxel::purpose::PROPULSION)
+                    .collect();
+                assert!(
+                    drives.len() >= 2,
+                    "{} seed {seed} has {} engines",
+                    arch.name(),
+                    drives.len()
+                );
                 // Aft of the middle, which is what makes them engines: one on
                 // the nose would push the wrong way.
                 let mid = m.nz / 2;
@@ -475,7 +579,11 @@ mod tests {
                 }
                 // And the same query the ships use finds them.
                 let found = crate::fx::engines_of(&m);
-                assert!(!found.is_empty(), "{} seed {seed}: engines_of found none", arch.name());
+                assert!(
+                    !found.is_empty(),
+                    "{} seed {seed}: engines_of found none",
+                    arch.name()
+                );
                 let cells = m.solid_count();
                 let (lo, hi) = match arch {
                     Archetype::Drone => (60, 400),
@@ -483,11 +591,19 @@ mod tests {
                     Archetype::Chewer => (100, 600),
                     Archetype::Mother => (600, 3000),
                 };
-                assert!((lo..=hi).contains(&cells), "{} seed {seed}: {cells} cells", arch.name());
+                assert!(
+                    (lo..=hi).contains(&cells),
+                    "{} seed {seed}: {cells} cells",
+                    arch.name()
+                );
                 counts.insert(cells);
                 assert_eq!(generate(arch, seed), m, "same seed, same mote");
             }
-            assert!(counts.len() >= 2, "{}: eight seeds gave one body", arch.name());
+            assert!(
+                counts.len() >= 2,
+                "{}: eight seeds gave one body",
+                arch.name()
+            );
         }
     }
 
@@ -503,15 +619,28 @@ mod tests {
     fn a_drones_drive_shows_one_face_and_it_faces_aft() {
         for seed in 0..12u64 {
             let m = generate(Archetype::Drone, seed);
-            let drives: Vec<usize> = (0..m.len()).filter(|&n| m.purp[n] == crate::voxel::purpose::PROPULSION).collect();
+            let drives: Vec<usize> = (0..m.len())
+                .filter(|&n| m.purp[n] == crate::voxel::purpose::PROPULSION)
+                .collect();
             assert_eq!(drives.len(), 2, "seed {seed}: {} drive cells", drives.len());
             for &n in &drives {
                 let (i, j, k) = m.at(n);
-                let open: Vec<[i32; 3]> = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
-                    .into_iter()
-                    .filter(|d| m.get(i as i32 + d[0], j as i32 + d[1], k as i32 + d[2]) == mat::EMPTY)
-                    .collect();
-                assert_eq!(open, vec![[0, 0, -1]], "seed {seed}: drive at {i},{j},{k} is open on {open:?}");
+                let open: Vec<[i32; 3]> = [
+                    [1, 0, 0],
+                    [-1, 0, 0],
+                    [0, 1, 0],
+                    [0, -1, 0],
+                    [0, 0, 1],
+                    [0, 0, -1],
+                ]
+                .into_iter()
+                .filter(|d| m.get(i as i32 + d[0], j as i32 + d[1], k as i32 + d[2]) == mat::EMPTY)
+                .collect();
+                assert_eq!(
+                    open,
+                    vec![[0, 0, -1]],
+                    "seed {seed}: drive at {i},{j},{k} is open on {open:?}"
+                );
             }
         }
     }
@@ -524,4 +653,3 @@ mod tests {
         assert_eq!(s.quad_cells.len(), crate::mesh::exposed_faces(&m, None));
     }
 }
-

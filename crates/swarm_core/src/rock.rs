@@ -36,7 +36,7 @@ const ORE_SHARE: f32 = 0.06;
 /// keeps it a pure function of its inputs with no state to carry.
 fn hash3(x: i32, y: i32, z: i32) -> f32 {
     let mut h = (x as u32).wrapping_mul(0x8DA6_B343)
-        ^ (y as u32).wrapping_mul(0xD8163_841u32)
+        ^ (y as u32).wrapping_mul(0xD816_3841_u32)
         ^ (z as u32).wrapping_mul(0xCB1A_B31F);
     h ^= h >> 13;
     h = h.wrapping_mul(0x2545_F491);
@@ -56,7 +56,11 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
 fn noise3(p: [f32; 3]) -> f32 {
     let fl = [p[0].floor(), p[1].floor(), p[2].floor()];
     let i = [fl[0] as i32, fl[1] as i32, fl[2] as i32];
-    let f = [smooth(p[0] - fl[0]), smooth(p[1] - fl[1]), smooth(p[2] - fl[2])];
+    let f = [
+        smooth(p[0] - fl[0]),
+        smooth(p[1] - fl[1]),
+        smooth(p[2] - fl[2]),
+    ];
     let mut c = [0.0f32; 8];
     for (n, slot) in c.iter_mut().enumerate() {
         let (dx, dy, dz) = ((n & 1) as i32, ((n >> 1) & 1) as i32, ((n >> 2) & 1) as i32);
@@ -77,7 +81,11 @@ fn relief(d: [f32; 3], seed: f32) -> f32 {
     let mut sum = 0.0;
     let mut norm = 0.0;
     for _ in 0..3 {
-        let p = [d[0] * freq + seed, d[1] * freq + seed * 1.7, d[2] * freq + seed * 2.3];
+        let p = [
+            d[0] * freq + seed,
+            d[1] * freq + seed * 1.7,
+            d[2] * freq + seed * 2.3,
+        ];
         sum += (noise3(p) - 0.5) * amp;
         norm += 0.5 * amp;
         amp *= 0.5;
@@ -100,10 +108,18 @@ pub fn generate(n: usize, cell: f32, seed: u64) -> VoxelModel {
         .map(|s| {
             if s == SURF_FRAME as usize {
                 // The ore: tighter and glossier than the stone round it.
-                Surface { finish: "greeble".into(), metal: 0.55, rough: 0.38 }
+                Surface {
+                    finish: "greeble".into(),
+                    metal: 0.55,
+                    rough: 0.38,
+                }
             } else {
                 // The stone: battered, and barely metallic at all.
-                Surface { finish: "battered".into(), metal: 0.04, rough: 0.94 }
+                Surface {
+                    finish: "battered".into(),
+                    metal: 0.04,
+                    rough: 0.94,
+                }
             }
         })
         .collect();
@@ -118,7 +134,11 @@ pub fn generate(n: usize, cell: f32, seed: u64) -> VoxelModel {
     // A rock is not a sphere with bumps, it is a LUMP: three different
     // radii, so the silhouette has a long axis and reads as tumbling rather
     // than as a ball whatever way it is turned.
-    let stretch = [rng.range(0.72, 1.28), rng.range(0.72, 1.28), rng.range(0.72, 1.28)];
+    let stretch = [
+        rng.range(0.72, 1.28),
+        rng.range(0.72, 1.28),
+        rng.range(0.72, 1.28),
+    ];
     let c = half - 0.5;
 
     for k in 0..n {
@@ -196,11 +216,23 @@ mod tests {
                 let i = n % m.nx;
                 let j = (n / m.nx) % m.ny;
                 let k = n / (m.nx * m.ny);
-                let steps: [(i32, i32, i32); 6] =
-                    [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)];
+                let steps: [(i32, i32, i32); 6] = [
+                    (1, 0, 0),
+                    (-1, 0, 0),
+                    (0, 1, 0),
+                    (0, -1, 0),
+                    (0, 0, 1),
+                    (0, 0, -1),
+                ];
                 for (dx, dy, dz) in steps {
                     let (a, b, c) = (i as i32 + dx, j as i32 + dy, k as i32 + dz);
-                    if a < 0 || b < 0 || c < 0 || a >= m.nx as i32 || b >= m.ny as i32 || c >= m.nz as i32 {
+                    if a < 0
+                        || b < 0
+                        || c < 0
+                        || a >= m.nx as i32
+                        || b >= m.ny as i32
+                        || c >= m.nz as i32
+                    {
                         continue;
                     }
                     let q = m.index(a as usize, b as usize, c as usize);
@@ -210,7 +242,11 @@ mod tests {
                     }
                 }
             }
-            assert_eq!(count, solid.iter().filter(|&&s| s).count(), "seed {seed} came out in pieces");
+            assert_eq!(
+                count,
+                solid.iter().filter(|&&s| s).count(),
+                "seed {seed} came out in pieces"
+            );
         }
     }
 
@@ -225,9 +261,18 @@ mod tests {
             for k in 0..m.nz {
                 for j in 0..m.ny {
                     for i in 0..m.nx {
-                        let edge = i == 0 || j == 0 || k == 0 || i == m.nx - 1 || j == m.ny - 1 || k == m.nz - 1;
+                        let edge = i == 0
+                            || j == 0
+                            || k == 0
+                            || i == m.nx - 1
+                            || j == m.ny - 1
+                            || k == m.nz - 1;
                         if edge {
-                            assert_eq!(m.grid[m.index(i, j, k)], mat::EMPTY, "seed {seed} reaches its wall");
+                            assert_eq!(
+                                m.grid[m.index(i, j, k)],
+                                mat::EMPTY,
+                                "seed {seed} reaches its wall"
+                            );
                         }
                     }
                 }
@@ -255,10 +300,16 @@ mod tests {
             let m = generate(22, 0.2, seed);
             let (vr, br) = (m.volume_radius(), m.radius());
             assert!(vr > 0.0, "seed {seed} has no volume");
-            assert!(vr < br, "seed {seed}: volume radius {vr} is not inside the bounding {br}");
+            assert!(
+                vr < br,
+                "seed {seed}: volume radius {vr} is not inside the bounding {br}"
+            );
             // And it is a MEAN, not a token: a rock whose volume radius were a
             // tenth of its bounding one would put the swarm inside it.
-            assert!(vr > br * 0.45, "seed {seed}: {vr} against {br} is far too small");
+            assert!(
+                vr > br * 0.45,
+                "seed {seed}: {vr} against {br} is far too small"
+            );
         }
     }
 
@@ -270,6 +321,9 @@ mod tests {
         let ore = m.grid.iter().filter(|&&x| x == mat::ACCENT).count();
         let stone = m.grid.iter().filter(|&&x| x == mat::PLATE).count();
         assert!(ore > 0, "no ore at all");
-        assert!(ore < stone / 4, "{ore} ore against {stone} stone is a rock made of ore");
+        assert!(
+            ore < stone / 4,
+            "{ore} ore against {stone} stone is a rock made of ore"
+        );
     }
 }

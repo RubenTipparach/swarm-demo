@@ -22,6 +22,178 @@ moves again, or the engine is swapped, the game is untouched.
 The test is the same one: if two clients computed this differently, would the
 match diverge? Then it belongs in the core.
 
+## How the code is written
+
+Ported from redux-tribes' `GUIDELINES.md` (section 5, reuse and SOLID) and
+its `CLAUDE.md`, and adapted to Rust and Bevy. These are rules, and the
+first three are checks: `.claude/skills/tidy/SKILL.md` runs them all.
+
+- **A file is under 900 lines and a function under 100.** `python3
+  tools/shape.py --check` fails on either. A file thousands of lines long is
+  a file nobody can hold in their head and a function hundreds of lines long
+  is a function nobody can test. The list it prints is work, never a reason
+  to raise the limit.
+- **rustfmt is the format**, `cargo fmt --all -- --check` in the suites. A
+  formatting commit carries nothing else and goes in `.git-blame-ignore-revs`.
+- **clippy is clean at `-D warnings` in the core**, and its count in the app
+  never rises.
+- **No em dashes or en dashes anywhere**, checked by
+  `git ls-files -z | LC_ALL=C.UTF-8 xargs -0 grep -lP '[\x{2013}\x{2014}]'`.
+  The locale goes on the grep, not on git: without it grep refuses the
+  code points and the check passes by printing an error instead of a file.
+- **Single responsibility.** A module owns one thing and its first line says
+  what; a Bevy system does one thing and is named as a verb phrase
+  (`fly_hull`, `draw_nav`), a component is a noun, a marker is an adjective.
+  A function that needs a section comment inside it is two functions, and
+  `#[allow(clippy::too_many_arguments)]` is the smell that says a struct is
+  missing.
+- **Divergent paths for like functionality are a defect.** Two places that
+  need one behaviour call one function; a second caller that needs a
+  variation parameterises the one implementation. The single allowed
+  duplicate is the capsule test in `fx.rs` and `swarm.wgsl`, because the GPU
+  cannot be asked, and it lives under the rule that the Rust one is the
+  reference and the shader is its transcription.
+- **Open for extension, closed for modification.** A new weapon is a shot
+  kind and one match arm, a new mission is a row, a new class is a file in
+  `assets/hulls`, and lists a player picks from are read off the manifest
+  rather than typed. Tuning numbers and scenario contents are data, never
+  inline in a system.
+- **Liskov.** Anything standing in for a `Hull` keeps every invariant a hull
+  has: a wreck is a hull with its cells, its damage grid and its bricks, which
+  is why `remesh_dirty` cools its burns without knowing. A fighter is not one
+  and no query pretends it is.
+- **Interface segregation.** A query names exactly the components it reads,
+  and its filters (`Without<Hive>`, `Without<Wreck>`, `Without<Turret>`) ARE
+  the interface: they are what lets Bevy prove two systems disjoint, and a
+  rule a system must not see ("skip a dead hull") is a marker and a filter,
+  not an `if` in twelve systems. Resources stay narrow, one fact each.
+- **Dependency inversion.** The core depends on nothing but `std`; the app
+  depends on the core's public functions; that direction never reverses.
+- **Rust, specifically.** `f32` wherever state lives. No `HashMap` in
+  anything that will be hashed or replayed (the core has none; a render side
+  material cache is fine). No `unwrap` past startup, and every `expect` says
+  what was assumed. Every `pub fn` in the core has a doc comment and a test.
+  A constant lives beside the one system that reads it, with its unit in the
+  comment. Guard every expression at the point it can leave its domain: a NaN
+  is not a wrong picture, it is every picture wrong from then on. `single()`
+  only where exactly one can exist. Comments say WHY; the code says what.
+- **A mockup before a large feature.** A new screen, a new mechanic's feel,
+  a new hull, a scenario: rendered, linked, approved, then built. The move
+  order was rebuilt as a three.js prototype after the first cut shipped four
+  defects, and that is the rule now rather than the exception.
+- **Measure, then decide.** Numbers in the commit message, a clock rather
+  than the engine's delta, and never "faster" without a before and an after.
+  The section of that name at the end of this file is the long form.
+- **Before a push**: `/simplify` on the diff for reuse and altitude,
+  `/code-review` for correctness, then the suites.
+
+## The app is folders now, and the split was mechanical
+
+`main.rs` was 5241 lines after the merge that preceded it. It is the
+arguments, the `App` and the schedule now, and everything else is in the
+folders the proposal drew: `app/` (the scene, the clocks, the headless
+harness), `world/` (assets, backdrop, rocks), `ships/` (hull, spec, flight,
+formation, damage, wreck, turrets, flames), `weapons/` (beams, flak),
+`fighters/`, `hives/`, `controllers/` (selection, orders, camera), `ui/`
+(hud, pause, bars) and `fx/` (nav). A folder's `mod.rs` names its files and
+re-exports them `pub(crate)`; a file's first line says what it owns.
+
+**Nothing was rewritten.** A script moved every top level item whole, with
+the comments and attributes above it, into exactly one file, and refused to
+run on an item that was not in its map. The only edits were `pub(crate)` on
+every moved item, field and inherent method, and one rename: `Scene` is
+`SceneSpec`, because `bevy::prelude` exports a `Scene` of its own, and two
+glob imports supplying one name is an error the moment the name is used.
+Every module opens with `use crate::*;`, so the import block is written once,
+in `main.rs`, and a module sees exactly what the root sees. The script then
+checked that every non blank line of the old file is in the new tree exactly
+once, modulo the prefix and the rename, and it is.
+
+**It is proved by the pictures.** Five headless scenes (the order, the
+wreck, the beams, the battle and the wing) were rendered on the binary from
+before and on the binary from after and compared with `tools/pngdiff.py`:
+
+| scene | before vs after | the before binary vs itself |
+| --- | --- | --- |
+| order | 0.141% | 0.013%, 0.166%, 0.167% (three runs, every pair) |
+| wreck | 0.032% | 2.069% (and 0.249% on the pre merge binary) |
+| beams | 0.733% | 0.847% |
+| battle | 0.429% | 0.418% |
+| wing | 2.869% | 3.144% |
+
+Every share is of pixels moved by more than 8 of 255. The wing is the noisy
+one: three hundred and twenty frames of kills, with an order in it, and the
+after picture against the before binary's OTHER run is 2.221%.
+
+**The floor is two runs of the SAME binary, and it was not nought, for two
+reasons it took the whole exercise to tell apart.** The first was the CPU:
+three systems read the frame's own clock under `--fixed-dt` (the next
+section), so the debris, the showcase and an order's ping stood somewhere
+different every run, and the wreck scene's own floor on the before binary was
+two percent. The second is the GPU, and it is intermittent: the spark and
+shock rings are claimed with `atomicAdd`, so which deaths a full ring keeps
+depends on the order the threads arrived in, and the swarm diverges from
+there. Intermittent, because two runs on a quiet machine can arrive in the
+same order, and then they agree to the BYTE: the split binary's battle
+picture was byte identical to one of the before binary's, and its wing
+picture to another, which is also what proves the split beyond any share.
+With the clocks fixed, the wreck scene, which kills nothing after the
+reactor goes, is byte identical run to run, and the scenes with kills differ
+by 0.12% to 2.4% between two runs of the same binary. So a pair is judged
+against that scene's OWN floor, `cmp` is the check only for a scene that has
+one, and the HUD's frame counter, which reads real time, is about two
+hundred pixels of any picture it is in. The whole branch, measured last, on
+the final binary:
+
+| scene | before vs final | the final binary vs itself |
+| --- | --- | --- |
+| order | 0.162% | 0.131% |
+| wreck | 0.499% | 0, byte identical |
+| beams | 0.638% | 0.123% |
+| battle | 0.485% | 0.407% |
+| wing | 3.164% | 2.411% |
+
+The wreck's half a percent is real and is the fix: its debris flew fifteen
+times too far per frame before. The battle's is the rocks turned through
+`TAU` rather than 6.283. One trap on the way: the before pictures were being
+taken off `target/release/swarm_app` while cargo was replacing it, so the
+last of them came from the binary under test. Copy a binary aside before it
+is the control for anything.
+
+**What this stage did not do, on purpose.** The long functions are exactly
+where they were, only in smaller files: `setup` (583 lines once rustfmt had
+wrapped it), `go_critical` (299), `build_hud` (294), `spawn_ship` (205) and
+the rest, seventeen over a hundred after the format against eleven before
+it, and `swarm.rs` and the core's `fx.rs` are still one file each. They come
+apart in the next stage, with the four `SystemSet`s and the explicit imports
+that replace `use crate::*;` once each module knows what it reads.
+`tools/shape.py --check` therefore still fails, on those, and the list it
+prints is that stage's work.
+
+**Then the format, on its own.** The tree had never been through rustfmt:
+342 hunks at the default width, which is the width redux-tribes
+keeps too. That commit carries nothing else and is in
+`.git-blame-ignore-revs`, so `git blame` reads through it.
+
+**And clippy.** The core is clean at `-D warnings`. Its one `allow` is the
+star phase in `sky.rs`, which multiplies by 6.283 because sky.ts writes
+6.283 and the port is line for line. The app's four deny by default errors
+are gone: the rock rotations drew from `0.0..6.283` three times and draw from
+`TAU` now, which is at most eighteen hundred thousandths of a radian on an
+asteroid, and `ride_the_eye` computed a zero two ways and added it.
+
+**One clock, asked in one place.** The fixed step was written out eight
+times, the same three lines in eight systems, and three more places that
+integrated something had never copied it: debris flew by the frame's own
+delta, the showcase spun by it, and an order's ping aged on the real clock
+whatever `--fixed-dt` said. On a software rasteriser a frame is a quarter
+of a second, so a debris cube flew fifteen times too far per frame in
+exactly the pictures the flag exists for, and a picture with an order in it
+depended on how loaded the machine was. `SceneSpec::step` is the rule now,
+and every system asks it. The lesson is the one the two clamps already
+taught: a rule copied is a rule one copy will miss, and the copy that is
+missing is the one nobody can grep for.
+
 ## The swarm is a field, not a million entities
 
 Do the arithmetic before adding anything per mote. Sixteen milliseconds over a
@@ -95,7 +267,7 @@ exactly what copies drift into. The claim that the mote draw binds nothing but
 the view and the chitin was the thing to check: it binds the mesh VIEW bind
 group at nought, and `lights` is binding one of it, so the sun the scene is
 actually lit by was there to be read for nothing the whole time. `SUN` in
-`main.rs` is the only place it is written now.
+`world/backdrop.rs` is the only place it is written now.
 
 **A glow is EMISSIVE, and nothing in the cloud takes it away.** The lit cells
 used to REPLACE the shaded body wherever they were over one, which made a glow
@@ -1272,7 +1444,12 @@ the same failure as one that never loaded.
 
 ```sh
 cargo test -p swarm_core                                   # 56, the core
+python3 tools/shape.py --check                             # no file over 900 lines, no function over 100
+cargo fmt --all -- --check                                 # the format
+cargo clippy -p swarm_core -- -D warnings                  # the core's lints
+python3 tools/pngdiff.py before.png after.png --grid       # a refactor's pictures, against the scene's own floor
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
+cargo run --release -p swarm_core --example hull_stats -- assets/hulls   # what makes a hull tough
 cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png
 # A headless run defaults the launch delay to NOUGHT and a window defaults it

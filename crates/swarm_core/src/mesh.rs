@@ -70,7 +70,8 @@ impl MeshData {
             self.uvs.push(uvs[c]);
             self.tangents.push(tangent);
         }
-        self.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        self.indices
+            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
         self.quad_cell.push(owner);
         if self.quad_at.is_empty() {
             self.quad_at.push(0);
@@ -96,7 +97,8 @@ impl MeshData {
         if self.quad_at.is_empty() {
             self.quad_at.push(0);
         }
-        self.quad_at.extend(other.quad_at.iter().skip(1).map(|a| a + cbase));
+        self.quad_at
+            .extend(other.quad_at.iter().skip(1).map(|a| a + cbase));
     }
 }
 
@@ -242,7 +244,11 @@ pub fn mesh_region(
     let half = [m.nx as f32 / 2.0, m.ny as f32 / 2.0, m.nz as f32 / 2.0];
     let cell = m.cell;
     let world = |p: [i32; 3]| -> [f32; 3] {
-        [(p[0] as f32 - half[0]) * cell, (p[1] as f32 - half[1]) * cell, (p[2] as f32 - half[2]) * cell]
+        [
+            (p[0] as f32 - half[0]) * cell,
+            (p[1] as f32 - half[1]) * cell,
+            (p[2] as f32 - half[2]) * cell,
+        ]
     };
 
     let solid = |i: i32, j: i32, k: i32| -> bool {
@@ -250,7 +256,7 @@ pub fn mesh_region(
             return false;
         }
         let n = m.index(i as usize, j as usize, k as usize);
-        m.grid[n] != mat::EMPTY && damage.map_or(true, |(d, _)| !d.is_dead(n))
+        m.grid[n] != mat::EMPTY && damage.is_none_or(|(d, _)| !d.is_dead(n))
     };
     // A face whose neighbour is a cell that DIED rather than one that was never
     // there is the inside of the ship, and it is drawn as such.
@@ -310,13 +316,20 @@ pub fn mesh_region(
                     // pane, a burn and the plate under them a hair apart.
                     let face = if step > 0 { 1 } else { 0 };
                     let ccw = (step > 0) != (axis == 1);
-                    let order: [(i32, i32); 4] =
-                        if ccw { [(0, 0), (1, 0), (1, 1), (0, 1)] } else { [(0, 0), (0, 1), (1, 1), (1, 0)] };
+                    let order: [(i32, i32); 4] = if ccw {
+                        [(0, 0), (1, 0), (1, 1), (0, 1)]
+                    } else {
+                        [(0, 0), (0, 1), (1, 1), (1, 0)]
+                    };
                     let mut corners = [[0.0f32; 3]; 4];
                     let mut duv = [[0.0f32; 2]; 4];
                     for (c, (du, dv)) in order.into_iter().enumerate() {
                         corners[c] = world(put(axis, u + du, v + dv, w + face));
-                        duv[c] = if axis == 0 { [dv as f32, du as f32] } else { [du as f32, dv as f32] };
+                        duv[c] = if axis == 0 {
+                            [dv as f32, du as f32]
+                        } else {
+                            [du as f32, dv as f32]
+                        };
                     }
 
                     // A face whose neighbour DIED is the inside of the ship,
@@ -331,10 +344,24 @@ pub fn mesh_region(
                         for c in 0..4 {
                             euv[c] = ember_uv(tile, duv[c]);
                         }
-                        out.inner.push_quad(corners, normal, rgb_of(m.colour[n]), duv, tangent, n as u32);
+                        out.inner.push_quad(
+                            corners,
+                            normal,
+                            rgb_of(m.colour[n]),
+                            duv,
+                            tangent,
+                            n as u32,
+                        );
                         out.inner.quad_cells.push(n as u32);
                         out.inner.close_quad();
-                        out.wound.push_quad(corners, normal, [r, g, b, crust_alpha(heat)], euv, tangent, dc);
+                        out.wound.push_quad(
+                            corners,
+                            normal,
+                            [r, g, b, crust_alpha(heat)],
+                            euv,
+                            tangent,
+                            dc,
+                        );
                         out.wound.quad_cells.push(dc);
                         out.wound.close_quad();
                         continue;
@@ -348,7 +375,11 @@ pub fn mesh_region(
                     // plate there used to wear.
                     if let Some(win) = m.window_at(n, d) {
                         let variants = win.variants.max(1) as u32;
-                        let slice = if variants > 1 { hash_cell(n as u32) % variants } else { 0 };
+                        let slice = if variants > 1 {
+                            hash_cell(n as u32) % variants
+                        } else {
+                            0
+                        };
                         let span = 1.0 / variants as f32;
                         let mut uvs = [[0.0f32; 2]; 4];
                         for c in 0..4 {
@@ -356,7 +387,14 @@ pub fn mesh_region(
                         }
                         let kind = win.kind as usize;
                         let target = &mut out.windows[kind];
-                        target.push_quad(corners, normal, rgb_of(m.colour[n]), uvs, tangent, n as u32);
+                        target.push_quad(
+                            corners,
+                            normal,
+                            rgb_of(m.colour[n]),
+                            uvs,
+                            tangent,
+                            n as u32,
+                        );
                         target.quad_cells.push(n as u32);
                         target.close_quad();
                         continue;
@@ -375,7 +413,14 @@ pub fn mesh_region(
                                 euv[c] = ember_uv(tile, duv[c]);
                             }
                             let _ = tick;
-                            out.scorch.push_quad(corners, normal, [CHAR[0], CHAR[1], CHAR[2], alpha], euv, tangent, n as u32);
+                            out.scorch.push_quad(
+                                corners,
+                                normal,
+                                [CHAR[0], CHAR[1], CHAR[2], alpha],
+                                euv,
+                                tangent,
+                                n as u32,
+                            );
                             out.scorch.quad_cells.push(n as u32);
                             out.scorch.close_quad();
                         }
@@ -434,18 +479,34 @@ pub fn mesh_region(
                     let mut uvs = [[0.0f32; 2]; 4];
                     #[allow(clippy::needless_range_loop)]
                     for (c, (du, dv)) in order.into_iter().enumerate() {
-                        corners[c] = world(put(axis, u0 + u as i32 + du, v0 + v as i32 + dv, w + face));
-                        uvs[c] = if axis == 0 { [dv as f32, du as f32] } else { [du as f32, dv as f32] };
+                        corners[c] =
+                            world(put(axis, u0 + u as i32 + du, v0 + v as i32 + dv, w + face));
+                        uvs[c] = if axis == 0 {
+                            [dv as f32, du as f32]
+                        } else {
+                            [du as f32, dv as f32]
+                        };
                     }
                     let own = owner[u + v * un];
                     let target = &mut out.skin[((key >> 24) & 0xFF) as usize];
-                    target.push_quad(corners, normal, rgb_of((key & 0xFF_FFFF) as u32), uvs, tangent, own);
+                    target.push_quad(
+                        corners,
+                        normal,
+                        rgb_of((key & 0xFF_FFFF) as u32),
+                        uvs,
+                        tangent,
+                        own,
+                    );
                     // The rectangle's whole footprint, so a hit can take the
                     // cells it reached and leave the rest of the plate standing.
                     for b in 0..tall {
                         for a in 0..wide {
                             let p = put(axis, u0 + (u + a) as i32, v0 + (v + b) as i32, w);
-                            target.quad_cells.push(m.index(p[0] as usize, p[1] as usize, p[2] as usize) as u32);
+                            target.quad_cells.push(m.index(
+                                p[0] as usize,
+                                p[1] as usize,
+                                p[2] as usize,
+                            ) as u32);
                         }
                     }
                     target.close_quad();
@@ -465,7 +526,7 @@ pub fn exposed_faces(m: &VoxelModel, damage: Option<&DamageGrid>) -> usize {
             return false;
         }
         let n = m.index(i as usize, j as usize, k as usize);
-        m.grid[n] != mat::EMPTY && damage.map_or(true, |d| !d.is_dead(n))
+        m.grid[n] != mat::EMPTY && damage.is_none_or(|d| !d.is_dead(n))
     };
     let mut count = 0;
     for n in 0..m.len() {
@@ -485,7 +546,7 @@ pub fn exposed_faces(m: &VoxelModel, damage: Option<&DamageGrid>) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::voxel::{RUNG_FRIGATE, HULL_NX, HULL_NY, HULL_NZ};
+    use crate::voxel::{HULL_NX, HULL_NY, HULL_NZ, RUNG_FRIGATE};
 
     fn area(md: &MeshData) -> usize {
         md.quad_cells.len()
@@ -534,14 +595,29 @@ mod tests {
             for c in 1..4 {
                 let (su, sv) = (uv[c][0] - uv[0][0], uv[c][1] - uv[0][1]);
                 let d = [p[c][0] - p[0][0], p[c][1] - p[0][1], p[c][2] - p[0][2]];
-                if su > 0.0 && sv == 0.0 { du = Some(d); }
-                if sv > 0.0 && su == 0.0 { dv = Some(d); }
+                if su > 0.0 && sv == 0.0 {
+                    du = Some(d);
+                }
+                if sv > 0.0 && su == 0.0 {
+                    dv = Some(d);
+                }
             }
             let (du, dv) = (du.unwrap(), dv.unwrap());
             let along = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-            assert!(along(du, [t[0], t[1], t[2]]) > 0.0, "quad {q}: tangent {t:?} against U {du:?}");
-            let b = [n[1] * t[2] - n[2] * t[1], n[2] * t[0] - n[0] * t[2], n[0] * t[1] - n[1] * t[0]];
-            assert!(along(dv, b) * t[3] > 0.0, "quad {q}: bitangent {b:?} w {} against V {dv:?}", t[3]);
+            assert!(
+                along(du, [t[0], t[1], t[2]]) > 0.0,
+                "quad {q}: tangent {t:?} against U {du:?}"
+            );
+            let b = [
+                n[1] * t[2] - n[2] * t[1],
+                n[2] * t[0] - n[0] * t[2],
+                n[0] * t[1] - n[1] * t[0],
+            ];
+            assert!(
+                along(dv, b) * t[3] > 0.0,
+                "quad {q}: bitangent {b:?} w {} against V {dv:?}",
+                t[3]
+            );
         }
     }
 
@@ -570,7 +646,11 @@ mod tests {
             let n = s.normals[q * 4];
             let a = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]];
             let b = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
-            let c = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+            let c = [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0],
+            ];
             let dot = c[0] * n[0] + c[1] * n[1] + c[2] * n[2];
             assert!(dot > 0.0, "quad {q} normal {n:?} winds against itself");
         }
@@ -609,18 +689,36 @@ mod tests {
         let a = m.index(4, 2, 2);
         let b = m.index(4, 3, 3);
         m.windows = vec![
-            crate::voxel::Window { cell: a as u32, dir: 0, kind: 0, variants: 7 },
-            crate::voxel::Window { cell: b as u32, dir: 0, kind: 1, variants: 1 },
+            crate::voxel::Window {
+                cell: a as u32,
+                dir: 0,
+                kind: 0,
+                variants: 7,
+            },
+            crate::voxel::Window {
+                cell: b as u32,
+                dir: 0,
+                kind: 1,
+                variants: 1,
+            },
             // Looking up: the export never writes one, and if it did the face
             // is still a face.
-            crate::voxel::Window { cell: m.index(2, 4, 2) as u32, dir: 2, kind: 0, variants: 7 },
+            crate::voxel::Window {
+                cell: m.index(2, 4, 2) as u32,
+                dir: 2,
+                kind: 0,
+                variants: 7,
+            },
         ];
         m.rebuild_window_lut();
         let s = greedy_mesh(&m, None);
         assert_eq!(s.window_quads(), 3);
         assert_eq!(s.windows[0].quads(), 2);
         assert_eq!(s.windows[1].quads(), 1);
-        assert_eq!(area(&s.skin_all()) + s.window_quads(), exposed_faces(&m, None));
+        assert_eq!(
+            area(&s.skin_all()) + s.window_quads(),
+            exposed_faces(&m, None)
+        );
         // The +x face of the box without the windows would be one quad; with
         // two holes in it the plate is several.
         assert!(s.skin_quads() > 6);
@@ -642,38 +740,66 @@ mod tests {
 
     #[test]
     fn the_terran_frigate_covers_every_exposed_face_once() {
-        let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/hulls/terran_frigate.ftvx")).unwrap();
+        let bytes = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/hulls/terran_frigate.ftvx"
+        ))
+        .unwrap();
         let m = VoxelModel::from_ftvx(&bytes).unwrap();
         let s = greedy_mesh(&m, None);
         let faces = exposed_faces(&m, None);
         let skin = s.skin_all();
         assert_eq!(area(&skin) + s.window_quads(), faces);
         assert_eq!(s.face_quads(), faces, "the layers cover every face once");
-        assert_eq!(s.window_quads(), 292, "every window hull.ts derived is drawn");
-        assert!(skin.quads() < faces / 2, "greedy merged {} faces into {} quads", faces, skin.quads());
+        assert_eq!(
+            s.window_quads(),
+            292,
+            "every window hull.ts derived is drawn"
+        );
+        assert!(
+            skin.quads() < faces / 2,
+            "greedy merged {} faces into {} quads",
+            faces,
+            skin.quads()
+        );
         let mut seen = std::collections::HashSet::new();
         for q in 0..skin.quads() {
             let (from, to) = (skin.quad_at[q] as usize, skin.quad_at[q + 1] as usize);
             let n = skin.normals[q * 4];
             for &c in &skin.quad_cells[from..to] {
-                assert!(seen.insert((c, n.map(|x| x as i32))), "cell {c} face {n:?} covered twice");
+                assert!(
+                    seen.insert((c, n.map(|x| x as i32))),
+                    "cell {c} face {n:?} covered twice"
+                );
             }
         }
         for w in &s.windows {
             for q in 0..w.quads() {
                 let n = w.normals[q * 4];
-                assert!(seen.insert((w.quad_cell[q], n.map(|x| x as i32))), "window face covered twice");
+                assert!(
+                    seen.insert((w.quad_cell[q], n.map(|x| x as i32))),
+                    "window face covered twice"
+                );
             }
         }
         // Seven surfaces on a stock Terran: three bands, frame, drive, weapon, part.
         let used: Vec<usize> = (0..SURF_COUNT).filter(|&i| !s.skin[i].is_empty()).collect();
         assert_eq!(used, vec![0, 1, 2, 3, 4, 5, 6]);
-        eprintln!("terran_frigate: {} exposed faces, {} skin quads, {} window quads, hull.ts drew 1611", faces, skin.quads(), s.window_quads());
+        eprintln!(
+            "terran_frigate: {} exposed faces, {} skin quads, {} window quads, hull.ts drew 1611",
+            faces,
+            skin.quads(),
+            s.window_quads()
+        );
     }
 
     #[test]
     fn bricks_cover_the_same_faces_as_the_whole() {
-        let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/hulls/rogue_corvette.ftvx")).unwrap();
+        let bytes = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/hulls/rogue_corvette.ftvx"
+        ))
+        .unwrap();
         let m = VoxelModel::from_ftvx(&bytes).unwrap();
         let whole = greedy_mesh(&m, None);
         let mut sum = 0;
@@ -690,9 +816,18 @@ mod tests {
                         for c in 0..4 {
                             let p = skin.positions[q * 4 + c];
                             let lo = |a: usize, o: f32| (a as f32 - o) * m.cell - 1e-4;
-                            assert!(p[0] >= lo(i, HULL_NX as f32 / 2.0) && p[0] <= lo(i + b, HULL_NX as f32 / 2.0) + 2e-4);
-                            assert!(p[1] >= lo(j, HULL_NY as f32 / 2.0) && p[1] <= lo(j + b, HULL_NY as f32 / 2.0) + 2e-4);
-                            assert!(p[2] >= lo(k, HULL_NZ as f32 / 2.0) && p[2] <= lo(k + b, HULL_NZ as f32 / 2.0) + 2e-4);
+                            assert!(
+                                p[0] >= lo(i, HULL_NX as f32 / 2.0)
+                                    && p[0] <= lo(i + b, HULL_NX as f32 / 2.0) + 2e-4
+                            );
+                            assert!(
+                                p[1] >= lo(j, HULL_NY as f32 / 2.0)
+                                    && p[1] <= lo(j + b, HULL_NY as f32 / 2.0) + 2e-4
+                            );
+                            assert!(
+                                p[2] >= lo(k, HULL_NZ as f32 / 2.0)
+                                    && p[2] <= lo(k + b, HULL_NZ as f32 / 2.0) + 2e-4
+                            );
                         }
                     }
                 }
@@ -713,6 +848,9 @@ mod tests {
         assert_eq!(all.quad_at.len(), all.quads() + 1);
         assert_eq!(*all.quad_at.last().unwrap() as usize, all.quad_cells.len());
         assert_eq!(all.indices.len(), all.quads() * 6);
-        assert_eq!(*all.indices.iter().max().unwrap() as usize, all.positions.len() - 1);
+        assert_eq!(
+            *all.indices.iter().max().unwrap() as usize,
+            all.positions.len() - 1
+        );
     }
 }

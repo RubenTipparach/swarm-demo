@@ -210,12 +210,21 @@ impl VoxelModel {
 
     #[inline]
     pub fn at(&self, n: usize) -> (usize, usize, usize) {
-        (n % self.nx, (n / self.nx) % self.ny, n / (self.nx * self.ny))
+        (
+            n % self.nx,
+            (n / self.nx) % self.ny,
+            n / (self.nx * self.ny),
+        )
     }
 
     #[inline]
     pub fn inside(&self, i: i32, j: i32, k: i32) -> bool {
-        i >= 0 && j >= 0 && k >= 0 && (i as usize) < self.nx && (j as usize) < self.ny && (k as usize) < self.nz
+        i >= 0
+            && j >= 0
+            && k >= 0
+            && (i as usize) < self.nx
+            && (j as usize) < self.ny
+            && (k as usize) < self.nz
     }
 
     /// The material at a cell, or empty when the cell is off the lattice.
@@ -244,7 +253,8 @@ impl VoxelModel {
         let i = (p[0] / self.cell + self.nx as f32 / 2.0).floor() as i32;
         let j = (p[1] / self.cell + self.ny as f32 / 2.0).floor() as i32;
         let k = (p[2] / self.cell + self.nz as f32 / 2.0).floor() as i32;
-        self.inside(i, j, k).then(|| (i as usize, j as usize, k as usize))
+        self.inside(i, j, k)
+            .then_some((i as usize, j as usize, k as usize))
     }
 
     /// The centre of a cell in the model's own frame.
@@ -359,7 +369,9 @@ impl VoxelModel {
             .filter(|&n| {
                 let (i, j, k) = self.at(n);
                 let m = self.index(self.nx - 1 - i, j, k);
-                self.grid[n] != self.grid[m] || self.colour[n] != self.colour[m] || self.surf[n] != self.surf[m]
+                self.grid[n] != self.grid[m]
+                    || self.colour[n] != self.colour[m]
+                    || self.surf[n] != self.surf[m]
             })
             .count()
     }
@@ -399,7 +411,11 @@ impl VoxelModel {
         for _ in 0..nstr {
             let len = r.u16()? as usize;
             let raw = r.bytes(len)?;
-            strings.push(std::str::from_utf8(raw).map_err(|_| FtvxError::BadString)?.to_string());
+            strings.push(
+                std::str::from_utf8(raw)
+                    .map_err(|_| FtvxError::BadString)?
+                    .to_string(),
+            );
         }
         let nsurf = r.u32()? as usize;
         if nsurf != 0 && nsurf != SURF_COUNT {
@@ -412,7 +428,11 @@ impl VoxelModel {
             let metal = r.f32()?;
             let rough = r.f32()?;
             let finish = strings.get(finish).ok_or(FtvxError::BadSurface)?.clone();
-            surfaces.push(Surface { finish, metal, rough });
+            surfaces.push(Surface {
+                finish,
+                metal,
+                rough,
+            });
         }
         let count = r.u32()? as usize;
         if r.b.len() < r.o + count * FTVX_RECORD {
@@ -458,7 +478,12 @@ impl VoxelModel {
                     kinds.len() - 1
                 }
             };
-            m.windows.push(Window { cell, dir, kind: k as u8, variants });
+            m.windows.push(Window {
+                cell,
+                dir,
+                kind: k as u8,
+                variants,
+            });
         }
         m.window_kinds = kinds;
         m.rebuild_window_lut();
@@ -476,8 +501,16 @@ impl VoxelModel {
                 }
             }
         };
-        let surf_ids: Vec<u16> = self.surfaces.iter().map(|s| intern(&s.finish, &mut strings)).collect();
-        let kind_ids: Vec<u16> = self.window_kinds.iter().map(|k| intern(k, &mut strings)).collect();
+        let surf_ids: Vec<u16> = self
+            .surfaces
+            .iter()
+            .map(|s| intern(&s.finish, &mut strings))
+            .collect();
+        let kind_ids: Vec<u16> = self
+            .window_kinds
+            .iter()
+            .map(|k| intern(k, &mut strings))
+            .collect();
         let count = self.solid_count();
         let mut out = Vec::new();
         out.extend_from_slice(FTVX_MAGIC);
@@ -547,7 +580,14 @@ impl<'a> Reader<'a> {
 }
 
 /// The six face neighbours, in the order the mesher walks them.
-pub const NEIGHBOURS: [(i32, i32, i32); 6] = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)];
+pub const NEIGHBOURS: [(i32, i32, i32); 6] = [
+    (1, 0, 0),
+    (-1, 0, 0),
+    (0, 1, 0),
+    (0, -1, 0),
+    (0, 0, 1),
+    (0, 0, -1),
+];
 
 #[cfg(test)]
 mod tests {
@@ -573,12 +613,33 @@ mod tests {
         m.tone[n] = 5;
         m.surf[n] = 1;
         m.surfaces = (0..SURF_COUNT)
-            .map(|i| Surface { finish: if i % 2 == 0 { "plate".into() } else { "hex".into() }, metal: 0.1 * i as f32, rough: 0.5 })
+            .map(|i| Surface {
+                finish: if i % 2 == 0 {
+                    "plate".into()
+                } else {
+                    "hex".into()
+                },
+                metal: 0.1 * i as f32,
+                rough: 0.5,
+            })
             .collect();
         // Kinds are numbered in the order the file first names them, so a
         // model that numbers them that way round trips to itself exactly.
         m.window_kinds = vec!["panes".into(), "bridge".into()];
-        m.windows = vec![Window { cell: n as u32, dir: 4, kind: 0, variants: 7 }, Window { cell: n as u32, dir: 0, kind: 1, variants: 1 }];
+        m.windows = vec![
+            Window {
+                cell: n as u32,
+                dir: 4,
+                kind: 0,
+                variants: 7,
+            },
+            Window {
+                cell: n as u32,
+                dir: 0,
+                kind: 1,
+                variants: 1,
+            },
+        ];
         m.rebuild_window_lut();
         let bytes = m.to_ftvx();
         let back = VoxelModel::from_ftvx(&bytes).unwrap();
@@ -592,7 +653,12 @@ mod tests {
     fn a_window_on_an_empty_cell_is_dropped() {
         let mut m = VoxelModel::new(4, 4, 4, 0.5);
         m.window_kinds = vec!["panes".into()];
-        m.windows = vec![Window { cell: 5, dir: 0, kind: 0, variants: 1 }];
+        m.windows = vec![Window {
+            cell: 5,
+            dir: 0,
+            kind: 0,
+            variants: 1,
+        }];
         m.rebuild_window_lut();
         assert!(m.window_at(5, 0).is_none(), "no plate, no hole in it");
     }
@@ -613,10 +679,21 @@ mod tests {
         // the two zero counts and the cell count.
         let first = FTVX_HEADER + 4 + 4 + 4;
         oob[first] = 200; // index 200 on an 8 cell lattice
-        assert_eq!(VoxelModel::from_ftvx(&oob), Err(FtvxError::IndexOutOfRange(200)));
+        assert_eq!(
+            VoxelModel::from_ftvx(&oob),
+            Err(FtvxError::IndexOutOfRange(200))
+        );
         let mut sur = m.clone();
-        sur.surfaces = vec![Surface { finish: "plate".into(), metal: 0.0, rough: 0.0 }];
-        assert_eq!(VoxelModel::from_ftvx(&sur.to_ftvx()), Err(FtvxError::BadSurface), "fifteen or none");
+        sur.surfaces = vec![Surface {
+            finish: "plate".into(),
+            metal: 0.0,
+            rough: 0.0,
+        }];
+        assert_eq!(
+            VoxelModel::from_ftvx(&sur.to_ftvx()),
+            Err(FtvxError::BadSurface),
+            "fifteen or none"
+        );
         let mut trunc = m.to_ftvx();
         trunc.truncate(trunc.len() - 1);
         assert_eq!(VoxelModel::from_ftvx(&trunc), Err(FtvxError::Truncated));
@@ -650,7 +727,10 @@ mod tests {
     /// frigate is 8938 cells on the frigate rung, in one piece.
     #[test]
     fn loads_the_terran_frigate() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/hulls/terran_frigate.ftvx");
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/hulls/terran_frigate.ftvx"
+        );
         let bytes = std::fs::read(path).expect("assets/hulls/terran_frigate.ftvx");
         let m = VoxelModel::from_ftvx(&bytes).unwrap();
         assert_eq!((m.nx, m.ny, m.nz), (HULL_NX, HULL_NY, HULL_NZ));
@@ -667,7 +747,9 @@ mod tests {
         // Every armour cell draws in a band, every frame cell as frame.
         for n in 0..m.len() {
             match m.grid[n] {
-                x if mat::is_armour(x) => assert!(m.surf[n] < SURF_FRAME || m.surf[n] >= SURF_SLOT, "cell {n}"),
+                x if mat::is_armour(x) => {
+                    assert!(m.surf[n] < SURF_FRAME || m.surf[n] >= SURF_SLOT, "cell {n}")
+                }
                 mat::FRAME => assert_eq!(m.surf[n], SURF_FRAME, "cell {n}"),
                 mat::EMPTY => {}
                 _ => assert!((SURF_DRIVE..=SURF_PART).contains(&m.surf[n]), "cell {n}"),
@@ -677,11 +759,27 @@ mod tests {
         // running lights, 13 bridge viewport cells, 9 portholes, every one on
         // a solid cell and none looking up or down.
         assert_eq!(m.windows.len(), 292);
-        let by_kind = |k: &str| m.windows.iter().filter(|w| m.window_kinds[w.kind as usize] == k).count();
-        assert_eq!((by_kind("panes"), by_kind("beacons"), by_kind("bridge"), by_kind("porthole")), (240, 30, 13, 9));
+        let by_kind = |k: &str| {
+            m.windows
+                .iter()
+                .filter(|w| m.window_kinds[w.kind as usize] == k)
+                .count()
+        };
+        assert_eq!(
+            (
+                by_kind("panes"),
+                by_kind("beacons"),
+                by_kind("bridge"),
+                by_kind("porthole")
+            ),
+            (240, 30, 13, 9)
+        );
         for w in &m.windows {
             assert_ne!(m.grid[w.cell as usize], mat::EMPTY);
-            assert!(w.dir != 2 && w.dir != 3, "a window looks along or across, never up or down");
+            assert!(
+                w.dir != 2 && w.dir != 3,
+                "a window looks along or across, never up or down"
+            );
             assert!(m.window_at(w.cell as usize, w.dir as usize).is_some());
         }
         // NOT asserted mirrored. The export is the hull exactly as redux-tribes
@@ -693,10 +791,17 @@ mod tests {
         // average x = 16.5. A loader that "fixed" that would draw a different
         // ship from the one in the shipyard, so it is reported and left alone.
         let off = m.asymmetric_cells_x();
-        assert!(off < m.solid_count() / 4, "{off} of {} cells unmirrored: more than the rasteriser's own skew", m.solid_count());
+        assert!(
+            off < m.solid_count() / 4,
+            "{off} of {} cells unmirrored: more than the rasteriser's own skew",
+            m.solid_count()
+        );
         eprintln!("terran_frigate: {off} cells differ across the keel plane");
         assert_eq!(m.components(), 1, "nothing may float");
         let r = m.radius();
-        assert!(r > 3.0 && r < 4.0, "frigate radius {r}, class radius is 3.5");
+        assert!(
+            r > 3.0 && r < 4.0,
+            "frigate radius {r}, class radius is 3.5"
+        );
     }
 }
