@@ -426,6 +426,18 @@ plain pause. And `nav_input` sits OUTSIDE the run gate with the camera and the
 drawing, because giving orders with the world stopped is the entire reason a
 pause key is worth having.
 
+**And `--hud` PROVES the HUD rather than asserting it.** It did not, at first:
+Bevy hands UI to whichever camera renders the primary window, a headless run
+has no primary window, and every node was laid out and drawn to nothing. The
+flag produced a screenshot with no HUD in it, which is the one outcome a flag
+for showing the HUD must not have. `IsDefaultUiCamera` on the headless camera
+is what fixed it, and `--paused` opens the menu so that can be photographed
+too. Two glitches turned up the moment there was a picture to look at: a
+`\u{25be}` caret the default font has no glyph for, which draws as a hollow
+box, and a binding list where every line after the first was indented, because
+a `\` string continuation keeps the leading whitespace of the next SOURCE line.
+Neither would ever have been found by reading the code.
+
 **The bars are UI nodes, not meshes**, and that is the right call for exactly
 these two things: a health bar is a fixed number of pixels tall whatever the
 range, and a band box is in screen space by definition. Anything that has to

@@ -114,3 +114,5 @@ actually pulling, and a wing of reinforcements on station.
 ![Geometric flames](docs/fx_flame.png)
 ![A wing on station](docs/fx_wing.png)
 ![The whole battle](docs/fx_battle.png)
+![The HUD](docs/fx_hud.png)
+![The pause menu](docs/fx_menu.png)

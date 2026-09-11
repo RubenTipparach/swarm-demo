@@ -1644,7 +1644,12 @@ fn setup(
         let mut img = Image::new_target_texture(h.width, h.height, TextureFormat::Rgba8UnormSrgb, None);
         img.texture_descriptor.usage |= TextureUsages::COPY_SRC | TextureUsages::TEXTURE_BINDING;
         let handle = images.add(img);
-        cam.insert((RenderTarget::Image(handle.clone().into()), Msaa::Off));
+        // And it is the UI's camera too. Bevy hands UI to whichever camera
+        // renders the primary window, and a headless run has no primary
+        // window, so every node was laid out and drawn to nothing: `--hud`
+        // produced a screenshot with no HUD in it, which is the one outcome a
+        // flag for proving the HUD must not have.
+        cam.insert((RenderTarget::Image(handle.clone().into()), Msaa::Off, IsDefaultUiCamera));
         commands.insert_resource(HeadlessTarget(handle));
     }
 }
@@ -2200,7 +2205,7 @@ fn draw_bars(
             (_, Some(f)) => (f.hp, 0.6),
             _ => continue,
         };
-        let Ok(p) = cam.world_to_viewport(cam_xf, xf.translation + Vec3::Y * radius * 1.3) else { continue };
+        let Ok(p) = cam.world_to_viewport(cam_xf, xf.translation + Vec3::Y * radius * 0.75) else { continue };
         want.push((p, share.clamp(0.0, 1.0), sel.is_some()));
     }
 
@@ -2545,9 +2550,15 @@ fn build_hud(mut commands: Commands) {
                 Pickable::IGNORE,
             ));
             p.spawn((
-                Text::new(
-                    "left drag select   middle drag orbit   WASD pan   Q E up down   F focus\n                     right button move disc, right again to confirm, esc cancels\n                     shift lifts the target off the plane   space pauses   esc opens the menu",
-                ),
+                // `concat!` of separate literals rather than one string with
+                // backslash continuations: a continuation keeps the leading
+                // whitespace of the next SOURCE line, so every line after the
+                // first came out indented by however far the code was.
+                Text::new(concat!(
+                    "left drag select   middle drag orbit   WASD pan   Q E up down   F focus\n",
+                    "right button move disc, right again to confirm, esc cancels\n",
+                    "shift lifts the target off the plane   space pauses   esc opens the menu",
+                )),
                 TextFont { font_size: 12.0, ..default() },
                 TextColor(Color::srgba(0.62, 0.74, 0.86, 0.72)),
                 Pickable::IGNORE,
@@ -2586,7 +2597,10 @@ fn build_hud(mut commands: Commands) {
             ))
             .with_children(|b| {
                 b.spawn((
-                    Text::new("Ship \u{25be}"),
+                    // ASCII. The default font has no U+25BE and a missing
+                    // glyph draws as a hollow box, which reads as a bug in the
+                    // button rather than as a caret.
+                    Text::new("Ship  v"),
                     TextFont { font_size: 14.0, ..default() },
                     TextColor(Color::srgb(0.80, 0.94, 1.0)),
                     Pickable::IGNORE,
