@@ -108,31 +108,131 @@ written", so they are the project's and not this proposal's.
   `.claude/skills/tidy/SKILL.md` runs the shape, the format, the lints, the
   dash grep and the core suite in one command and reports what fails.
 
-**The split of `main.rs`**, one module per responsibility, every function it
-has today assigned:
+**The structure**, in place of one file. In Bevy a Unity class comes apart
+into three things: a COMPONENT (its fields), the SYSTEMS that read it (its
+methods), and a PLUGIN (the file that registers them). So the unit of
+organisation is a folder that is one plugin and one responsibility, a file
+that is one thing or one behaviour, and a component that lives in the same
+file as the systems that own it. Every function `main.rs` has today is
+assigned below.
 
-| module | owns | what moves there |
-| --- | --- | --- |
-| `main.rs` | arguments and the `App`: plugins, resources, the schedule | `main`, `parse_args`, `Args` (about 250 lines) |
-| `scene.rs` | the launch record and the clocks | `Scene`, `Tick`, `advance_tick`, `FrameLimit`, `limit_frames`, `Headless`, `headless_capture` |
-| `assets.rs` | textures, samplers, hull files, materials per surface | `load_textures`, `sampler`, `load_hull`, `surface_materials`, `window_materials`, `ChunkMaterials` |
-| `hull.rs` | a ship's cells on the map | `Hull`, `Brick`, `Piece`, `spawn_hull`, `spawn_ship` split into `ShipSpec`, `spawn_bricks`, `spawn_turrets`, `place_chewers`; `place_brick`, `upsert`, `remesh_dirty`, `to_mesh` and friends |
-| `damage.rs` | what happens to cells | `chew`, `vent_smoke`, `go_critical` split into `reactor_blast`, `throw_dust`, `spawn_wreck_piece`, `free_turrets`; `Debris`, `fly_chunks`, `Wreck`, `drift_wrecks` |
-| `fleet.rs` | who flies where | `Flagship`, `Escort`, `Lead`, `NavTo`, `fly_hull`, `publish_hull`, `apply_nav_to`, `call_reinforcements`, `call_one` |
-| `orders.rs` | selection and move orders | `OrderMode`, `NavOrder`, `Selected`, `Marquee`, `Pings`, `Ack`, `nav_input`, `select_input`, `draw_nav`, the ring and line builders |
-| `hud.rs` | every UI node | `Hud`, `build_hud` as one function per panel, `hud_feedback`, `hud_orders`, `tick_fps`, `toggle_pause`, `pick_hull`, `draw_marquee`, `draw_bars` |
-| `camera.rs` | the orbit | `Orbit`, `orbit_input`, `orbit_camera`, `ride_the_eye`, `AtInfinity` |
-| `weapons.rs` | what a ship fires | `fire_guns`, `fire_flak`, `resolve_beams`, `fly_tracers`, `age_fx`, `draw_beams`, `Turret`, `aim_turrets`, `LiveFx` |
-| `fighters.rs` | the squadron | `Fighter`, `launch_fighters`, `fly_fighters`, `wear_fighters`, `fighters_fire` |
-| `hives.rs` | the carriers | `Hive`, `move_hives`, `publish_hives`, `bleed_hives` |
-| `flames.rs` | drives that burn | `FLAME_BANDS`, `add_flame`, `draw_flames`, `throttle_of`, `glow_engines` |
-| `backdrop.rs` | the sky, the stars, the sun, the planets, the lights | the half of `setup` that is scenery |
-| `swarm/` | the GPU swarm in three files: the plugin, the buffers, the pipeline | `swarm.rs` split; `prepare_swarm_buffers` into one function per buffer |
+```
+crates/swarm_core/src/          the rules, std only; the boundary is unchanged
+  voxel.rs  mesh.rs  damage.rs  rng.rs  alien.rs  rock.rs  sky.rs
+  fx/                           fx.rs split: mod.rs (Beam, Blast, the kill tests),
+                                sparks.rs, guns.rs (clusters_of and what it derives),
+                                reactor.rs, wreck.rs (shatter)
+  body.rs                       NEW: mass, centre of mass, inertia, an impulse at a point
+  subsystem.rs                  NEW: a cluster's cells and the share of them alive
 
-And in the core, `fx.rs` becomes `fx/` with `shots.rs` (the capsules and
-their tests), `sparks.rs`, `guns.rs` (`clusters_of` and what it derives),
-`reactor.rs` and `wreck.rs`; `mesh_region` splits the greedy pass from the
-window and wound passes.
+crates/swarm_app/src/
+  main.rs                       arguments, the App, the plugin list, the four sets. Nothing else.
+  app/                          the frame
+    mod.rs                      AppPlugin: AppState (Menu, Setup, Playing, Result), Tick, FrameLimit
+    scene.rs                    SceneSpec: what a scene file says, the CLI's overrides,
+                                spawn on OnEnter(Playing), despawn on OnExit
+    headless.rs                 Headless, headless_capture, the report
+  world/                        the field
+    mod.rs                      WorldPlugin
+    backdrop.rs                 the half of setup that is scenery: sky, stars, sun, planets, lights
+    rocks.rs                    Rock, the asteroids, the SDF list the swarm reads
+    assets.rs                   load_textures, sampler, load_hull, surface_materials,
+                                window_materials, ChunkMaterials
+  ships/                        a hull and what it does: the behaviours
+    mod.rs                      ShipsPlugin
+    hull.rs                     Hull, Brick, Piece, place_brick, upsert, remesh_dirty, to_mesh
+    spec.rs                     ShipSpec (class, armour, chewers, station, seed) and spawn_ship
+                                split into spawn_bricks, spawn_turrets, place_chewers
+    flight.rs                   fly_hull: the envelope, the rocks, the heading
+    formation.rs                Flagship, Escort, Lead, NavTo, publish_hull, apply_nav_to,
+                                call_reinforcements, call_one
+    subsystems.rs               health per cluster and what offline does to flight and guns
+    body.rs                     the rigid body glue: impulses from hits, the tumble, mass from live cells
+    damage.rs                   chew, vent_smoke
+    wreck.rs                    go_critical split into reactor_blast, throw_dust,
+                                spawn_wreck_piece, free_turrets; Wreck, drift_wrecks, Debris, fly_chunks
+    turrets.rs                  Turret, aim_turrets
+    flames.rs                   FLAME_BANDS, add_flame, draw_flames, throttle_of, glow_engines
+  weapons/                      what fires
+    mod.rs                      WeaponsPlugin, LiveFx, the shot list handed to the swarm, age_fx
+    kinds.rs                    WeaponKind as data: beam, flak, slug, torpedo
+    beams.rs                    fire_guns, resolve_beams, draw_beams
+    flak.rs                     fire_flak, fly_tracers
+  fighters/mod.rs               Fighter, launch, fly, wear, fire
+  hives/mod.rs                  Hive, move_hives, publish_hives, bleed_hives
+  swarm/                        the GPU swarm: mod.rs (the plugin), buffers.rs, pipeline.rs, extract.rs;
+                                prepare_swarm_buffers as one function per buffer
+  controllers/                  who gives orders, and never what a ship does with them
+    mod.rs                      ControllersPlugin, OrderMode
+    selection.rs                Selected, Marquee, select_input
+    orders.rs                   NavOrder, nav_input, Pings, Ack
+    camera.rs                   Orbit, orbit_input, orbit_camera, ride_the_eye, AtInfinity
+    range.rs                    the firing range: pick a weapon, click a cell
+    ai/                         escort.rs, fighter.rs, hive.rs: rules that write the SAME
+                                orders a player does
+  ui/                           every node on screen
+    mod.rs                      UiPlugin and the theme: one palette, one table of sizes
+    menu.rs  setup.rs  campaign.rs  result.rs
+    hud.rs                      build_hud as one function per panel, hud_feedback, hud_orders,
+                                tick_fps, pick_hull
+    pause.rs                    PauseMenu, toggle_pause
+    bars.rs                     draw_bars, draw_marquee, the subsystem pips
+  fx/                           what is drawn that is not a thing
+    mod.rs                      FxPlugin
+    nav.rs                      draw_nav: the disc, the rings, the pings, the ring and line builders
+    sparks.rs                   the CPU spark queue
+
+assets/
+  hulls/*.ftvx
+  scenes/skirmish/*.ron  scenes/campaign/01_first_encounter.ron ... 05_siege.ron
+  scenes/playground/freeze.ron  scenes/playground/range.ron
+```
+
+Four rules hold it together:
+
+- **Controllers write orders; behaviours execute them.** A controller (the
+  mouse in `controllers/orders.rs`, an AI rule in `controllers/ai/`, the
+  firing range) writes a `MoveOrder` or a `Goal` onto a ship and never moves
+  it; `ships/flight.rs` is the only system that moves a hull. The escort AI
+  and the player write the same order type, which is what makes a replay a
+  recording of orders, and what lets a controller be swapped (a script, a
+  network, a test) without a behaviour knowing.
+- **Sets, not one chain.** `main.rs` declares four `SystemSet`s in order:
+  `Control` (input and AI), `Simulate` (everything that moves, gated by
+  `running`), `Effects` (sparks, wounds, wrecks), `Draw` (ui and fx, never
+  gated). Each plugin puts its systems into a set; the thirty line chain in
+  `main()` becomes four lines, and a system's place in the frame is a fact
+  about the set it is in rather than about the line it was written on.
+- **The dependency direction is down and never up.** `ui` depends on
+  `controllers` (it shows the mode); `controllers` on `ships` (it writes
+  orders onto them); `ships`, `weapons`, `fighters` and `hives` on `world`
+  and `app`; `fx` reads everything and writes nothing; `swarm/` is reached
+  only through `SwarmConfig`, which is its whole interface; and `swarm_core`
+  is under all of it and imports none of it.
+- **A scene is a file.** `SceneSpec` is what `assets/scenes/*.ron` deserialises
+  to: a name and a briefing, the fleet (a list of `ShipSpec`), the swarm
+  (hives, motes, launch delay, standoff), the field (rocks, seed), the rules
+  (chewers, armour, the toggles the playground sets), and the mode. The
+  command line overrides fields, the setup screen edits one in memory and
+  launches it, the campaign is a folder of them in order, and a headless
+  render is `--scene assets/scenes/campaign/01_first_encounter.ron`. Levels
+  are designed, not random (GUIDELINES 6): the seed is in the file.
+
+```mermaid
+flowchart TB
+  ui[ui: menu, setup, hud, result] -->|shows| ctl[controllers: player, ai, range]
+  ctl -->|writes orders and goals| ships[ships: flight, formation, subsystems, body, damage, wreck]
+  ctl -->|aims| weapons[weapons]
+  ships -->|shots| swarm[swarm: the GPU cloud, through SwarmConfig]
+  weapons -->|shots| swarm
+  ships --> fighters & hives
+  ships -->|cells, hits| fx[fx: nav disc, sparks]
+  ships --> world[world: backdrop, rocks, assets]
+  ships -->|asks| core[swarm_core: rules, std only]
+  weapons -->|asks| core
+  app[app: state, scene file, clocks] -->|spawns| ships
+  app --> world
+```
 
 **It is proved by the pictures not changing.** The split moves code and
 changes no behaviour, so every headless render in the suites is taken
