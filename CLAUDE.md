@@ -401,6 +401,41 @@ the world by the difference, every slow frame, and never caught up. Two clamps
 is two clocks. `swarm::STEP_CLAMP` is the one number now, read by the swarm's
 clock and by everything on the CPU that integrates anything.
 
+## A guard that changed what it was guarding
+
+The swarm settled into spheres with nothing inside them, sitting near the
+asteroids but not on them, and it looked like a render offset. It was one line
+of steering:
+
+```wgsl
+let inside = p.hull.w * 1.05 - dist;
+if (inside > 0.0) { acc = acc - dir * inside * 40.0; }
+```
+
+`dist` and `dir` are relative to the mote's FOCUS. When every mote's focus was
+the ship that line meant "do not fly through the hull" and was correct. The day
+the focus became a variable, so a vein mote could aim at a point on a route,
+the same line started meaning "do not approach your own destination": it pushed
+a vein out to the SHIP's radius from wherever its route had reached, at up to a
+hundred and forty against a pull of at most thirteen, so it could never get in.
+Every vein settled onto a sphere three and a half units across, and the routes
+run between rocks, so the spheres sat near the rocks and contained nothing.
+
+It is measured against the hull now, explicitly, whatever the focus is. **A
+guard written in terms of a variable that later gains a second meaning is a
+guard that silently changes what it protects.** Nothing threw, nothing looked
+wrong in the code, and the reviewer of that line would have had to remember
+what `dir` had come to mean four screens further up.
+
+The rock avoidance had the second half of the same shape. A radial push applied
+OUTSIDE the surface is a force with nothing to spend itself on: it balances
+against the pull toward the ship at some radius, and every mote that arrives is
+held there, so traffic that was only meant to pass a rock built a standing
+shell around it. Outside the surface the only correction now is to cancel the
+part of the velocity going into the rock and keep the part going along it,
+which is a mote sliding past an obstacle. A real push happens only once a mote
+is actually inside, where there is something to be pushed out of.
+
 ## The camera jumped, and it was the input, not the camera
 
 There is one camera and one system writes its transform. What threw it across
@@ -790,10 +825,14 @@ the same failure as one that never loaded.
 cargo test -p swarm_core                                   # 52, the core
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
 cargo build --release -p swarm_app
-./target/release/swarm_app --headless --motes 5000 --frames 60 --launch-delay 0 --out shot.png
-# --launch-delay 0 on every headless shot that wants a swarm in it: the
-# carriers hold for ten seconds by default, and a render aimed at tick ninety
-# cannot wait for that.
+./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png
+# A headless run defaults the launch delay to NOUGHT and a window defaults it
+# to ten. The opening beat before the swarm arrives is for a player; a harness
+# that waited ten seconds for its subject would spend every check rendering an
+# empty sky. `--launch-delay N` sets it either way.
+# --yaw and --pitch take the SAME tick from another angle, which is the only
+# way to answer "it looks wrong at some angles": hold everything still and
+# turn the camera.
 ./target/release/swarm_app --fps 60          # a window, capped; --fps 0 lifts the cap
 ./target/release/swarm_app --headless --motes 1 --chewers 0 --zoom 1.7 --out close.png
 # The effects, aimed: one frame is one tick, so a shot can be taken AT a tick.
@@ -806,7 +845,11 @@ cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --fixed-dt --motes 800 --reinforce 4 \
     --move 30,3,-16 --chewers 0 --frames 320 --zoom 7 --out wing.png   # a wing on station
 ./target/release/swarm_app --headless --fixed-dt --motes 3000 --hives 3 --rocks 14 \
-    --launch-delay 0 --chewers 0 --frames 150 --zoom 5 --out battle.png  # the whole thing
+    --chewers 0 --frames 150 --zoom 5 --out battle.png     # the whole thing
+for y in 0.0 1.6 3.1; do                                   # the same tick, three angles
+  ./target/release/swarm_app --headless --fixed-dt --motes 4000 --frames 150 \
+      --zoom 11 --yaw $y --out ang_$y.png
+done
 node tools/export_hulls.mjs ../redux-tribes assets/hulls   # re-export the fleet (needs npm install in tools/)
 ```
 

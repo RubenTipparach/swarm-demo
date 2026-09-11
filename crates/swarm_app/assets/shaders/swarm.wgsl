@@ -361,13 +361,24 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
         let sdf = dr - rk.w;
         if (sdf < margin) {
             let nrm = off / dr;
-            let push = clamp((margin - sdf) / max(margin, 1e-4), 0.0, 2.0);
-            acc = acc + nrm * push * push * 38.0;
-            // And take the INTO component off what it already has, or a mote
-            // arriving fast carries its own momentum through the rock before
-            // the push can turn it.
-            let into = min(dot(m.vel_seed.xyz, nrm), 0.0);
-            acc = acc - nrm * into * 3.0;
+            // Steer AROUND, do not push away. A radial push outside the
+            // surface is a force with nothing to spend itself on: it balances
+            // against the pull toward the ship at some radius and every mote
+            // that arrives is held there, which builds a standing shell round
+            // the rock out of the traffic that was only meant to pass it. So
+            // outside the surface the only correction is to cancel the part of
+            // the velocity going INTO the rock and to keep the part going
+            // along it, which is a mote sliding past an obstacle.
+            let into = dot(m.vel_seed.xyz, nrm);
+            if (into < 0.0) {
+                acc = acc - nrm * into * 4.0;
+                var tang = m.vel_seed.xyz - nrm * into;
+                let tl = length(tang);
+                if (tl > 1e-4) { acc = acc + (tang / tl) * 9.0; }
+            }
+            // A real push only once it is actually INSIDE, where there is
+            // something to be pushed out of.
+            if (sdf < 0.0) { acc = acc + nrm * (-sdf) * 40.0; }
         }
     }
 
@@ -408,9 +419,23 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     acc = acc + sep * 0.15;
 
-    // Not through the hull. A sphere for now.
-    let inside = p.hull.w * 1.05 - dist;
-    if (inside > 0.0) { acc = acc - dir * inside * 40.0; }
+    // Not through the hull, and measured against the HULL rather than against
+    // whatever this mote's focus happens to be.
+    //
+    // This is where the balls came from. `dist` and `dir` are relative to the
+    // FOCUS, which for an attacking mote is the ship and for a vein mote is a
+    // point on its route: guarding a vein against its own route point pushed
+    // it out to a shell of the SHIP's radius round that point, at up to a
+    // hundred and forty against a pull of at most thirteen, so it could never
+    // get in. Every vein settled onto a sphere three and a half units across
+    // centred on wherever its route had reached, which is a ball, and the
+    // routes run between rocks, so the balls sat on the rocks. A guard that
+    // silently changed what it was guarding against the day the focus became
+    // a variable.
+    let to_ship = p.hull.xyz - me;
+    let ship_d = max(length(to_ship), 1e-4);
+    let inside = p.hull.w * 1.05 - ship_d;
+    if (inside > 0.0) { acc = acc - (to_ship / ship_d) * inside * 40.0; }
 
     var v = (m.vel_seed.xyz + acc * p.dt) * 0.985;
     let s = length(v);

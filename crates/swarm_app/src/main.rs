@@ -77,12 +77,25 @@ struct Args {
     /// default, and nought is what a headless render wants: a shot aimed at
     /// tick ninety cannot wait ten seconds for the swarm to exist.
     launch_delay: f32,
+    /// Where the camera sits, in radians. Exposed so a headless run can take
+    /// the SAME tick from two different angles and compare them: "it looks
+    /// wrong at some angles" is a claim about the projection, and the only way
+    /// to answer it is to hold everything else still and turn the camera.
+    yaw: f32,
+    pitch: f32,
     /// Draw the HUD in a headless run. It is a window's furniture and there is
     /// nobody to press it, but a screenshot is the only way to PROVE it draws
     /// rather than assert it, which is the rule the textures already keep.
     hud: bool,
     /// Start paused, with the menu open, for the same reason.
     paused: bool,
+    /// Whether `--launch-delay` was actually given. A headless run wants the
+    /// swarm to exist on frame one: it is a HARNESS, and a harness that waits
+    /// ten seconds for its subject to appear is ten seconds of every check
+    /// spent rendering an empty sky. So headless defaults the delay to nought
+    /// and a window defaults it to ten, and this is how "the user asked for
+    /// nought" is told apart from "nobody said".
+    delay_set: bool,
     /// Camera distance in hull radii.
     zoom: f32,
     /// What the camera looks at, in world units. The hull's centre unless
@@ -127,8 +140,11 @@ fn parse_args() -> Args {
         rocks: 14,
         fighters: 12,
         launch_delay: 10.0,
+        yaw: 0.6,
+        pitch: 0.38,
         hud: false,
         paused: false,
+        delay_set: false,
         zoom: 4.6,
         target: Vec3::ZERO,
         explode: 0,
@@ -175,10 +191,12 @@ fn parse_args() -> Args {
             }
             "--showcase" => a.showcase = true,
             "--hud" => a.hud = true,
+            "--yaw" => { a.yaw = next().parse().expect("--yaw RADIANS"); i += 1; }
+            "--pitch" => { a.pitch = next().parse().expect("--pitch RADIANS"); i += 1; }
             "--paused" => { a.hud = true; a.paused = true; }
             "--reinforce" => { a.reinforce = next().parse().expect("--reinforce N"); i += 1; }
             "--rocks" => { a.rocks = next().parse().expect("--rocks N"); i += 1; }
-            "--launch-delay" => { a.launch_delay = next().parse().expect("--launch-delay SECONDS"); i += 1; }
+            "--launch-delay" => { a.launch_delay = next().parse().expect("--launch-delay SECONDS"); a.delay_set = true; i += 1; }
             "--fighters" => { a.fighters = next().parse().expect("--fighters N"); i += 1; }
             "--fps" => { a.fps = next().parse().expect("--fps N, or 0 for no cap"); i += 1; }
             other => panic!("unknown argument {other}"),
@@ -189,7 +207,13 @@ fn parse_args() -> Args {
 }
 
 fn main() {
-    let args = parse_args();
+    let mut args = parse_args();
+    // The opening beat is for a player. A headless run is a harness and wants
+    // its subject on the first frame.
+    if args.headless && !args.delay_set {
+        args.launch_delay = 0.0;
+    }
+    let args = args;
     let mut app = App::new();
     let assets = AssetPlugin { file_path: ASSETS.into(), ..default() };
     if args.headless {
@@ -236,6 +260,8 @@ fn main() {
         .insert_resource(Scene {
             hull: args.hull.clone(),
             chewers: args.chewers,
+            yaw: args.yaw,
+            pitch: args.pitch,
             reinforce: args.reinforce,
             rocks: args.rocks,
             fighters: args.fighters,
@@ -338,6 +364,8 @@ fn limit_frames(mut limit: ResMut<FrameLimit>) {
 #[derive(Resource)]
 struct Scene {
     hull: String,
+    yaw: f32,
+    pitch: f32,
     chewers: usize,
     reinforce: u32,
     rocks: usize,
@@ -1460,7 +1488,7 @@ fn setup(
     // ---- the camera: framed on the hull from ahead and above, OUTSIDE the
     // swarm, whose standoff reaches about two radii ----
     let dist = radius * scene.zoom;
-    let orbit = Orbit { yaw: 0.6, pitch: 0.38, dist, target: scene.target, follow: false };
+    let orbit = Orbit { yaw: scene.yaw, pitch: scene.pitch, dist, target: scene.target, follow: false };
     let eye = scene.target + Vec3::new(orbit.yaw.sin() * orbit.pitch.cos(), orbit.pitch.sin(), orbit.yaw.cos() * orbit.pitch.cos()) * dist;
     let mut cam = commands.spawn((
         Camera3d::default(),
