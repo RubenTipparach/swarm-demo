@@ -15,3 +15,10 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# The release binary is what a player runs and what the linker has to write,
+# and both were paying for symbols nobody reads. Stripping takes the debug
+# info out at link time: a smaller file, and a LINK that has less to do, which
+# is the step that looked like a hang on Windows.
+[profile.release]
+strip = true

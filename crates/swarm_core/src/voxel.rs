@@ -279,6 +279,28 @@ impl VoxelModel {
 
     /// The bounding radius in world units about the lattice centre, from the
     /// solid cells' own corners rather than the box diagonal.
+    /// The radius of a sphere with the same VOLUME as the model's solid cells.
+    ///
+    /// `radius` is the bounding sphere, measured to the furthest CORNER of the
+    /// furthest cell, so on anything that is not a ball it is set entirely by
+    /// the long axis: a rock stretched half again on one axis has a bounding
+    /// sphere standing well clear of its own surface everywhere else. That is
+    /// right for "could this possibly be hit" and wrong for "how big is this",
+    /// and using it as the second put the swarm in orbit round empty space
+    /// beside every asteroid.
+    ///
+    /// This is the mean instead, and it is the same measure redux-tribes keeps
+    /// beside its class table for the same reason: a radius that nothing links
+    /// to the shape is a radius that disagrees with the picture.
+    pub fn volume_radius(&self) -> f32 {
+        let n = self.solid_count() as f32;
+        if n <= 0.0 {
+            return 0.0;
+        }
+        let volume = n * self.cell * self.cell * self.cell;
+        (volume * 3.0 / (4.0 * core::f32::consts::PI)).cbrt()
+    }
+
     pub fn radius(&self) -> f32 {
         let mut r2: f32 = 0.0;
         for n in 0..self.len() {

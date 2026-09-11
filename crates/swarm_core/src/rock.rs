@@ -245,6 +245,23 @@ mod tests {
         assert!(differ > 40, "only {differ} cells differ between two seeds");
     }
 
+    /// The volume radius has to sit INSIDE the bounding one and be a fair
+    /// measure of the lump, or the thing the swarm navigates round disagrees
+    /// with the thing that is drawn. On a rock stretched on one axis the two
+    /// differ a lot, which is exactly the case that went wrong.
+    #[test]
+    fn a_rock_reports_a_radius_that_matches_its_own_size() {
+        for seed in 0..8u64 {
+            let m = generate(22, 0.2, seed);
+            let (vr, br) = (m.volume_radius(), m.radius());
+            assert!(vr > 0.0, "seed {seed} has no volume");
+            assert!(vr < br, "seed {seed}: volume radius {vr} is not inside the bounding {br}");
+            // And it is a MEAN, not a token: a rock whose volume radius were a
+            // tenth of its bounding one would put the swarm inside it.
+            assert!(vr > br * 0.45, "seed {seed}: {vr} against {br} is far too small");
+        }
+    }
+
     /// And it carries ore, or the second surface is a material nothing is
     /// drawn in and the seam is a claim rather than a picture.
     #[test]

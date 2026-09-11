@@ -5,20 +5,20 @@
 // own tangent frame. Lit by the scene's own key light so the cloud has shape
 // at no cost: the PBR pipeline is for hulls.
 //
-// The instance attributes sit at 8, 9 and 10, clear of every slot the mesh
+// The instance attributes sit at 8, 9, 10 and 11, clear of every slot the mesh
 // itself may fill: position 0, normal 1, uv 2, uv1 3, TANGENT 4, colour 5.
 // They were at 3 and 4 once, which is fine for a cube and collides the moment
 // the mesh carries tangents.
 //
-// TWO CHANNELS, and the whole of the shading here is which of them a term
-// belongs in. The LIT channel is light that arrived: the key, the fill, the
-// specular, and every one of them is attenuated by how much of the swarm
+// TWO CHANNELS, and the whole of the shading here is deciding which of them a
+// term belongs in. The LIT channel is light that ARRIVED: the key, the fill,
+// the specular, and every one of them is attenuated by how much of the swarm
 // stands between this mote and where that light came from. The EMISSIVE
-// channel is light this mote MAKES, and nothing in the cloud can take it
-// away. A lamp does not go out because the thing next to it is in shadow.
+// channel is light this mote MAKES, its drives and its eyes and the wound in
+// it, and nothing in the cloud can take any of that away. A lamp does not go
+// out because the thing next to it is in shadow.
 
-#import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_clip}
-#import bevy_pbr::mesh_view_bindings::lights
+#import bevy_pbr::mesh_view_bindings::{view, lights}
 
 struct Vertex {
     @location(0) position: vec3<f32>,
@@ -28,10 +28,12 @@ struct Vertex {
     @location(5) color: vec4<f32>,
     @location(8) i_pos_scale: vec4<f32>,
     @location(9) i_vel_seed: vec4<f32>,
-    // What the swarm's own tick worked out about the light here: x is how
-    // much of the sun reaches this mote through the rest of the cloud, y how
-    // much of the sky does, z how much light it makes of its own.
-    @location(10) i_shade: vec4<f32>,
+    // How much of the mote is left, in x: one whole, nought about to come
+    // apart.
+    @location(10) i_life: vec4<f32>,
+    // And what the cloud does to the light on it: x how much of the sun
+    // reaches it through the rest of the swarm, y how much of the sky does.
+    @location(11) i_shade: vec4<f32>,
 };
 
 struct VertexOutput {
@@ -41,10 +43,12 @@ struct VertexOutput {
     @location(2) tangent: vec4<f32>,
     @location(3) uv: vec2<f32>,
     // How much of its OWN light this fragment makes. Nought for chitin, and
-    // well over one for a drive at speed.
+    // over one for a drive at transit speed.
     @location(4) glow: f32,
     // x = the sun that got through, y = the sky that got through.
     @location(5) shade: vec2<f32>,
+    // How hurt it is: nought whole, one about to come apart.
+    @location(6) hurt: f32,
 };
 
 @group(3) @binding(0) var chitin: texture_2d<f32>;
@@ -59,17 +63,16 @@ fn basis_from(v: vec3<f32>) -> mat3x3<f32> {
     return mat3x3<f32>(r, u, f);
 }
 
-/// The key, from the SCENE's own light rather than from a number written down
-/// here.
+/// The key, off the SCENE's own light rather than a number written down here.
 ///
-/// It used to be a hard coded `(0.4, 0.8, 0.3)` against a sun the app aims
-/// along `(0.42, 0.66, -0.62)`, which is a cloud lit from one side of the sky
-/// and a fleet lit from the other. It never showed while the swarm had no
-/// shading worth the name; it would show the moment it had, because a shadow
-/// cast one way and a highlight the other is the one thing an eye cannot
-/// forgive. The view bind group is already bound for this draw, so the light
-/// is simply there to be read, and the density field marches along the same
-/// vector the app hands the swarm.
+/// It was hard coded, on the grounds that this draw binds the view and the
+/// chitin and nothing else. It binds more than that: the mesh VIEW bind group
+/// is group nought, and the lights are binding one of it, so the sun the scene
+/// is actually lit by is there to be read for nothing. That matters now the
+/// swarm shadows itself, because the density field marches along the vector
+/// the app publishes and this has to be the same one. Two numbers written down
+/// in two places drift, and a cloud shadowed from one side of the sky with its
+/// highlight on the other is the single thing an eye will not forgive.
 fn key_light() -> vec3<f32> {
     if (lights.n_directional_lights > 0u) {
         return normalize(lights.directional_lights[0].direction_to_light);
@@ -82,7 +85,25 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let b = basis_from(vertex.i_vel_seed.xyz);
     let local = b * (vertex.position * vertex.i_pos_scale.w) + vertex.i_pos_scale.xyz;
     var out: VertexOutput;
-    out.clip_position = mesh_position_local_to_clip(get_world_from_local(0u), vec4<f32>(local, 1.0));
+    // WORLD to clip, straight off the view, exactly as the spark shader does
+    // it. This used to be `mesh_position_local_to_clip(get_world_from_local(0u), ...)`,
+    // and that hard coded `0u` is the bug the whole swarm was flipping on.
+    //
+    // `get_world_from_local` indexes Bevy's MESH INSTANCE buffer, which is
+    // built per frame per view and holds every batched mesh in the scene. Slot
+    // nought is not this entity: it is whichever mesh the batcher happened to
+    // put first, and the batcher orders by pipeline and by distance, so the
+    // answer CHANGES as the camera moves. The whole swarm was being drawn in
+    // some other object's frame, every mote sharing the one wrong matrix, so
+    // they all flipped together the moment the sort order changed and the
+    // cloud looked like it was in a different reference frame from the world.
+    // Turning the camera to a certain angle is exactly what reorders the sort.
+    //
+    // A mote position is already in world space: the compute pass writes world
+    // coordinates and the entity's own transform is the identity. So there was
+    // never a model matrix to look up, which is why reading the wrong one went
+    // unnoticed for as long as slot nought happened to hold an identity.
+    out.clip_position = view.clip_from_world * vec4<f32>(local, 1.0);
     out.color = vertex.color;
     out.normal = b * vertex.normal;
     out.tangent = vec4<f32>(b * vertex.tangent.xyz, vertex.tangent.w);
@@ -92,11 +113,18 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     // thousand motes are one instanced draw and a second mesh for their
     // engines would be a second draw per mote.
     //
-    // How hard it burns is the mote's, not the vertex's: the tick works it
-    // out once from the speed and this reads it, rather than two hundred
-    // vertices each taking the length of the same velocity.
-    out.glow = (1.0 - vertex.color.a) * vertex.i_shade.z;
+    // Engines burn harder the faster it is going, so a launch is a flare and
+    // a fighter holding station is an ember.
+    //
+    // TONED DOWN. It was 1.1 to 4.3, which put every drive in the cloud
+    // through the bloom threshold at any speed, so a million motes were a
+    // million bloom sources and the swarm read as a green haze with bodies
+    // somewhere in it. Half to just under two now: a fighter at rest is an
+    // ember below the threshold, and only one at full transit crosses it.
+    let speed = length(vertex.i_vel_seed.xyz);
+    out.glow = (1.0 - vertex.color.a) * (0.5 + 1.4 * clamp(speed / 14.0, 0.0, 1.0));
     out.shade = vertex.i_shade.xy;
+    out.hurt = clamp(1.0 - vertex.i_life.x, 0.0, 1.0);
     return out;
 }
 
@@ -113,32 +141,47 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // ---- the lit channel ----
     //
-    // Every term here is light that came from somewhere else, so every term
-    // is attenuated by what the swarm did to it on the way. The sun is one
-    // direction, so what stands in its way is the cloud along that line; the
-    // sky and the bounce are everywhere, so what stands in their way is the
-    // cloud immediately round this mote. That is the whole of the self
-    // shadowing, and it is why the cloud stops being a flat sheet of lit
-    // specks the moment it gets thick: a mote on the near face of a clump is
-    // as bright as it ever was, and one behind ten thousand of its own kind
-    // is nearly out.
+    // HARSH, on purpose. The ambient floor and the back fill are both at forty
+    // percent of what they once were (0.22 to 0.088, 0.15 to 0.06) and the
+    // direct term is a full one: a mote is lit by a sun in vacuum, so the side
+    // away from it is nearly black and the terminator is a hard line. The old
+    // floor gave every body a grey lift that read as fog over the cloud.
+    //
+    // And every one of those terms is light that came from somewhere else, so
+    // every one is attenuated by what the swarm did to it on the way. The sun
+    // is one direction, so what stands in its way is the cloud along that
+    // line; the sky and the bounce are everywhere, so what stands in theirs is
+    // the cloud immediately round this mote. That is the whole of the self
+    // shadowing, and it is what stops a thick cloud reading as a flat sheet of
+    // lit specks: a mote on the near face of a clump is as bright as it ever
+    // was, and one behind ten thousand of its own kind is nearly out.
     let sun = in.shade.x;
     let sky = in.shade.y;
-    let direct = max(dot(n, key), 0.0) * sun;
-    let fill = max(dot(n, -key), 0.0) * sky;
-    // A little specular off the wet looking chitin, which is the sun again
-    // and so goes out with it.
+    let shade = 0.088 * sky + max(dot(n, key), 0.0) * sun + 0.06 * max(dot(n, -key), 0.0) * sky;
+    // A tighter, brighter specular off the wet looking chitin, since a harsh
+    // key is what a highlight needs to read. It is the sun again, so it goes
+    // out with the sun.
     let h = normalize(key + vec3<f32>(0.0, 0.0, 1.0));
-    let spec = pow(max(dot(n, h), 0.0), 24.0) * 0.35 * sun;
-    let body = in.color.rgb * (0.22 * sky + 0.78 * direct + 0.15 * fill) + vec3<f32>(spec);
+    let spec = pow(max(dot(n, h), 0.0), 40.0) * 0.5 * sun;
+    let body = in.color.rgb * shade + vec3<f32>(spec);
 
     // ---- the emissive channel ----
     //
-    // ADDED, never mixed. It used to replace the lit result wherever it was
-    // over one, which made a glow and a shadow two settings of the same knob;
-    // with the cloud shading itself that is exactly backwards, because the
-    // motes whose own lamps are worth looking at are the ones buried deepest
-    // in it. Nothing above touches this line: a mote in the dark heart of the
-    // swarm is a dark body with its drive still lit, which is the picture.
-    return vec4<f32>(body + in.color.rgb * in.glow, 1.0);
+    // ADDED, never mixed. A lit cell used to REPLACE the shaded body wherever
+    // it was over one, which made a glow and a shadow two settings of the same
+    // knob; with the cloud shading itself that is backwards, because the motes
+    // whose own lamps are worth looking at are the ones buried deepest in it.
+    // Nothing above touches this line: a mote in the dark heart of the swarm
+    // is a dark body with its drives still lit, which is the picture.
+    //
+    // A HURT mote burns too, in the violet it bleeds rather than the green its
+    // eyes are lit with, so what a hit did is on the thing that took it and
+    // not only in the burst. Squared, so a graze is nearly nothing and a mote
+    // one shot from coming apart is plainly glowing as it turns for home,
+    // which is where `PH_RETURN` is already sending it. Emissive, because a
+    // wound is a hole with the light of the animal coming out of it: shading
+    // it would put the brightest wounds in the swarm exactly where the cloud
+    // is thickest and nobody can see them.
+    let wound = vec3<f32>(1.05, 0.20, 1.45) * in.hurt * in.hurt;
+    return vec4<f32>(body + in.color.rgb * in.glow + wound, 1.0);
 }

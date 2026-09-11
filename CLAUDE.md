@@ -85,14 +85,17 @@ rather than a shader tuning a number, so a bigger mote shadows more by itself.
 `--thickness 0` is the flat lighting this replaced, which is what an A/B is
 taken against.
 
-**And the key is the SCENE's light now.** `mote.wgsl` lit the swarm along
-(0.4, 0.8, 0.3) while the app aims the sun along (0.42, 0.66, -0.62): a cloud
-lit from one side of the sky and a fleet lit from the other. It never showed
-while the motes had no shading worth the name and it would have shown the
-moment they had, because a shadow cast one way with a highlight the other is
-the one thing an eye will not forgive. The view bind group is already bound
-for that draw, so the light is simply there to be read, and the density field
-marches along the same vector the app hands the swarm.
+**And the key is the SCENE's light now, read rather than copied.** It was a
+constant in the shader, matched by hand to the vector `setup` aims the
+directional light along. That was already one number written down in two
+places, and shadowing makes it three, because the density field marches along
+whatever the app publishes: a cloud shadowed from one side of the sky with its
+highlight on the other is the one thing an eye will not forgive, and it is
+exactly what copies drift into. The claim that the mote draw binds nothing but
+the view and the chitin was the thing to check: it binds the mesh VIEW bind
+group at nought, and `lights` is binding one of it, so the sun the scene is
+actually lit by was there to be read for nothing the whole time. `SUN` in
+`main.rs` is the only place it is written now.
 
 **A glow is EMISSIVE, and nothing in the cloud takes it away.** The lit cells
 used to REPLACE the shaded body wherever they were over one, which made a glow
@@ -105,15 +108,21 @@ by nothing, because a lamp does not go out because the thing beside it is in
 shadow. A mote in the dark heart of the swarm is a dark body with its drive
 still lit, which is the picture.
 
-What it cost is a fourth `vec4` on the mote, sixteen bytes on the buffer the
-whole design rests on. It buys the only thing a shaded swarm cannot do
-without, which is somewhere to put the answer: a mote cannot work its shadow
-out at draw time and cannot be told it either, because nothing about a mote
-ever comes back to the CPU. The mote buffer IS the instance buffer, so a field
-the tick fills is a field the vertex shader already has, for no upload and no
-pass. `shade.z` is the one place anything that makes a mote glow writes to: the
-drive on its own speed today, worked out once per mote rather than once per
-vertex, and whatever else is meant to light one up from the inside next.
+**A WOUND is in that same channel, and that is the whole reason it can be
+seen.** A mote is hurt rather than only alive or dead (`extra.x`, one down to
+nought), and a hurt one now burns violet, the colour it bleeds rather than the
+green its eyes are lit with, squared so a graze is nearly nothing and a mote
+one shot from coming apart is plainly glowing as it turns for home. Shading
+that would be exactly wrong: the swarm is thickest where the fighting is, so
+shading a wound would put every bright one in the picture precisely where the
+cloud has already put it out.
+
+What it cost is a fifth `vec4` on the mote, on the same terms as the fourth.
+It buys the only thing a shaded swarm cannot do without, which is somewhere to
+put the answer: a mote cannot work its shadow out at draw time and cannot be
+told it either, because nothing about a mote ever comes back to the CPU. The
+mote buffer IS the instance buffer, so a field the tick fills is one the vertex
+shader already has, for no upload and no pass.
 
 ## Hulls are the redux-tribes hulls, one to one
 
@@ -242,15 +251,15 @@ fireballs turned the screen white, which is also why the green a carrier burns
 is a MULTIPLIER on the ramp and not a term added to it: a constant added to
 nine hundred additive sparks puts a floor under the whole burst.
 
-**Moving the ship is Homeworld's own shape.** The right button opens an order:
-the cursor picks a point on the horizontal plane through the ship, and holding
-shift lifts the target off that plane and draws the line back down to it,
-which is what makes a flat screen able to name a place in three dimensions at
-all. Release commits. `fly_hull` is a real envelope, not a lerp: it
-accelerates, it has a top speed, it slows into the arrival and it turns to
-face the way it is going, so an order to a capital ship has weight. Left drag
-is the camera, which now follows the ship on `1 - exp(-k dt)` so the ease
-takes the same wall time at any frame rate.
+**Moving the ship is Homeworld's own shape.** Right click opens an order on
+the selection: the cursor picks a point on the horizontal plane through the
+ships, and holding shift lifts the target off that plane and draws the right
+angle triangle back down to it, which is what makes a flat screen able to name
+a place in three dimensions at all. Left click commits. `fly_hull` is a real
+envelope, not a lerp: it accelerates, it has a top speed, it slows into the
+arrival and it turns to face the way it is going, so an order to a capital
+ship has weight. The full flow, and what the first cut of it got wrong, is
+under "The controls are an RTS's now".
 
 `publish_hull` hands the hull's live position to the swarm every frame, which
 is what makes moving it worth doing: the cloud is dragged along behind and a
@@ -408,22 +417,504 @@ So what kills a mote is the shell reaching it, and a player can watch a burst
 travel into the cloud and see the hole appear at the end of its own flight,
 which is the whole reason for having a shell at all.
 
-## Veins: a share of the swarm winds round the rocks
+## Linking is the slow step, and it looked like a hang
 
-A fifth of the motes do not go for the ship. They take an asteroid as their
-focus instead, at a standoff of a little over its own radius, and they do not
-make runs: they HOLD, and they run fast along their own orbit.
+A build that sits on `398/399: swarm_app(bin)` with no output is cargo waiting
+for the LINKER, not a stall. A Bevy binary is a very large link: 124 MB before
+anything is stripped, and a relink alone is about 27 seconds here with the
+default linker. On Windows under `link.exe`, with Defender inspecting every
+object file the linker opens, the same step runs into minutes.
 
-It is one hash and one select, and nothing else in the tick knows which kind a
-mote is. That is the point: a vein is not a second behaviour, it is the same
-behaviour pointed at something else. Combined with the per mote swirl axis it
-draws a braid winding round the rock rather than a shell round it, because a
-few hundred near circular orbits at every inclination is what a braid is.
+Three things, in the order they are worth doing:
 
-Two things had to be told about it. A vein's OWN rock pushes it far less than
-the others do, or the avoidance term would shove the ribbon straight off the
-thing it is wound round, since the standoff is inside the margin by design. And
-a vein does not bite the hull, because it is nowhere near it.
+- **`strip = "true"` on the release profile.** 124 MB down to 83 MB, and a
+  relink from 27 seconds to 21. The symbols were being written for nobody.
+- **`rust-lld` on Windows**, in `.cargo/config.toml`. It ships with the Rust
+  toolchain, so there is nothing to install, and it is dramatically faster on a
+  link of this shape. The file says in place what to delete if it ever fails to
+  resolve, because a config that breaks a build is worse than a slow one.
+- **Exclude `target` from Defender.** Often the largest single difference on a
+  Windows machine and it costs nothing.
+
+Neither `lld` nor `mold` is configured for Linux or macOS on purpose: neither
+ships with the toolchain, and a config that fails on a machine without them is
+worse than a slower link on one that has neither.
+
+## Armour went back to one, and the reactor rule is why that is safe
+
+A hundred times the bare material made a ship that could not be hurt. What
+actually needed fixing was never the plating: it was that losing a tenth of
+your cells ANYWHERE blew the ship up, so the only way to survive was to not be
+touched. `REACTOR_LOSS` fixed that on its own, and it is the rule that lets the
+plating be soft again. A cell comes off in a few bites, the swarm visibly eats
+a hull, and the ship keeps flying, because a hole in the plating is not a hole
+in the reactor.
+
+## A drive plumes from the MIDDLE of its bell
+
+`clusters_of` put the muzzle at the single cell that reached furthest along the
+cluster's axis. On a drive bell three cells square, every cell on the outer
+face ties for that, so the first one found wins and it is a CORNER: every flame
+was drawn half a bell up and half a bell across from its own engine, and on a
+block of six bells that reads as the whole set being misaligned. The muzzle is
+the cluster's midpoint carried out to its outer face now, and
+`a_drive_plumes_from_the_centre_of_its_bell` builds exactly the shape that
+exposed it.
+
+## Ships steer round the rocks, beams sweep, and the dead are obstacles
+
+**A ship used to fly straight through an asteroid**, which is the field being
+scenery rather than terrain. Hulls steer on the same distance field the swarm
+does, at their own scale, and there is a hard clamp after the position is
+written: steering can be beaten, and an order given straight through a rock
+asks for exactly that.
+
+**A beam is SWEPT.** It used to be a fixed segment for its whole life, killing
+whatever was on that line at the tick it went off and nothing after. The far
+end walks across while the beam is alive, about an axis hashed off the beam
+itself so two guns firing together do not scythe in step, and it is much wider:
+a beam a couple of cells across cut a thread through the cloud and killed
+almost nothing anybody could see. What the swarm is handed each tick is a
+different segment, so the beam carves an arc and sets off a line of kills that
+travels.
+
+**And a mote that comes apart leaves a hole.** It writes its position and the
+time into a ring of sixty four shocks, and every mote reads all of them every
+tick: a sphere that opens on the same `sqrt` curve a blast uses and fades over
+its life. The swarm opens where one died instead of closing straight over it.
+Written by one thread and read by the others a tick later, which is the only
+order available, and one tick of lag on a wave lasting most of a second is not
+a thing anybody can see.
+
+## A ship that dies leaves a WRECK
+
+**The reactor took the whole ship, and three turrets hung in space where a
+frigate had been.** `go_critical` blasted a sphere of one and a half radii,
+which on any hull is every cell of it, and threw up to four hundred and fifty
+single cell cubes: the picture after a death was a spray of dust and the
+guns, which are children with meshes of their own that nothing had touched.
+The owner caught both off one screenshot.
+
+**A wreck is a few BIG pieces, and each piece is a hull.** The reactor takes
+the ball around it (`HULL_HOLE`, well under the radius, or there is no
+wreck), and `fx::shatter` breaks what is left along two planes through the
+blast, hashed off the ship's seed: one near across the long axis, so a hull
+breaks into a bow and a stern, one along it at a hashed roll, so each of
+those breaks port from starboard or deck from keel, and then each sector's
+connected runs of live cells. Two planes rather than three, because eight
+pieces of a frigate are not giant and giant is the point. Anything under
+`WRECK_MIN` cells is dust and is thrown as before. The suite holds a block
+with a hole in it to three to eight pieces, every one connected, the biggest
+a real share of the hull and never the whole of it, and the pieces and the
+dust accounting for every live cell exactly once.
+
+Each piece is spawned as a `Hull` of its own: a copy of the dead ship's model
+and damage grid with every live cell that is not in the piece KILLED at the
+blast tick, so its cut faces are wounds, white hot and cooling on the same
+ramp as any bite, and `remesh_dirty` cools them without knowing it is looking
+at a wreck. It is meshed once, over only the bricks the piece touches, and it
+is `dead_hull` from birth, so everything that already skips a dead hull (the
+swarm's targets, the guns, the bars, the orders, the chewers) never looks at
+it; `fly_hull` says `Without<Wreck>` and `drift_wrecks` is its whole flight.
+It SMOKES, and nothing was written for that: `vent_smoke` asks the damage
+grid where a hit opened a face, and a wreck's cut is a wound like any other.
+A piece tumbles about its OWN middle: its cells are laid out about the hull's
+origin, which is not the piece's centre, so the tumble is kept as a pivot and
+a rotation and the entity is placed from those every frame, because rotating
+an off centre piece about its origin swings it round in an arc. The guns come
+off whole, cut loose from the hull and thrown a little harder than a section.
+And the ship that was is despawned: every cell of it is in a piece, in the
+dust or in the fireball now. A minute later the pieces go too, because ten
+carriers' wrecks are ten thousand bricks of mesh.
+
+## The controls are an RTS's now
+
+**Selection takes the left button, so the camera gave it up.** Orbit is the
+MIDDLE button, with alt and left as the alias for a mouse that has none. A
+click takes the nearest ship to the pointer, a drag takes a box of them, and
+shift adds rather than replaces, which is the one convention every RTS shares.
+Carriers are excluded even though they are hulls: they are not yours and cannot
+be ordered.
+
+**A move order is a MODE, not a drag, and it was prototyped before it was
+written.** The first cut shipped four defects the owner found in one session,
+so the flow was rebuilt as a three.js prototype and a design document, tested
+in a browser until it was approved, and only then ported. What is here is that
+prototype one to one. Right click opens the disc on the selection, the cursor
+aims it on the plane through the ships, shift lifts it off that plane, and
+LEFT click commits, which is Homeworld's own button and the one the first cut
+got wrong. Holding a button while also moving the mouse to pick a point and
+then holding shift to lift it is three things one hand is doing at once; a mode
+costs one more click and lets the player take as long as they like over the
+part that is actually hard. Every selected ship gets the commit point offset by
+where it already stands relative to the group, so a formation arrives as a
+formation instead of piling onto one coordinate. An escort that is given an
+order of its own stops keeping station, because one flown to a point and then
+straight back to its slot is an order that did nothing.
+
+**`OrderMode` is the rule: a button press is read by exactly one system per
+frame, and the mode decides which.** The first cut read every button in every
+system, and every one of the four defects came from that.
+
+- **Confirming the order CLEARED the selection.** The left press was the
+  commit in `nav_input` and the start of a box in `select_input`, on the same
+  frame, so the release then selected nothing. `select_input` acts only in
+  `Idle` and `Box`, `nav_input` opens only from `Idle` and acts only in
+  `Move`, and the three input systems run menu, box, order, each reading the
+  mode the one before left.
+- **A box that stayed open with no button down.** `select_input` returned
+  early whenever the cursor was off the window, which is exactly where a drag
+  that started near the edge ends, so the release was never seen. The box
+  opens on the press and closes on the release, and the release is read off
+  the BUTTON, never off the cursor; the cursor is tracked wherever it reports
+  from and kept where it was last seen when it does not; and a window that
+  loses focus drops the box outright, selecting nothing.
+- **A bar on every ship says nothing about what is selected.** Bars and the
+  cyan ring are on SELECTED ships only, which is how every RTS says a unit is
+  selected. Three bar colours a player can name rather than a ramp.
+- **A confirmed order did nothing anybody could see.** A gold ring pings open
+  at the destination, the HUD says "2 ships under way" and fades, and an
+  orange line and ring stand on each ship until it arrives: the order is
+  visibly THERE.
+
+**The disc's rim is AT THE CURSOR.** A large cyan disc on the plane through
+the selection whose radius is the order's own distance, with an X across it,
+so the small gold ring where the order lands sits ON the rim and the gold line
+out to it is a radius; lifted, the vertical, the direct line and a red ring at
+the raised point with the distance in red beside it, and the triangle's base
+is the disc's radius. This is Homeworld's disc, which grows with the mouse.
+The first port drew a fixed rim at `MOVE_RANGE` while the cursor named a point
+a third of the way out, and the owner caught it off the screenshot: a disc
+that does not reach the cursor says nothing about the order. It stops growing
+at `MOVE_RANGE` radii of the biggest selected hull, and a point past that is
+clamped to it. The elevation is read FROM THE CURSOR'S POSITION rather than from how far it
+moved: the plane point holds still and the target sits on the vertical through
+it at the closest point to the cursor's ray, `t = (b*e - d)/(1 - b*b)` with
+`w = P - O`. Not `O - P`, which negates `t` and put the target below the plane
+when the mouse went up, and was the prototype's own second bug. `--aim x,y,z`
+opens the disc headless so the picture can be taken.
+
+**Escape belongs to the ORDER first.** One escape cancels an open move, or an
+open box, and does nothing else; the next, with nothing open, reaches the pause
+menu. `toggle_pause` runs BEFORE the two input systems so it sees the mode the
+key was pressed in and not the `Idle` they leave behind. Space is the plain
+pause. And `nav_input` sits OUTSIDE the run gate with the camera and the
+drawing, because giving orders with the world stopped is the entire reason a
+pause key is worth having.
+
+**And `--hud` PROVES the HUD rather than asserting it.** It did not, at first:
+Bevy hands UI to whichever camera renders the primary window, a headless run
+has no primary window, and every node was laid out and drawn to nothing. The
+flag produced a screenshot with no HUD in it, which is the one outcome a flag
+for showing the HUD must not have. `IsDefaultUiCamera` on the headless camera
+is what fixed it, and `--paused` opens the menu so that can be photographed
+too. Two glitches turned up the moment there was a picture to look at: a
+`\u{25be}` caret the default font has no glyph for, which draws as a hollow
+box, and a binding list where every line after the first was indented, because
+a `\` string continuation keeps the leading whitespace of the next SOURCE line.
+Neither would ever have been found by reading the code.
+
+**The bars are UI nodes, not meshes**, and that is the right call for exactly
+these two things: a health bar is a fixed number of pixels tall whatever the
+range, and a band box is in screen space by definition. Anything that has to
+hold its size in the WORLD stays a mesh, which is why the nav disc and the
+beams are not here.
+
+A bar reads the REACTOR, not the plating. Plating comes off and the ship keeps
+flying; the reactor is the only thing that kills it, so it is the only honest
+thing to put on a bar. Your ships only: a health bar over a carrier turns a
+siege into a progress bar, and what tells you a carrier is hurt is that it is
+bleeding and burning, which it already does.
+
+**A fighter is worn down by WHERE it flies.** It cannot be shot by a named
+mote, because no mote has a name on the CPU: they live in a buffer and never
+come back. What is knowable is where the swarm holds, which is the ring round
+each ship, and a fighter patrols inside that band on purpose. Attrition is
+depth into the band, it mends once clear, and it comes apart when it runs out.
+The squadron replaces losses one at a time on a timer, but launches WHOLE the
+first time: pacing the first launch would mean half a minute before the wing
+exists, which is a screen that arrives after the fight it was meant to screen.
+
+**The ship dropdown despawns and respawns.** A ship here is its model, its
+damage grid, its bricks, its materials, its turret children and its reactor,
+and every one of those is derived from the class at spawn. There is no such
+thing as changing the class of a hull that already exists, so it spawns a fresh
+one through the same code the game starts with. The wing and the squadron go
+with it, because an escort is a copy of the flagship's class and a fighter
+flies off it.
+
+## A turret is its own object, and it turns
+
+A gun that swivels cannot be part of the mesh it is bolted to, so its cells are
+lifted OUT of the hull's model before the bricks are built and given a child
+entity pivoting on the cluster's own middle. `gun_clusters` returns what the
+cluster walk already knew and used to throw away: the cells and the pivot.
+
+**This is deliberately not redux-tribes' approach.** That project rewrites a
+turret's quads inside the ship's own geometry every frame, for a reason that
+does not apply here: its hulls carve holes through the same buffers, so a mount
+with meshes of its own would mean the carve had to know which of four buffers a
+quad lives in. Here a gun is three to a ship, nothing carves it, and a child
+transform is free: the mesh is built once and only a rotation changes.
+
+The aim is the SAME answer `fire_guns` uses, so the barrel and the beam agree.
+A turret that pointed somewhere the beam did not come out of would be a
+decoration rather than a gun. It eases on a slew cap and stands down to the
+facing its own cluster looks out along when nothing is in reach.
+
+Everything is in the HULL's frame: a child's rotation is relative to its
+parent, so the target goes into that frame first and the rotation is then a
+plain `looking_to` with no ship pose in it at all.
+
+**And both companion queries need `Without<Turret>`.** Bevy proves two queries
+disjoint from their FILTERS, not from what you know about the data: it cannot
+tell that nothing is both a carrier and a turret, so a plain `&Transform` on
+the carriers conflicts with the `&mut Transform` on the turrets and the app
+panics at startup with B0001.
+
+## A beam lasts a second, and that is what a sweep needs
+
+`BEAM_TICKS` was nine, which is a flash: it lit, it killed whatever was on its
+line at that instant, and it was gone before anything it set off could be
+watched. Sixty is a second at sixty frames, and a sweep needs time to travel,
+because the whole point of sweeping is the line of kills a player can follow.
+
+That pushed straight through the shot cap. Seven ships with three guns each,
+every beam alive for sixty ticks, plus the flak already running at two dozen
+live bursts, goes well past thirty two, and what is past the cap is silently
+TRUNCATED: a beam that draws and kills nothing. `MAX_SHOTS` is sixty four, and
+the array in the shader is a hundred and twenty eight vectors, because the
+capsules are stored in pairs.
+
+## The swarm has a LIFE, and it is divided between ships
+
+**One published centre was the wrong requirement, not a wrong implementation.**
+The cloud chased `hull_centre`, a single position, so it could only ever be one
+animal on one ship: calling in four reinforcements put five frigates on the map
+and the swarm still sat on exactly one of them. "Position your ships to drive
+or divide the swarm" is the premise of the whole game, and a single target
+makes dividing it impossible to express at all.
+
+Every live player hull is a target now (`SwarmConfig.targets`, capped at
+`MAX_TARGETS`), and a mote picks one modulo the count from its own seed. That
+makes the division STABLE, so a mote does not change its mind every tick, and
+it means a ship dying shortens the list and its share of the cloud re-homes to
+whatever is left. That is the rule the carriers already keep and it needs no
+code of its own. Carriers are excluded, because they are hulls too now and a
+swarm that attacked its own motherships would be a fight with one side in it.
+
+**And a mote has four legs to its life rather than one.** It used to fly at the
+ship for ever, with a clock flipping it between two standoffs, which is a cloud
+and not an animal.
+
+| leg | what it does |
+| --- | --- |
+| transit | crosses from its carrier to the ship it was given |
+| circle | joins the RING round that ship |
+| attack | leaves the ring, presses to contact, bites |
+| return | goes home to its carrier, docks, and is put back together |
+
+Which leg a mote is on decides exactly one number the steering reads: where it
+wants to be. Everything else about the tick is unchanged, which is what keeps
+four behaviours from being four code paths.
+
+**A mote can be HURT now, and that is the only thing that sends one home.** A
+shot takes `SHOT_BITE` off it instead of removing it: two hits kill and one
+leaves it able to fly but not to fight, so at the end of a pass it breaks off
+for its carrier, repairs, and comes back. That needed a fourth vector on the
+mote (hit points, the leg, its timer and its place round the ring), which is
+sixteen more bytes each and sixteen megabytes at a million. That is the price
+of a mote that can be wounded rather than only alive or dead.
+
+**A RING, not a shell, and the difference is one axis.** The swirl axis belongs
+to the TARGET rather than to the mote: an axis per mote gives orbits at every
+inclination, which is a sphere of traffic, fine for a cloud milling about and
+not a formation. One axis per ship means every mote circling that ship goes
+round the same way on the same plane, and two ships do not ring the same way
+because the axis is hashed off which ship it is. A standoff alone would still
+spread them over that sphere, so there is a term pulling each mote INTO its
+ring's plane: that is what flattens the traffic into a ring somebody can see.
+
+**And a mote comes apart.** On top of the spark burst it throws DEBRIS: bigger,
+slower, longer lived and much dimmer, so what is left after the flash has gone
+is pieces tumbling away rather than nothing at all. They are the same particles
+as the flash and cost the same, which is the point: a mote that came apart into
+real meshes would be nine thousand entities the moment a volley landed.
+
+One WGSL trap on the way: `target` is a reserved keyword and the composer
+refuses the name outright. The field is `ship`.
+
+## Veins: a share of the swarm runs a ROUTE, and orbits were balls
+
+A fifth of the motes do not go for the ship. They belong to a route between
+two anchors, a rock and either another rock or the ship, and they ride a point
+that slides along it.
+
+**The first cut gave each of them its own standoff round one rock and its own
+swirl axis, and that is a BALL.** A thousand orbits at every inclination is a
+spherical shell by construction, which is the same mistake as the donut with
+the axis freed instead of fixed: the swarm came out as a solid globe round
+every asteroid. An ant does not orbit, it follows a path that other ants are
+on. Every mote on a route is on the same line, which is what makes a line of
+traffic, and the asteroid avoidance bends that line round anything standing in
+it: a trail that weaves is a trail that met something.
+
+It carries a TUBE rather than a line, a fixed offset per mote about the route,
+so the traffic has a cross section a few motes wide instead of every one of
+them trying to be at the same point. The route parameter lives in `state.w`,
+which is the run clock for everything else: one field, two meanings, and
+nothing reads the wrong one because `vein` is decided from the seed and never
+changes. A vein gets no swirl at all, which is the term that spreads traffic
+over a sphere: right for a cloud besieging a ship, wrong for a line of them
+going somewhere.
+
+## Three bugs that all looked like the swarm being out of sync
+
+The report was that the cloud flew "in a different frame of reference" from the
+world, that it flipped all at once, that it happened at certain camera angles,
+and that it was not consistent. That is four symptoms of three separate causes,
+and none of them was a sync problem.
+
+**The mote shader read the mesh uniform at a hard coded index nought.** It
+built its clip position with `mesh_position_local_to_clip(get_world_from_local(0u), ...)`.
+`get_world_from_local` indexes Bevy's MESH INSTANCE buffer, which is built per
+frame per view and holds every batched mesh in the scene. Slot nought is not
+this entity: it is whichever mesh the batcher put first, and the batcher orders
+by pipeline and by distance, so **the answer changes as the camera moves**. The
+whole swarm was drawn in some other object's frame, every mote sharing the one
+wrong matrix, so they all flipped together the moment the sort order changed.
+Turning the camera to a certain angle is exactly what reorders the sort.
+
+A mote position is already in world space, because the compute pass writes
+world coordinates and the entity's transform is the identity, so there was
+never a model matrix to look up. `view.clip_from_world` directly, which is what
+the spark shader had been doing correctly the whole time. **The rule: if a
+shader wants a matrix it is not using, that is not a spare argument, it is a
+lookup that can be wrong.**
+
+**The rock the swarm navigated was bigger than the rock that was drawn.**
+`VoxelModel::radius` is the bounding sphere, measured to the furthest CORNER of
+the furthest cell, so on a lump stretched half again on one axis it is set
+entirely by that axis and stands well clear of the surface everywhere else.
+Used as "how big is this", it put motes in orbit round a sphere with nothing in
+it, which is what "they are orbiting nothing" was. `volume_radius` is the
+radius of a sphere with the same VOLUME as the solid cells, which is the same
+measure redux-tribes keeps beside its class table and for the same reason: a
+radius that nothing links to the shape is a radius that disagrees with the
+picture. Both are right answers to different questions, and the suite pins that
+the volume one sits inside the bounding one and is not a token fraction of it.
+
+**And there were two clocks.** The swarm's own clock clamped its step at a
+twentieth of a second and every system on the CPU clamped at a quarter. On any
+frame slower than fifty milliseconds the ship moved by the real elapsed time
+and the cloud chasing it moved by at most a twentieth: the swarm fell behind
+the world by the difference, every slow frame, and never caught up. Two clamps
+is two clocks. `swarm::STEP_CLAMP` is the one number now, read by the swarm's
+clock and by everything on the CPU that integrates anything.
+
+## A guard that changed what it was guarding
+
+The swarm settled into spheres with nothing inside them, sitting near the
+asteroids but not on them, and it looked like a render offset. It was one line
+of steering:
+
+```wgsl
+let inside = p.hull.w * 1.05 - dist;
+if (inside > 0.0) { acc = acc - dir * inside * 40.0; }
+```
+
+`dist` and `dir` are relative to the mote's FOCUS. When every mote's focus was
+the ship that line meant "do not fly through the hull" and was correct. The day
+the focus became a variable, so a vein mote could aim at a point on a route,
+the same line started meaning "do not approach your own destination": it pushed
+a vein out to the SHIP's radius from wherever its route had reached, at up to a
+hundred and forty against a pull of at most thirteen, so it could never get in.
+Every vein settled onto a sphere three and a half units across, and the routes
+run between rocks, so the spheres sat near the rocks and contained nothing.
+
+It is measured against the hull now, explicitly, whatever the focus is. **A
+guard written in terms of a variable that later gains a second meaning is a
+guard that silently changes what it protects.** Nothing threw, nothing looked
+wrong in the code, and the reviewer of that line would have had to remember
+what `dir` had come to mean four screens further up.
+
+The rock avoidance had the second half of the same shape. A radial push applied
+OUTSIDE the surface is a force with nothing to spend itself on: it balances
+against the pull toward the ship at some radius, and every mote that arrives is
+held there, so traffic that was only meant to pass a rock built a standing
+shell around it. Outside the surface the only correction now is to cancel the
+part of the velocity going into the rock and keep the part going along it,
+which is a mote sliding past an obstacle. A real push happens only once a mote
+is actually inside, where there is something to be pushed out of.
+
+## The camera jumped, and it was the input, not the camera
+
+There is one camera and one system writes its transform. What threw it across
+the map was how its input was read.
+
+**Mouse motion was drained only while dragging.** `MessageReader` keeps
+everything that arrived since the system last read it, and the drag loop only
+consumed events while the button was held. Move the mouse across the desk with
+the button up and the whole journey is waiting: it all applied on the first
+frame of the next drag. Motion is cleared whenever a drag is not in progress,
+including on the frame the button goes down.
+
+**And a single event's delta is clamped.** The window handing back focus, the
+pointer leaving and re-entering, or a compositor releasing a grab all deliver
+one event carrying thousands of pixels. At 0.005 radians a pixel that is
+several whole turns inside one frame, and it happens at the EDGE of the screen,
+which is why it seemed to depend on which way you had turned.
+
+**The wheel could make the distance negative.** It was `dist * (1.0 - y * 0.08)`,
+and a wheel reporting PIXELS rather than lines hands over a y of a hundred or
+more per notch, so the factor came out at minus seven, the distance went
+negative and the clamp slammed the camera to its near stop. One notch the other
+way and it slammed to the far one; a trackpad does this on every scroll. Zoom
+goes through `exp` now, which cannot return a negative number however big the
+input is, and the unit is read off the event rather than assumed.
+
+**The pointer over a button belongs to the button.** Bevy's UI does not consume
+the raw mouse, so pressing Call reinforcements dragged the camera at the same
+time: every click on the HUD threw the view sideways.
+
+**And the two systems had no order between them.** `orbit_input` and
+`orbit_camera` were registered in separate `add_systems` calls, so Bevy was
+free to run them either way round and could pick differently from one frame to
+the next: a drag arrived a frame late on some frames and not others, which is
+jitter that looks like a second camera fighting the first. There is only ever
+one camera; there were two possible orders.
+
+Nothing leaves `orbit_input` as a NaN either. Every expression is guarded where
+it could go wrong, so the check can only ever be redundant, and it is there
+because a NaN in the camera is not a wrong picture, it is every picture wrong
+from now on: the bad value is stored and fed back in next frame.
+
+## A frame counter, and a menu to turn it off
+
+The counter is in the opposite corner from the controls so it never sits over
+anything a player has to press, and it reads off `Time<Real>`.
+
+**Not `Time`.** The virtual clock's delta is clamped at 250 ms so one stalled
+frame cannot fling everything forward, which means a frame slower than that
+reports as 250 ms however long it really took. That is the exact trap the frame
+cap fell into once already, written up further down this file, and a counter
+built on it would read a floor of four frames a second however bad things got.
+It shows the frame TIME beside the rate, because a rate alone cannot be held
+against a budget: 16.7 ms is a number somebody can compare to 60, and "59 fps"
+is not.
+
+Escape opens the pause menu, which carries the toggle and Resume. The menu sets
+`SwarmConfig.paused` as well as its own flag, because the swarm lives in the
+render world on the other side of an extract and does not see the HUD's
+resource. Everything that MOVES is gated behind a run condition and everything
+that only DRAWS keeps running: the beams, the nav disc and the flames are
+rebuilt every frame from state, so skipping them empties their meshes and the
+picture goes blank behind a menu that says Paused.
+
+The overlay is hidden with `Display::None` and not `Visibility::Hidden`,
+because a hidden node is still laid out and still picked: an invisible Resume
+button would have gone on swallowing clicks in the middle of the screen the
+whole time the game was running.
 
 ## The controls are on the screen
 
@@ -722,14 +1213,19 @@ giving at least two bodies. An eye is a body cell relit on the crown of its
 column, never a cell beside the head: the first cut put eyes in space and the
 lancer came out in three pieces.
 
-**A drone's stern is not the brightest thing on it.** The two cells on the
-centreline used to be `DRIVE_HOT`, the near white, which against a swarm that
-shades itself made every bug a pair of headlamps seen from behind: the darker
-the bodies round it got, the more a mote read as its own exhaust. They are
-gone, and the four `DRIVE` cells either side and below are what is left, so
-the EYES are what reads first on a bug and the stern is what reads second.
-The lancer and the chewer keep their hot drives, because neither of them is
-what a hundred thousand of are on screen at once.
+**A drone's stern is ONE light, inset.** It was three calls and six cells, two
+of them `DRIVE_HOT`, the near white; against a swarm that shades itself that
+made every bug a bank of headlamps seen from behind, and the darker the bodies
+round it got the more a mote read as its own exhaust. What is left is the
+centreline cell a row BELOW the middle, which is what insets it: the body is an
+ellipsoid, so the row above and the columns either side stand further aft than
+that one does and the light sits in the notch they leave, chitin over it and
+chitin down both sides. A light flush with the widest part of a stern is a lamp
+stuck on the back; one in a recess is an exhaust. It is two cells wide rather
+than one and that is the mirror and not a choice, since anything on the
+centreline is a pair by construction; they touch, so they read as one. The
+lancer and the chewer keep their hot drives, because neither of them is what a
+hundred thousand of are on screen at once.
 
 `GLOW`, which is what everything ALIVE about an alien is lit with, came down
 from 0x9BFF4A to 0x6FB835 for the same reason. At the emissive a lit cell
@@ -745,6 +1241,22 @@ group at 3, and that is why the instance attributes moved to 8 and 9: they
 were at 3 and 4, which is fine for a cube and collides with the tangents the
 moment the mesh has any.
 
+**The motes are lit by the SUN, harshly, and their own shader does it.** A
+mote is not a `StandardMaterial`: a million of them are one instanced draw
+that binds the view and the chitin, so `mote.wgsl` lights them itself, off the
+scene's own directional light: `lights` is binding one of the view bind group
+that draw already binds, so a mote's lit side is the same side as a hull's
+without a copy of the sun vector anywhere in the shader. The floor under it was cut
+by sixty percent (0.22 to 0.088 ambient, 0.15 to 0.06 back fill) with the
+direct term at a full one, and the scene's `AmbientLight` took the same cut
+(6.0 to 2.4): a sun in vacuum makes a hard terminator and a nearly black far
+side, and the grey lift both had before read as fog over the cloud. The
+drive glow came DOWN at the same time, from 1.1 to 4.3 to 0.5 to 1.9 by
+speed: at the old numbers every drive in the cloud was over the bloom
+threshold at any speed, so a million bloom sources were the green haze the
+swarm read as. A fighter at rest is an ember below the threshold now and only
+one at full transit crosses it.
+
 It is tiled at HALF the rate of a finish, a scale spanning two cells, in the
 material's `uv_transform` and in the mote shader alike. At one scale a cell,
 on a body a few cells across, the map was bound and loaded and read as grain:
@@ -755,13 +1267,17 @@ the same failure as one that never loaded.
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 51, the core
+cargo test -p swarm_core                                   # 55, the core
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
 cargo build --release -p swarm_app
-./target/release/swarm_app --headless --motes 5000 --frames 60 --launch-delay 0 --out shot.png
-# --launch-delay 0 on every headless shot that wants a swarm in it: the
-# carriers hold for ten seconds by default, and a render aimed at tick ninety
-# cannot wait for that.
+./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png
+# A headless run defaults the launch delay to NOUGHT and a window defaults it
+# to ten. The opening beat before the swarm arrives is for a player; a harness
+# that waited ten seconds for its subject would spend every check rendering an
+# empty sky. `--launch-delay N` sets it either way.
+# --yaw and --pitch take the SAME tick from another angle, which is the only
+# way to answer "it looks wrong at some angles": hold everything still and
+# turn the camera.
 ./target/release/swarm_app --fps 60          # a window, capped; --fps 0 lifts the cap
 ./target/release/swarm_app --headless --motes 1 --chewers 0 --zoom 1.7 --out close.png
 # The effects, aimed: one frame is one tick, so a shot can be taken AT a tick.
@@ -771,10 +1287,18 @@ cargo build --release -p swarm_app
     --frames 140 --zoom 3.4 --out beams.png             # guns into the swarm
 ./target/release/swarm_app --headless --fixed-dt --motes 900 --explode 90 \
     --frames 93 --zoom 6.0 --out boom.png               # three ticks after the reactor
+./target/release/swarm_app --headless --fixed-dt --motes 900 --explode 90 \
+    --frames 300 --zoom 5.5 --out wreck.png             # the wreck, three and a half seconds on
 ./target/release/swarm_app --headless --fixed-dt --motes 800 --reinforce 4 \
     --move 30,3,-16 --chewers 0 --frames 320 --zoom 7 --out wing.png   # a wing on station
+./target/release/swarm_app --headless --fixed-dt --motes 800 --chewers 0 --hud \
+    --aim 40,14,-30 --frames 30 --zoom 30 --out order.png              # a move order being given
 ./target/release/swarm_app --headless --fixed-dt --motes 3000 --hives 3 --rocks 14 \
-    --launch-delay 0 --chewers 0 --frames 150 --zoom 5 --out battle.png  # the whole thing
+    --chewers 0 --frames 150 --zoom 5 --out battle.png     # the whole thing
+for y in 0.0 1.6 3.1; do                                   # the same tick, three angles
+  ./target/release/swarm_app --headless --fixed-dt --motes 4000 --frames 150 \
+      --zoom 11 --yaw $y --out ang_$y.png
+done
 node tools/export_hulls.mjs ../redux-tribes assets/hulls   # re-export the fleet (needs npm install in tools/)
 ```
 
