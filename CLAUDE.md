@@ -402,6 +402,59 @@ Written by one thread and read by the others a tick later, which is the only
 order available, and one tick of lag on a wave lasting most of a second is not
 a thing anybody can see.
 
+## The controls are an RTS's now
+
+**Selection takes the left button, so the camera gave it up.** Orbit is the
+MIDDLE button, with alt and left as the alias for a mouse that has none. A
+click takes the nearest ship to the pointer, a drag takes a box of them, and
+shift adds rather than replaces, which is the one convention every RTS shares.
+Carriers are excluded even though they are hulls: they are not yours and cannot
+be ordered.
+
+**A move order is a MODE, not a drag.** Right button opens the disc, the cursor
+aims it on the plane through the selected ships, shift lifts it off that plane,
+and a SECOND right button commits. Holding a button while also moving the mouse
+to pick a point and then holding shift to lift it is three things one hand is
+doing at once; a mode costs one more click and lets the player take as long as
+they like over the part that is actually hard. Every selected ship gets the
+commit point offset by where it already stands relative to the group, so a
+formation arrives as a formation instead of piling onto one coordinate.
+
+**Escape belongs to the ORDER first.** One escape cancels an open move and does
+nothing else; the next, with nothing open, reaches the pause menu. Space is the
+plain pause. And `nav_input` sits OUTSIDE the run gate with the camera and the
+drawing, because giving orders with the world stopped is the entire reason a
+pause key is worth having.
+
+**The bars are UI nodes, not meshes**, and that is the right call for exactly
+these two things: a health bar is a fixed number of pixels tall whatever the
+range, and a band box is in screen space by definition. Anything that has to
+hold its size in the WORLD stays a mesh, which is why the nav disc and the
+beams are not here.
+
+A bar reads the REACTOR, not the plating. Plating comes off and the ship keeps
+flying; the reactor is the only thing that kills it, so it is the only honest
+thing to put on a bar. Your ships only: a health bar over a carrier turns a
+siege into a progress bar, and what tells you a carrier is hurt is that it is
+bleeding and burning, which it already does.
+
+**A fighter is worn down by WHERE it flies.** It cannot be shot by a named
+mote, because no mote has a name on the CPU: they live in a buffer and never
+come back. What is knowable is where the swarm holds, which is the ring round
+each ship, and a fighter patrols inside that band on purpose. Attrition is
+depth into the band, it mends once clear, and it comes apart when it runs out.
+The squadron replaces losses one at a time on a timer, but launches WHOLE the
+first time: pacing the first launch would mean half a minute before the wing
+exists, which is a screen that arrives after the fight it was meant to screen.
+
+**The ship dropdown despawns and respawns.** A ship here is its model, its
+damage grid, its bricks, its materials, its turret children and its reactor,
+and every one of those is derived from the class at spawn. There is no such
+thing as changing the class of a hull that already exists, so it spawns a fresh
+one through the same code the game starts with. The wing and the squadron go
+with it, because an escort is a copy of the flagship's class and a fighter
+flies off it.
+
 ## A turret is its own object, and it turns
 
 A gun that swivels cannot be part of the mesh it is bolted to, so its cells are

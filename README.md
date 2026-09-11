@@ -3,10 +3,15 @@
 A real time space RTS against an alien swarm, in the voxel language of
 [redux-tribes](https://github.com/RubenTipparach/redux-tribes). Bevy 0.18.
 
-Right button opens a move order: the cursor picks a point on the plane
-through the ship, hold shift to lift it off that plane, release to commit.
-Left drag orbits, wheel zooms, **WASD and the arrows pan** the camera, Q and E
-lift and drop it, space snaps it to your ship. **R, or the button on screen,
+**Left drag** selects, a click picks one ship, shift adds to the selection.
+**Right button** opens the move disc, the cursor aims it, **shift** lifts the
+target off the plane, and **right button again** confirms. **Esc** cancels the
+order; Esc again opens the pause menu. **Space** pauses, and you can still give
+orders while it is stopped.
+
+**Middle drag** orbits (or alt and left), wheel zooms, **WASD and the arrows**
+pan, Q and E lift and drop, **F** snaps the camera to your ship. The ship
+dropdown top left swaps your flagship for another class. **R, or the button on screen,
 calls in reinforcements**, two per press up to a wing of six, which fly in from
 off the map and keep station on you. Your ship also puts up a squadron of
 fighters of its own.

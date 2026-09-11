@@ -250,7 +250,10 @@ fn main() {
     // finishes and the window maps already keep.
     if !args.headless || args.hud {
         app.add_systems(Startup, build_hud)
-            .add_systems(Update, (toggle_pause, hud_feedback, tick_fps));
+            .add_systems(
+                Update,
+                (toggle_pause, hud_feedback, tick_fps, select_input, draw_marquee, draw_bars, pick_hull),
+            );
     }
     if args.fps > 0 {
         app.insert_resource(FrameLimit::new(args.fps)).add_systems(Last, limit_frames);
@@ -284,6 +287,8 @@ fn main() {
         .init_resource::<NavOrder>()
         .init_resource::<BeamQuads>()
         .init_resource::<Lead>()
+        .init_resource::<Marquee>()
+        .init_resource::<BarPool>()
         .insert_resource(Hud { paused: args.paused, ..default() })
         .add_systems(Startup, (load_textures, setup).chain())
         .add_systems(
@@ -295,12 +300,16 @@ fn main() {
                 // and cannot see this one; these are the CPU half, and without
                 // the gate a paused game would still fly its ships, fire its
                 // guns and chew its armour behind a menu that said Paused.
+                // Orders are given whether or not the world is running, which
+                // is the whole point of a pause key in an RTS, so `nav_input`
+                // sits outside the gate with the camera and the drawing.
+                nav_input,
                 (
                     advance_tick,
-                    (apply_nav_to, call_reinforcements, nav_input, fly_hull, publish_hull).chain(),
+                    (apply_nav_to, call_reinforcements, fly_hull, publish_hull).chain(),
                     move_hives,
                     (fire_guns, fire_flak).chain(),
-                    (launch_fighters, fly_fighters, fighters_fire).chain(),
+                    (launch_fighters, fly_fighters, fighters_fire, wear_fighters).chain(),
                     resolve_beams,
                     (chew, vent_smoke, go_critical, bleed_hives),
                     publish_hives,
@@ -603,6 +612,12 @@ struct Fighter {
     /// Which slot of the squadron it is, which is what spreads the patrol
     /// stations and staggers the firing.
     slot: u32,
+    /// One down to nought. A fighter patrols inside the ring the swarm holds,
+    /// which is the densest part of the cloud, so it is worn down by BEING
+    /// there rather than by any particular mote: the CPU cannot see where a
+    /// mote is, so attrition by depth into the swarm's own band is the honest
+    /// approximation and it puts the cost where the risk is.
+    hp: f32,
     vel: Vec3,
     /// Where it is heading right now, in the world. Re-picked when it gets
     /// there, so a fighter flies a circuit of the cloud instead of parking.
@@ -706,6 +721,13 @@ const FIGHTER_TURN: f32 = 2.6;
 /// Ticks between one fighter's bursts, and how big a burst is in flagship
 /// radii. Short ranged: a fighter has to GO to the cloud.
 const FIGHTER_CADENCE: u32 = 14;
+/// How fast a fighter is worn down at the very centre of the swarm's band, in
+/// share of its life per second, and how fast it patches up once clear of it.
+/// How many ticks between replacements, so a wing rebuilds rather than
+/// popping back into existence the frame it was lost.
+const FIGHTER_REPLACE: u32 = 150;
+const FIGHTER_WEAR: f32 = 0.22;
+const FIGHTER_MEND: f32 = 0.10;
 const FIGHTER_BURST: f32 = 0.30;
 
 /// How many escorts a wing holds, and how many one press of R brings.
@@ -1000,7 +1022,10 @@ fn spawn_ship(
         // flagship nor an escort, and marking one would put the nav disc, the
         // camera and the swarm's own target on a mothership.
         None if log.is_some() => {
-            commands.entity(hull_entity).insert(Flagship);
+            // Selected out of the box, so the very first right button opens an
+            // order instead of doing nothing at all. A game that starts with
+            // nothing picked is a game whose first click teaches you nothing.
+            commands.entity(hull_entity).insert((Flagship, Selected));
         }
         None => {}
     }
@@ -1815,6 +1840,7 @@ fn move_hives(time: Res<Time>, scene: Res<Scene>, mut hives: Query<(&Hive, &mut 
 /// pictures. They carry no damage grid for the same reason they carry no hit
 /// points, which is that nothing can hurt them yet.
 fn launch_fighters(
+    tick: Res<Tick>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -1823,17 +1849,24 @@ fn launch_fighters(
     lead: Res<Lead>,
     flagship: Query<&Hull, With<Flagship>>,
     have: Query<(), With<Fighter>>,
-    mut done: Local<bool>,
+    mut next: Local<u32>,
 ) {
-    if *done || scene.fighters == 0 {
+    if scene.fighters == 0 {
         return;
     }
     let Ok(hull) = flagship.single() else { return };
-    if have.iter().next().is_some() {
-        *done = true;
+    // Replaces losses rather than launching once. A squadron that could only
+    // ever be spent would make `wear_fighters` a countdown to having none,
+    // which is not a screen, it is a fuse.
+    let out = have.iter().count() as u32;
+    if out >= scene.fighters || tick.tick < *next {
         return;
     }
-    *done = true;
+    *next = tick.tick + FIGHTER_REPLACE;
+    // The whole squadron at once the first time, one at a time after that.
+    // Pacing the FIRST launch would mean half a minute before the wing exists,
+    // which is a screen that arrives after the fight it was meant to screen.
+    let want = if out == 0 { scene.fighters } else { 1 };
     let radius = hull.model.radius();
     let m = load_hull(FIGHTERS_HULL);
     let sm = greedy_mesh(&m, None);
@@ -1845,7 +1878,7 @@ fn launch_fighters(
         .map(|surf| (meshes.add(to_mesh_where(&sm, |i| i == surf)), mats[surf].clone()))
         .collect();
 
-    for n in 0..scene.fighters {
+    for n in out..(out + want).min(scene.fighters) {
         // Out of the flagship, spread round it, so a launch reads as coming
         // OFF the ship rather than appearing beside it.
         let a = n as f32 * 2.399_963_2;
@@ -1855,14 +1888,16 @@ fn launch_fighters(
             .spawn((
                 Transform::from_translation(at).with_scale(Vec3::splat(scale)),
                 Visibility::default(),
-                Fighter { slot: n, vel: Vec3::ZERO, goal: at },
+                Fighter { slot: n, hp: 1.0, vel: Vec3::ZERO, goal: at },
             ))
             .id();
         for (mesh, mat) in &parts {
             commands.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::IDENTITY, ChildOf(f)));
         }
     }
-    info!("{} fighters up, {} on {}", scene.fighters, FIGHTERS_HULL, parts.len());
+    if out == 0 {
+        info!("squadron up: {} of {} on {}", want, scene.fighters, FIGHTERS_HULL);
+    }
 }
 
 /// Fly the squadron: a circuit of the swarm's own standoff, round the ship.
@@ -1911,6 +1946,53 @@ fn fly_fighters(
                 .rotation;
             xf.rotation = xf.rotation.slerp(aim, (dt * FIGHTER_TURN).min(1.0));
         }
+    }
+}
+
+/// A fighter is worn down by where it flies, and comes apart when it runs out.
+///
+/// It cannot be shot by a named mote, because no mote has a name on the CPU:
+/// they live in a buffer and never come back. What IS knowable is where the
+/// swarm holds, which is the ring round each ship, and a fighter patrols
+/// inside that band on purpose. So attrition is depth into the band, which
+/// puts the cost exactly where the risk is and needs nothing crossing the
+/// boundary.
+fn wear_fighters(
+    time: Res<Time>,
+    scene: Res<Scene>,
+    tick: Res<Tick>,
+    cfg: Res<SwarmConfig>,
+    mut commands: Commands,
+    mut sparks: ResMut<SparkQueue>,
+    mut fighters: Query<(Entity, &mut Fighter, &Transform)>,
+) {
+    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
+    for (e, mut f, xf) in &mut fighters {
+        // How deep into the thickest part of the cloud it is, over every ship
+        // the swarm is divided between.
+        let mut deep = 0.0f32;
+        for t in &cfg.targets {
+            let d = xf.translation.distance(t.truncate());
+            let band = t.w * FIGHTER_STATION;
+            if d < band {
+                deep = deep.max(1.0 - d / band.max(1e-4));
+            }
+        }
+        if deep > 0.0 {
+            f.hp -= deep * FIGHTER_WEAR * dt;
+        } else {
+            // Clear of it, and patching itself up.
+            f.hp = (f.hp + FIGHTER_MEND * dt).min(1.0);
+        }
+        if f.hp > 0.0 {
+            continue;
+        }
+        // Gone, and it goes the way everything else here goes: its own burst,
+        // in the colours of the side it was on.
+        let mut out: Vec<Spark> = Vec::new();
+        blast_sparks(f.slot.wrapping_mul(7919) ^ tick.tick, xf.translation.to_array(), 0.9, 40, &mut out);
+        sparks.extend(out);
+        commands.entity(e).despawn();
     }
 }
 
@@ -2041,6 +2123,150 @@ fn aim_turrets(
     }
 }
 
+/// The band box, and the bars over your own ships.
+///
+/// Both are UI NODES positioned from a world to screen projection rather than
+/// meshes in the scene, and that is the right call for exactly these two
+/// things: a health bar is a fixed number of pixels tall whatever the range,
+/// and a selection box is in screen space by definition. Anything that has to
+/// hold its size in the WORLD stays a mesh, which is why the nav disc and the
+/// beams are not here.
+#[derive(Component)]
+struct MarqueeBox;
+
+/// One bar over one ship.
+#[derive(Component)]
+struct HealthBar(Entity);
+
+/// The pool of bars, kept between frames rather than respawned.
+#[derive(Resource, Default)]
+struct BarPool(Vec<Entity>);
+
+fn draw_marquee(marquee: Res<Marquee>, mut q: Query<&mut Node, With<MarqueeBox>>) {
+    let Ok(mut n) = q.single_mut() else { return };
+    match marquee.from {
+        Some(from) => {
+            let lo = from.min(marquee.to);
+            let hi = from.max(marquee.to);
+            // A few pixels is a click, not a box, and drawing one for it is a
+            // flicker on every single selection.
+            if (hi - lo).length() < 6.0 {
+                n.display = Display::None;
+                return;
+            }
+            n.display = Display::Flex;
+            n.left = Val::Px(lo.x);
+            n.top = Val::Px(lo.y);
+            n.width = Val::Px(hi.x - lo.x);
+            n.height = Val::Px(hi.y - lo.y);
+        }
+        None => n.display = Display::None,
+    }
+}
+
+/// A bar over every ship of yours, and only yours.
+///
+/// The swarm's carriers get none on purpose: a health bar over an enemy turns
+/// a siege into a progress bar, and what tells you a carrier is hurt is that it
+/// is bleeding and burning, which it already does.
+fn draw_bars(
+    mut commands: Commands,
+    hud: Res<Hud>,
+    cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    ships: Query<
+        (Entity, &Transform, Option<&Hull>, Option<&Fighter>, Option<&Selected>),
+        (Or<(With<Hull>, With<Fighter>)>, Without<Hive>),
+    >,
+    mut pool: ResMut<BarPool>,
+    mut bars: Query<(&mut Node, &mut BackgroundColor, &Children), With<HealthBar>>,
+    mut fills: Query<(&mut Node, &mut BackgroundColor), Without<HealthBar>>,
+) {
+    let Ok((cam, cam_xf)) = cams.single() else { return };
+    let mut want: Vec<(Vec2, f32, bool)> = Vec::new();
+    for (_, xf, hull, fighter, sel) in &ships {
+        let (share, radius): (f32, f32) = match (hull, fighter) {
+            (Some(h), _) => {
+                if h.dead_hull {
+                    continue;
+                }
+                let core = h.reactor.len().max(1);
+                let gone = h.reactor.iter().filter(|&&c| h.damage.is_dead(c)).count();
+                // What the bar MEANS is how close the reactor is to going, not
+                // how much plating is left. Plating comes off and the ship
+                // keeps flying; the reactor is the only thing that kills it,
+                // so it is the only honest thing to put on a bar.
+                (1.0 - (gone as f32 / core as f32) / REACTOR_LOSS, h.model.radius())
+            }
+            (_, Some(f)) => (f.hp, 0.6),
+            _ => continue,
+        };
+        let Ok(p) = cam.world_to_viewport(cam_xf, xf.translation + Vec3::Y * radius * 1.3) else { continue };
+        want.push((p, share.clamp(0.0, 1.0), sel.is_some()));
+    }
+
+    while pool.0.len() < want.len() {
+        let fill = commands
+            .spawn((
+                Node { width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() },
+                BackgroundColor(Color::srgb(0.3, 0.95, 0.4)),
+                Pickable::IGNORE,
+            ))
+            .id();
+        let bar = commands
+            .spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    width: Val::Px(BAR_W),
+                    height: Val::Px(BAR_H),
+                    display: Display::None,
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
+                HealthBar(Entity::PLACEHOLDER),
+                Pickable::IGNORE,
+                children![],
+            ))
+            .id();
+        commands.entity(bar).add_child(fill);
+        pool.0.push(bar);
+    }
+
+    for (n, &bar) in pool.0.iter().enumerate() {
+        let Ok((mut node, mut bg, kids)) = bars.get_mut(bar) else { continue };
+        match want.get(n) {
+            Some(&(p, share, sel)) if hud.show_bars => {
+                node.display = Display::Flex;
+                node.left = Val::Px(p.x - BAR_W * 0.5);
+                node.top = Val::Px(p.y);
+                // Selected reads as a brighter frame round the same bar rather
+                // than a second widget: one thing on screen per ship.
+                bg.0 = if sel {
+                    Color::srgba(0.55, 0.95, 1.0, 0.85)
+                } else {
+                    Color::srgba(0.0, 0.0, 0.0, 0.55)
+                };
+                if let Some(&fill) = kids.iter().next().as_ref() {
+                    if let Ok((mut fnode, mut fbg)) = fills.get_mut(fill) {
+                        fnode.width = Val::Percent(share * 100.0);
+                        // Green through amber to red, so the state reads
+                        // without anybody having to measure the length.
+                        fbg.0 = Color::srgb(
+                            (1.6 - share * 1.6).clamp(0.15, 1.0),
+                            (0.25 + share * 0.85).clamp(0.15, 1.0),
+                            0.25,
+                        );
+                    }
+                }
+            }
+            _ => node.display = Display::None,
+        }
+    }
+}
+
+/// How big a health bar is, in pixels.
+const BAR_W: f32 = 42.0;
+const BAR_H: f32 = 5.0;
+
 /// The on screen controls.
 ///
 /// There were none at all: every binding in the game was a key somebody had to
@@ -2067,6 +2293,7 @@ struct CallLabel;
 #[derive(Resource)]
 struct Hud {
     show_fps: bool,
+    show_bars: bool,
     paused: bool,
     /// A smoothed frame rate, in frames a second.
     fps: f32,
@@ -2074,7 +2301,7 @@ struct Hud {
 
 impl Default for Hud {
     fn default() -> Self {
-        Hud { show_fps: true, paused: false, fps: 0.0 }
+        Hud { show_fps: true, show_bars: true, paused: false, fps: 0.0 }
     }
 }
 
@@ -2089,6 +2316,10 @@ struct PauseMenu;
 /// The row in the menu that turns the counter off and on.
 #[derive(Component)]
 struct FpsToggle;
+
+/// And the one for the bars over your ships.
+#[derive(Component)]
+struct BarToggle;
 
 /// And the one that puts you back in the game.
 #[derive(Component)]
@@ -2112,6 +2343,7 @@ fn toggle_pause(
     mut cfg: ResMut<SwarmConfig>,
     mut menu: Query<&mut Node, With<PauseMenu>>,
     resume: Query<&Interaction, (Changed<Interaction>, With<ResumeButton>)>,
+    order: Res<NavOrder>,
     mut started: Local<bool>,
 ) {
     // The menu is built hidden, so a session that was asked to START paused
@@ -2129,7 +2361,10 @@ fn toggle_pause(
         }
     }
     let clicked = resume.iter().any(|i| *i == Interaction::Pressed);
-    if keys.just_pressed(KeyCode::Escape) {
+    // Escape belongs to the ORDER first. One escape cancels an open move and
+    // does nothing else; the next one, with nothing open, reaches the menu.
+    // Space is the plain pause, which is the key an RTS puts it on.
+    if keys.just_pressed(KeyCode::Space) || (keys.just_pressed(KeyCode::Escape) && !order.active) {
         hud.paused = !hud.paused;
     } else if clicked {
         hud.paused = false;
@@ -2181,6 +2416,93 @@ fn tick_fps(
 /// How long the frame rate takes to settle, in seconds.
 const FPS_SMOOTH: f32 = 0.4;
 
+/// The hulls the dropdown offers, one per navy and per rung, so a player can
+/// see what the ladder actually looks like without editing a command line.
+///
+/// A picked subset rather than all twenty three: the point is to try DIFFERENT
+/// ships, and four corvettes from four navies tell you less than a corvette, a
+/// frigate, a destroyer and a cruiser do.
+const PICKABLE: [&str; 8] = [
+    "terran_frigate",
+    "terran_destroyer",
+    "terran_cruiser",
+    "karisen_frigate",
+    "karisen_cruiser",
+    "rogue_destroyer",
+    "benefactor_cruiser",
+    "civil_hauler",
+];
+
+/// One row of the ship dropdown.
+#[derive(Component)]
+struct HullPick(usize);
+
+/// The list itself, shown and hidden by its `display`.
+#[derive(Component)]
+struct HullMenu;
+
+/// The button that opens it.
+#[derive(Component)]
+struct HullButton;
+
+/// Swap the flagship for another class.
+///
+/// It DESPAWNS and respawns rather than editing the hull in place, because a
+/// ship here is its model, its damage grid, its bricks, its materials, its
+/// turret children and its reactor: every one of those is derived from the
+/// class at spawn, and there is no such thing as changing the class of a hull
+/// that already exists. Spawning a fresh one is the same code the game starts
+/// with, which is the only version of it worth having.
+#[allow(clippy::too_many_arguments)]
+fn pick_hull(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    tex: Res<Textures>,
+    mut scene: ResMut<Scene>,
+    mut cfg: ResMut<SwarmConfig>,
+    picks: Query<(&Interaction, &HullPick), Changed<Interaction>>,
+    opener: Query<&Interaction, (Changed<Interaction>, With<HullButton>)>,
+    mut menu: Query<&mut Node, With<HullMenu>>,
+    old: Query<Entity, (With<Flagship>, Without<Hive>)>,
+    escorts: Query<Entity, With<Escort>>,
+    wing: Query<Entity, With<Fighter>>,
+) {
+    if opener.iter().any(|i| *i == Interaction::Pressed) {
+        for mut n in &mut menu {
+            n.display = if n.display == Display::None { Display::Flex } else { Display::None };
+        }
+    }
+    let Some((_, pick)) = picks.iter().find(|(i, _)| **i == Interaction::Pressed) else { return };
+    let Some(&which) = PICKABLE.get(pick.0) else { return };
+    for mut n in &mut menu {
+        n.display = Display::None;
+    }
+    if which == scene.hull {
+        return;
+    }
+    // The wing and the squadron go with it: an escort is a copy of the
+    // flagship's class and a fighter flies off it, so leaving either behind
+    // would be a formation of the ship you just replaced.
+    for e in old.iter().chain(escorts.iter()).chain(wing.iter()) {
+        commands.entity(e).despawn();
+    }
+    scene.hull = which.into();
+    let (_, radius) = spawn_hull(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &tex,
+        which,
+        Transform::IDENTITY,
+        scene.chewers as u32,
+        0,
+        None,
+    );
+    cfg.hull_radius = radius;
+    info!("flagship is a {which} now, radius {radius:.2}");
+}
+
 /// A set the whole HUD hangs off, so a headless run can skip it.
 fn build_hud(mut commands: Commands) {
     commands
@@ -2223,11 +2545,76 @@ fn build_hud(mut commands: Commands) {
                 Pickable::IGNORE,
             ));
             p.spawn((
-                Text::new("WASD / arrows pan   Q E up down   space focus ship\nleft drag orbit   wheel zoom   right button move order (hold shift for height)"),
+                Text::new(
+                    "left drag select   middle drag orbit   WASD pan   Q E up down   F focus\n                     right button move disc, right again to confirm, esc cancels\n                     shift lifts the target off the plane   space pauses   esc opens the menu",
+                ),
                 TextFont { font_size: 12.0, ..default() },
                 TextColor(Color::srgba(0.62, 0.74, 0.86, 0.72)),
                 Pickable::IGNORE,
             ));
+        });
+
+    // The band box. One node, moved and resized in screen pixels.
+    commands.spawn((
+        Node { position_type: PositionType::Absolute, display: Display::None, border: UiRect::all(Val::Px(1.0)), ..default() },
+        BorderColor::all(Color::srgba(0.50, 0.95, 1.0, 0.90)),
+        BackgroundColor(Color::srgba(0.30, 0.75, 1.0, 0.10)),
+        MarqueeBox,
+        Pickable::IGNORE,
+    ));
+
+    // The ship picker, top left, with its list folded away under it.
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(16.0),
+                top: Val::Px(12.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(4.0),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ))
+        .with_children(|p| {
+            p.spawn((
+                Button,
+                Node { padding: UiRect::axes(Val::Px(12.0), Val::Px(7.0)), border: UiRect::all(Val::Px(1.0)), ..default() },
+                BorderColor::all(Color::srgba(0.45, 0.85, 1.0, 0.55)),
+                BackgroundColor(Color::srgba(0.04, 0.10, 0.16, 0.85)),
+                HullButton,
+            ))
+            .with_children(|b| {
+                b.spawn((
+                    Text::new("Ship \u{25be}"),
+                    TextFont { font_size: 14.0, ..default() },
+                    TextColor(Color::srgb(0.80, 0.94, 1.0)),
+                    Pickable::IGNORE,
+                ));
+            });
+            p.spawn((
+                Node { flex_direction: FlexDirection::Column, display: Display::None, ..default() },
+                HullMenu,
+            ))
+            .with_children(|list| {
+                for (n, name) in PICKABLE.iter().enumerate() {
+                    list.spawn((
+                        Button,
+                        Node { padding: UiRect::axes(Val::Px(12.0), Val::Px(5.0)), border: UiRect::all(Val::Px(1.0)), ..default() },
+                        BorderColor::all(Color::srgba(0.45, 0.85, 1.0, 0.25)),
+                        BackgroundColor(Color::srgba(0.03, 0.08, 0.13, 0.95)),
+                        HullPick(n),
+                    ))
+                    .with_children(|t| {
+                        t.spawn((
+                            Text::new(name.replace('_', " ")),
+                            TextFont { font_size: 13.0, ..default() },
+                            TextColor(Color::srgb(0.78, 0.90, 1.0)),
+                            Pickable::IGNORE,
+                        ));
+                    });
+                }
+            });
         });
 
     // The counter, in the opposite corner from the controls so it never sits
@@ -2288,7 +2675,9 @@ fn build_hud(mut commands: Commands) {
                     TextColor(Color::srgb(0.86, 0.95, 1.0)),
                     Pickable::IGNORE,
                 ));
-                for (marker, label) in [("fps", "FPS counter: on"), ("resume", "Resume  (esc)")] {
+                for (marker, label) in
+                    [("fps", "FPS counter: on"), ("bars", "Health bars: on"), ("resume", "Resume  (esc)")]
+                {
                     let mut b = c.spawn((
                         Button,
                         Node {
@@ -2301,6 +2690,8 @@ fn build_hud(mut commands: Commands) {
                     ));
                     if marker == "fps" {
                         b.insert(FpsToggle);
+                    } else if marker == "bars" {
+                        b.insert(BarToggle);
                     } else {
                         b.insert(ResumeButton);
                     }
@@ -2322,11 +2713,24 @@ fn hud_feedback(
     mut buttons: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<Button>)>,
     toggled: Query<&Interaction, (Changed<Interaction>, With<FpsToggle>)>,
     toggle_text: Query<&Children, With<FpsToggle>>,
+    bars_toggled: Query<&Interaction, (Changed<Interaction>, With<BarToggle>)>,
+    bars_text: Query<&Children, With<BarToggle>>,
     mut texts: Query<&mut Text, Without<CallLabel>>,
     escorts: Query<(), With<Escort>>,
     mut label: Query<&mut Text, With<CallLabel>>,
     mut hud: ResMut<Hud>,
 ) {
+    if bars_toggled.iter().any(|i| *i == Interaction::Pressed) {
+        hud.show_bars = !hud.show_bars;
+        let want = if hud.show_bars { "Health bars: on" } else { "Health bars: off" };
+        for kids in &bars_text {
+            for k in kids.iter() {
+                if let Ok(mut t) = texts.get_mut(k) {
+                    t.0 = want.into();
+                }
+            }
+        }
+    }
     if toggled.iter().any(|i| *i == Interaction::Pressed) {
         hud.show_fps = !hud.show_fps;
         // The row says what it will DO next time, which means it has to say
@@ -3231,16 +3635,30 @@ impl NavOrder {
     }
 }
 
-/// Right button opens an order, the cursor aims it, shift lifts it, release
-/// commits it. Left drag is still the camera.
+/// Homeworld's own move flow, which is a MODE rather than a drag.
+///
+/// Right button opens the disc, the cursor aims it on the plane through the
+/// selected ships, shift lifts it off that plane, and a SECOND right button
+/// commits it. Escape cancels the order and leaves the mode; escape again,
+/// with no order open, is what opens the pause menu.
+///
+/// A press and drag is what this was, and it is the wrong shape for a
+/// three dimensional order: holding a button while also moving the mouse to
+/// pick a point and then holding shift to lift it off the plane is three
+/// things one hand is doing at once. A mode costs one more click and lets the
+/// player take as long as they like over the part that is actually hard.
+///
+/// It runs while PAUSED, deliberately. Giving orders with the world stopped is
+/// the whole reason a pause key is worth having in an RTS.
 fn nav_input(
     buttons: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
     mut motion: MessageReader<MouseMotion>,
     windows: Query<&Window>,
     cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    over_ui: Query<&Interaction>,
     mut order: ResMut<NavOrder>,
-    mut hulls: Query<(&mut Hull, &Transform), With<Flagship>>,
+    mut hulls: Query<(&mut Hull, &Transform, Option<&Selected>)>,
 ) {
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
     // Vertical mouse travel while shift is down, in pixels, which is the only
@@ -3249,15 +3667,54 @@ fn nav_input(
 
     let Ok(window) = windows.single() else { return };
     let Ok((cam, cam_xf)) = cams.single() else { return };
-    let Ok((mut hull, hull_xf)) = hulls.single_mut() else { return };
+    if over_ui.iter().any(|i| *i != Interaction::None) {
+        return;
+    }
+
+    // Whose order this is: everything selected, or the flagship if nothing is.
+    let mut chosen: Vec<Vec3> = Vec::new();
+    let mut radius = 1.0f32;
+    for (hull, xf, sel) in &hulls {
+        if sel.is_some() && !hull.dead_hull {
+            chosen.push(xf.translation);
+            radius = radius.max(hull.model.radius());
+        }
+    }
+    if chosen.is_empty() {
+        return;
+    }
+    let centre = chosen.iter().copied().sum::<Vec3>() / chosen.len() as f32;
 
     if buttons.just_pressed(MouseButton::Right) {
+        if order.active {
+            // The second press is the commit. Every selected ship gets the
+            // same point offset by where it already stands relative to the
+            // group, so a formation arrives as a formation instead of all
+            // piling onto one coordinate.
+            let to = order.target();
+            for (mut hull, xf, sel) in &mut hulls {
+                if sel.is_some() && !hull.dead_hull {
+                    hull.order = Some(to + (xf.translation - centre));
+                }
+            }
+            order.active = false;
+            return;
+        }
         order.active = true;
         order.lift = 0.0;
         order.lifting = false;
-        order.plane_y = hull_xf.translation.y;
-        order.on_plane = hull_xf.translation;
+        order.plane_y = centre.y;
+        order.on_plane = centre;
+        return;
     }
+
+    if keys.just_pressed(KeyCode::Escape) && order.active {
+        // Cancelled. `toggle_pause` sees the order was open and leaves the
+        // menu alone this frame, so one escape does one thing.
+        order.active = false;
+        return;
+    }
+
     if !order.active {
         return;
     }
@@ -3267,7 +3724,7 @@ fn nav_input(
         // Up on the screen is up in the world. The scale is a fraction of the
         // ship's own size per pixel, so the reach of a drag is the same on
         // any hull and at any window size.
-        order.lift -= dy * hull.model.radius() * 0.02;
+        order.lift -= dy * radius * 0.02;
     } else if let Some(cursor) = window.cursor_position() {
         // The cursor names a place on the plane, and only while shift is not
         // held: the two cannot both own the mouse.
@@ -3277,10 +3734,92 @@ fn nav_input(
             }
         }
     }
+}
 
-    if buttons.just_released(MouseButton::Right) {
-        hull.order = Some(order.target());
-        order.active = false;
+/// A ship the player has picked. Only ever on the player's own.
+#[derive(Component)]
+struct Selected;
+
+/// The band box, in screen pixels, while the left button is down.
+#[derive(Resource, Default)]
+struct Marquee {
+    from: Option<Vec2>,
+    to: Vec2,
+}
+
+/// Left button picks: a click takes one ship, a drag takes a box of them.
+///
+/// This is the button an RTS gives to selection, so the camera had to give it
+/// up: orbit is the MIDDLE button now, with alt and left as an alias for a
+/// mouse that has no middle. Holding shift adds to the selection rather than
+/// replacing it, which is the one convention every RTS shares.
+fn select_input(
+    buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    windows: Query<&Window>,
+    cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    over_ui: Query<&Interaction>,
+    mut marquee: ResMut<Marquee>,
+    mut commands: Commands,
+    ships: Query<(Entity, &Transform, Option<&Hull>, Option<&Fighter>), Or<(With<Hull>, With<Fighter>)>>,
+    hives: Query<(), With<Hive>>,
+) {
+    let Ok(window) = windows.single() else { return };
+    let Ok((cam, cam_xf)) = cams.single() else { return };
+    let Some(cursor) = window.cursor_position() else { return };
+    if over_ui.iter().any(|i| *i != Interaction::None) {
+        return;
+    }
+    if keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight) {
+        return;
+    }
+
+    if buttons.just_pressed(MouseButton::Left) {
+        marquee.from = Some(cursor);
+        marquee.to = cursor;
+    }
+    if marquee.from.is_some() {
+        marquee.to = cursor;
+    }
+    let Some(from) = marquee.from else { return };
+    if !buttons.just_released(MouseButton::Left) {
+        return;
+    }
+    marquee.from = None;
+
+    let add = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    if !add {
+        for (e, _, _, _) in &ships {
+            commands.entity(e).remove::<Selected>();
+        }
+    }
+    let lo = from.min(marquee.to);
+    let hi = from.max(marquee.to);
+    // A click rather than a drag: take whatever is nearest the pointer instead
+    // of whatever is inside a box a few pixels across.
+    let click = (hi - lo).length() < 6.0;
+    let mut best: Option<(f32, Entity)> = None;
+
+    for (e, xf, hull, _) in &ships {
+        // Carriers are hulls too. They are not yours and cannot be ordered.
+        if hives.get(e).is_ok() {
+            continue;
+        }
+        if hull.map(|h| h.dead_hull).unwrap_or(false) {
+            continue;
+        }
+        let Ok(p) = cam.world_to_viewport(cam_xf, xf.translation) else { continue };
+        if click {
+            let d = p.distance(cursor);
+            if d < 60.0 && best.map_or(true, |(bd, _)| d < bd) {
+                best = Some((d, e));
+            }
+        } else if p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y {
+            commands.entity(e).insert(Selected);
+        }
+    }
+    if let Some((_, e)) = best {
+        commands.entity(e).insert(Selected);
     }
 }
 
@@ -3685,7 +4224,13 @@ fn orbit_input(
     // pixel that is several whole turns inside one frame, which is exactly
     // "the camera jumped to a random angle", and it happens at the edge of the
     // screen, which is why it seemed to depend on which way you had turned.
-    if !buttons.pressed(MouseButton::Left) || buttons.just_pressed(MouseButton::Left) {
+    // MIDDLE, or alt and left. The left button belongs to selection now,
+    // which is what an RTS gives it; alt and left is the alias for a mouse
+    // with no middle button.
+    let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+    let dragging = buttons.pressed(MouseButton::Middle) || (alt && buttons.pressed(MouseButton::Left));
+    let started = buttons.just_pressed(MouseButton::Middle) || (alt && buttons.just_pressed(MouseButton::Left));
+    if !dragging || started {
         motion.clear();
     } else {
         for m in motion.read() {
@@ -3749,7 +4294,9 @@ fn orbit_input(
         // The player has taken the wheel, so the focus lets go.
         o.follow = false;
     }
-    if keys.just_pressed(KeyCode::Space) {
+    // F, not space. Space pauses, which is what an RTS does with it and what
+    // makes "stop the world and give orders" possible at all.
+    if keys.just_pressed(KeyCode::KeyF) {
         o.follow = true;
     }
 
