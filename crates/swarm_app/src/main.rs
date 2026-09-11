@@ -35,14 +35,16 @@ use std::{
 use swarm_core::{
     alien::{generate, Archetype},
     damage::{chunk_for, Chunk, DamageGrid, Vent},
-    fx::{blast_sparks, breach_sparks, engines_of, gun_clusters, muzzle_sparks, reactor_of, shatter, Beam, Blast, Gun, Spark, SparkKind},
+    fx::{blast_sparks, breach_sparks, engine_clusters, gun_clusters, muzzle_sparks, reactor_of, shatter, Beam, Blast, Gun, Spark, SparkKind},
     mesh::{greedy_mesh, mesh_region, srgb_to_linear, MeshData, Surfaces},
     rng::{drift_of, Rng},
     sky::{bake_cubemap, starfield, to_half, SkyPreset},
     VoxelModel, SURF_COUNT,
 };
 use swarm_core::voxel::{mat, SURF_DRIVE};
-use swarm::{spawn_mote_mesh, spawn_spark_mesh, Capsule, FxTextures, Shots, SparkQueue, SwarmClock, SwarmConfig, SwarmPlugin};
+use swarm::{
+    spawn_mote_mesh, spawn_spark_mesh, Capsule, FxTextures, Shots, SparkQueue, SwarmClock, SwarmConfig, SwarmPlugin, GRID,
+};
 
 const HULLS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/hulls/");
 /// Shaders and textures, pinned at build time: Bevy otherwise looks beside
@@ -120,6 +122,10 @@ struct Args {
     showcase: bool,
     /// Frames a second, at most. Nought lifts the cap.
     fps: u32,
+    /// How thick the swarm is to light, as a multiplier on how much of a
+    /// cell one mote blocks. Nought is the flat lighting this replaced, which
+    /// is what an A/B of the shading is taken against.
+    thickness: f32,
     /// Advance exactly one tick a frame rather than by the wall clock.
     ///
     /// A software rasteriser draws at four frames a second, so a frame here
@@ -158,6 +164,7 @@ fn parse_args() -> Args {
         aim: None,
         showcase: false,
         fps: 120,
+        thickness: 1.0,
         fixed_dt: false,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -209,6 +216,7 @@ fn parse_args() -> Args {
             "--launch-delay" => { a.launch_delay = next().parse().expect("--launch-delay SECONDS"); a.delay_set = true; i += 1; }
             "--fighters" => { a.fighters = next().parse().expect("--fighters N"); i += 1; }
             "--fps" => { a.fps = next().parse().expect("--fps N, or 0 for no cap"); i += 1; }
+            "--thickness" => { a.thickness = next().parse().expect("--thickness R"); i += 1; }
             other => panic!("unknown argument {other}"),
         }
         i += 1;
@@ -299,6 +307,7 @@ fn main() {
             order: args.order,
             aim: args.aim,
             showcase: args.showcase,
+            thickness: args.thickness,
             fixed_dt: args.fixed_dt,
         })
         .init_resource::<Tick>()
@@ -338,7 +347,7 @@ fn main() {
                     (launch_fighters, fly_fighters, fighters_fire, wear_fighters).chain(),
                     resolve_beams,
                     (chew, vent_smoke, go_critical, bleed_hives),
-                    publish_hives,
+                    (publish_hives, publish_field).chain(),
                     fly_tracers,
                     age_fx,
                     fly_chunks,
@@ -415,6 +424,7 @@ struct Scene {
     order: Option<Vec3>,
     aim: Option<Vec3>,
     showcase: bool,
+    thickness: f32,
     fixed_dt: bool,
 }
 
@@ -553,7 +563,9 @@ struct Hull {
     /// Not the thrusters: those wear the same surface and are all over a
     /// hull, and a thruster plumed constantly is a ship that never stops
     /// spinning.
-    engines: Vec<Gun>,
+    ///
+    /// With their cells, so a drive that has been eaten stops being one.
+    engines: Vec<Drive>,
     /// Where it has been told to go, in world units, or nothing.
     order: Option<Vec3>,
     vel: Vec3,
@@ -621,6 +633,62 @@ struct Flagship;
 struct Escort {
     station: Vec3,
 }
+
+/// One engine cluster, and the cells it was read off.
+///
+/// The CELLS are the point. An engine used to be a position and a direction
+/// taken off the intact model at spawn and never looked at again, so a ship
+/// whose drives had been eaten went on burning them at full throttle and
+/// flying as if nothing had happened: the damage was drawn on the hull and
+/// meant nothing to it. An engine is only an engine while the cells it is
+/// made of are still there.
+struct Drive {
+    gun: Gun,
+    cells: Vec<usize>,
+}
+
+impl Drive {
+    /// What share of it is left, nought to one.
+    fn left(&self, dmg: &DamageGrid) -> f32 {
+        if self.cells.is_empty() {
+            return 0.0;
+        }
+        let live = self.cells.iter().filter(|&&c| !dmg.is_dead(c)).count();
+        live as f32 / self.cells.len() as f32
+    }
+}
+
+impl Hull {
+    /// What the ship can still PULL, nought to one.
+    ///
+    /// The share of its propulsion cells that are still there, and a floor
+    /// under it, because a hull's attitude thrusters are scattered all over
+    /// it and are not what `engine_clusters` counts: a ship that has lost
+    /// every main drive can still shove itself about, slowly, and one that has
+    /// lost them all and can do nothing at all would coast out of the map for
+    /// ever on whatever velocity it happened to have.
+    ///
+    /// This is what was missing. The plating was coming off all along (three
+    /// hundred and eighty five cells in four hundred ticks against forty eight
+    /// chewers, measured), and none of it meant anything: the only thing that
+    /// read damage was the reactor, so a ship with its whole stern eaten flew
+    /// exactly as well as one fresh out of the yard.
+    fn thrust(&self) -> f32 {
+        let (mut live, mut all) = (0usize, 0usize);
+        for e in &self.engines {
+            all += e.cells.len();
+            live += e.cells.iter().filter(|&&c| !self.damage.is_dead(c)).count();
+        }
+        if all == 0 {
+            return 1.0;
+        }
+        THRUSTERS + (1.0 - THRUSTERS) * (live as f32 / all as f32)
+    }
+}
+
+/// What is left of a ship's push when every main drive is gone: its attitude
+/// thrusters, which are all over the hull and are not drives.
+const THRUSTERS: f32 = 0.18;
 
 struct Chewer {
     at: Vec3,
@@ -762,6 +830,16 @@ const FIGHTER_BURST: f32 = 0.30;
 const WING_MAX: u32 = 6;
 const WING_WAVE: u32 = 2;
 
+/// Where the sun is, pointing AT it.
+///
+/// One vector with two consumers, and they have to be the same one. The key
+/// light is aimed along it, and the swarm marches its density field along it
+/// to work out what of that light reaches a mote buried in the cloud. Lit
+/// from one side of the sky and shadowed from the other is the single thing
+/// an eye will not forgive, and it is exactly what two numbers written down
+/// in two places drift into.
+const SUN: Vec3 = Vec3::new(0.42, 0.66, -0.62);
+
 /// Where the carriers sit, in hull radii. They used to be at seven, which put
 /// them inside the swarm's own standoff and made the whole picture one clump;
 /// a carrier is a thing you have to CROSS the battlefield to reach.
@@ -771,8 +849,10 @@ const HIVE_FAR: f32 = 22.0;
 /// A mothership: where the swarm comes from, and the thing worth killing.
 #[derive(Component)]
 struct Hive {
-    /// Read off its own cells, the same query a ship's engines come from.
-    engines: Vec<Gun>,
+    /// Read off its own cells, the same query a ship's engines come from, and
+    /// with those cells, so a carrier that has had its drives chewed off stops
+    /// burning them exactly as a ship does.
+    engines: Vec<Drive>,
     /// In world units, which is what the shader is told and what a beam is
     /// tested against. The model's own radius times the scale it is drawn at.
     radius: f32,
@@ -1093,7 +1173,7 @@ fn spawn_ship(
         None => {}
     }
     let guns: Vec<Gun> = turrets.iter().map(|(g, _, _)| *g).collect();
-    let engines = engines_of(&model);
+    let engines: Vec<Drive> = engine_clusters(&model).into_iter().map(|(gun, _, cells)| Drive { gun, cells }).collect();
     let cells = model.solid_count();
     let mut hull = Hull {
         surface_mats,
@@ -1373,7 +1453,7 @@ fn setup(
             unlit: true,
             ..default()
         });
-        let engines = engines_of(&m);
+        let engines: Vec<Drive> = engine_clusters(&m).into_iter().map(|(gun, _, cells)| Drive { gun, cells }).collect();
         let at_xf = Transform::from_translation(at).with_scale(Vec3::splat(scale));
         // No armour multiplier: the hundred is what makes the PLAYER's ship a
         // siege, and putting it on the carriers too would mean neither side
@@ -1480,6 +1560,14 @@ fn setup(
 
     // The swarm's body: a drone, drawn once per mote off the GPU buffer.
     let drone = generate(Archetype::Drone, 1);
+    // And how much of a cell's face one of them covers, which is the only
+    // place the thickness of the cloud is decided: it is what turns a count of
+    // motes in a cell of the density field into an optical depth. A disc the
+    // size of the drone's own silhouette, halved, because a drone is limbs and
+    // the gaps between them rather than a ball.
+    let area = std::f32::consts::PI * drone.radius() * drone.radius() * 0.5 * scene.thickness.max(0.0);
+    cfg.sun = SUN.normalize().extend(area);
+    info!("a mote covers {:.3} square units of the light, thickness {:.2}", area, scene.thickness);
     spawn_mote_mesh(&mut commands, meshes.add(to_mote_mesh(&greedy_mesh(&drone, None))));
 
     // And one unit quad, drawn once per spark off the other half of it. The
@@ -1618,10 +1706,12 @@ fn setup(
 
     // ---- the backdrop: one sun, one key light, two bodies (skirmish) ----
     //
-    // The same vector is the KEY in `mote.wgsl`, hard coded there because the
-    // mote draw binds nothing but the view and the chitin. Move one, move
-    // both, or the swarm is lit from a different sun than the fleet.
-    let sun = Vec3::new(0.42, 0.66, -0.62).normalize();
+    // ONE vector, from `SUN`, and nothing copies it: the swarm's density field
+    // marches along what the app publishes, and `mote.wgsl` takes its key off
+    // this light itself through the view bind group it already binds. A cloud
+    // shadowed from one side of the sky with its highlight on the other is
+    // what two numbers written down in two places drift into.
+    let sun = SUN.normalize();
     let sun_colour = Color::srgb_u8(0xff, 0xf0, 0xd2);
     commands.spawn((
         DirectionalLight { illuminance: 9000.0, color: sun_colour, shadows_enabled: false, ..default() },
@@ -2914,6 +3004,34 @@ fn hud_feedback(
     }
 }
 
+/// Where the density field stands this frame.
+///
+/// It rides with the fight rather than standing still at the origin, and it is
+/// sized to hold everything the swarm actually flies to: the flagship, the
+/// ships it attacks, the carriers the motes launch from and the rocks the
+/// veins wind round. A cube, so a cell is a cube and a shadow is the same
+/// length whichever way the sun happens to be pointing.
+///
+/// Outside it the field's answer is "nothing in the way", which is the right
+/// answer rather than a fallback: a mote out beyond the carriers is on its own
+/// in open space and there is nothing out there to shadow it.
+fn publish_field(mut cfg: ResMut<SwarmConfig>, mut said: Local<bool>) {
+    let centre = cfg.hull_centre;
+    // Never smaller than the ship and the traffic round it, or a swarm that
+    // has killed every carrier would shrink its own field to a point.
+    let mut half = cfg.hull_radius * 8.0;
+    for x in cfg.hives.iter().chain(cfg.rocks.iter()).chain(cfg.targets.iter()) {
+        half = half.max((x.truncate() - centre).abs().max_element() + x.w);
+    }
+    half *= 1.15;
+    let cell = 2.0 * half / GRID as f32;
+    cfg.field = (centre - Vec3::splat(half)).extend(cell);
+    if !*said {
+        *said = true;
+        info!("density field: {GRID}^3 cells of {cell:.2} units over a box {:.0} across", 2.0 * half);
+    }
+}
+
 /// The line under the buttons that says what the mouse does right now.
 #[derive(Component)]
 struct ModeText;
@@ -3838,20 +3956,26 @@ fn draw_flames(
         }
         let forward = xf.rotation * Vec3::Z;
         for e in &hull.engines {
-            let throttle = throttle_of(hull, forward, e.out[2]);
+            // What is LEFT of it. A drive whose cells have been chewed off
+            // cannot burn, and one half eaten burns half: the flame is the
+            // only thing on screen that says whether a ship still has its
+            // legs, so it has to be read off the cells and not off a list
+            // taken at spawn.
+            let left = e.left(&hull.damage);
+            let throttle = throttle_of(hull, forward, e.gun.out[2]) * left;
             if throttle <= 0.01 {
                 continue;
             }
-            let at = xf.transform_point(Vec3::from(e.at));
-            let dir = (xf.rotation * Vec3::from(e.out)).normalize_or(Vec3::NEG_Z);
+            let at = xf.transform_point(Vec3::from(e.gun.at));
+            let dir = (xf.rotation * Vec3::from(e.gun.out)).normalize_or(Vec3::NEG_Z);
             cone(
                 at,
                 dir,
-                hull.model.cell * 2.4,
+                hull.model.cell * 2.4 * (0.55 + 0.45 * left),
                 throttle,
                 Vec3::new(5.4, 4.3, 3.0),
                 Vec3::new(3.0, 0.86, 0.14),
-                e.cell ^ hull.seed,
+                e.gun.cell ^ hull.seed,
             );
         }
     }
@@ -3862,22 +3986,28 @@ fn draw_flames(
         // A carrier is always under way, and slowly: a fixed low throttle
         // rather than one read off its drift, which would be invisible.
         for e in &hive.engines {
+            // The same rule on a carrier, which is a ship with a damage grid
+            // like any other.
+            let left = e.left(&hull.damage);
+            if left <= 0.01 {
+                continue;
+            }
             // NOT `* hive.scale`. The carrier's own Transform already carries
             // that scale, and `transform_point` applies it, so multiplying it
             // in here squared it: an engine a fifth of the way out from the
             // centre was drawn at a fifth SQUARED of the scaled radius, which
             // put every carrier's flames in open space several lengths off its
             // hull. They looked unaligned because they were not on the ship.
-            let at = xf.transform_point(Vec3::from(e.at));
-            let dir = (xf.rotation * Vec3::from(e.out)).normalize_or(Vec3::NEG_Z);
+            let at = xf.transform_point(Vec3::from(e.gun.at));
+            let dir = (xf.rotation * Vec3::from(e.gun.out)).normalize_or(Vec3::NEG_Z);
             cone(
                 at,
                 dir,
-                hull.model.cell * hive.scale * 2.2,
-                0.5,
+                hull.model.cell * hive.scale * 2.2 * (0.55 + 0.45 * left),
+                0.5 * left,
                 Vec3::new(3.4, 5.4, 6.0),
                 Vec3::new(0.45, 2.6, 3.8),
-                e.cell ^ hive.seed as u32,
+                e.gun.cell ^ hive.seed as u32,
             );
         }
     }
@@ -4368,7 +4498,13 @@ fn fly_hull(
     let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
     for (mut hull, mut xf, escort) in &mut hulls {
         let radius = hull.model.radius();
-        let (speed, accel, arrive) = (radius * HULL_SPEED, radius * HULL_ACCEL, radius * ARRIVE);
+        // What it can still pull. A ship that has been chewed to the stern
+        // does not accelerate like a fresh one and does not cruise like one
+        // either: both scale with the drives it has left, so losing them reads
+        // as a ship going lame rather than as a paint job.
+        let thrust = hull.thrust();
+        let (speed, accel, arrive) =
+            (radius * HULL_SPEED * thrust, radius * HULL_ACCEL * thrust, radius * ARRIVE);
         let mut hurry = 1.0;
         let want = match escort {
             // An escort has no order of its own: its goal is a place in the
@@ -5018,9 +5154,14 @@ fn headless_capture(
     h.shot = true;
     let breaches: usize = hulls.iter().map(|x| x.breaches).sum();
     let dead: usize = hulls.iter().map(|x| x.damage.dead_count()).sum();
+    // And what the chewing DID, which is the number that was missing: cells
+    // coming off meant nothing to any ship until the drives started counting
+    // theirs, so a run that chewed hundreds of cells and one that chewed none
+    // reported the same thing.
+    let worst = hulls.iter().map(|x| x.thrust()).fold(1.0f32, f32::min);
     println!(
-        "headless: {} frames in {:.1}s ({:.1} ms/frame mean, wall clock), swarm ticks {}, chewed {} cells ({} breaches thrown)",
-        *frames, spent, spent * 1000.0 / *frames as f32, clock.ticks, dead, breaches
+        "headless: {} frames in {:.1}s ({:.1} ms/frame mean, wall clock), swarm ticks {}, chewed {} cells ({} breaches thrown), worst thrust {:.2}",
+        *frames, spent, spent * 1000.0 / *frames as f32, clock.ticks, dead, breaches, worst
     );
     println!(
         "fx: {} beams fired and {} flak bursts, {} beams live and {} quads on the last frame, {} blasts live, {} sparks queued",
@@ -5080,7 +5221,19 @@ fn headless_capture(
             };
             let all = lit(0, w, 0, hh);
             let mid = lit(w / 3, 2 * w / 3, hh / 4, 3 * hh / 4);
-            println!("screenshot {out}: {}x{}, {} lit pixels ({:.1}%), {} in the middle third ({:.1}%)", w, hh, all, 100.0 * all as f32 / (w * hh) as f32, mid, 100.0 * mid as f32 / ((w / 3) * (hh / 2)) as f32);
+            // And how much light there is on the screen at all, which is what
+            // an A/B of the shading is read off. A swarm that shades itself
+            // puts less of it there for the same number of motes, and "it
+            // looks darker now" is not a measurement.
+            let mut sum = 0u64;
+            for y in 0..hh {
+                for x in 0..w {
+                    let o = (y * w + x) * 4;
+                    sum += data[o] as u64 + data[o + 1] as u64 + data[o + 2] as u64;
+                }
+            }
+            let mean = sum as f64 / (w * hh * 3) as f64;
+            println!("screenshot {out}: {}x{}, {} lit pixels ({:.1}%), {} in the middle third ({:.1}%), mean {:.2} of 255", w, hh, all, 100.0 * all as f32 / (w * hh) as f32, mid, 100.0 * mid as f32 / ((w / 3) * (hh / 2)) as f32, mean);
             let ok = all > (w * hh) / 100 && mid > 0 && textures_ok;
             exit.write(if ok { AppExit::Success } else { AppExit::error() });
         });

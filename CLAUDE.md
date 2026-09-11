@@ -103,6 +103,90 @@ million motes is sixteen nanoseconds each for the whole frame. So:
   is not built yet. What is built is M0: motes steer on a pull toward the
   hull, a swirl and stride sampled separation, with the hull as a sphere.
 
+## The swarm shades itself, and a shadow is a property of the FIELD
+
+Ten thousand motes lit by one key light are ten thousand equally bright
+specks. The mote on the near face of a clump and the mote buried behind ten
+thousand of its own kind came out the same colour, so a dense cloud read as a
+flat sheet of them: it had no inside. What was missing is the one thing a
+cloud is actually made of, which is that a cloud stops light.
+
+**A mote cannot march toward the sun on its own account.** Sixteen steps each,
+a million of them, is sixteen million samples a tick against a budget of
+sixteen nanoseconds a mote: the same arithmetic that says a mote is not an
+entity says a mote does not get a shadow ray of its own. So the GRID marches.
+A 64^3 density field is cleared, counted into with one atomic per mote, and
+marched toward the sun once a tick, and none of that moves when the swarm
+grows: a quarter of a million cells at a thousand motes and at a million. A
+mote pays one trilinear read to find out how dark it stands, and trilinear
+because a cell is a few units and a mote is a fraction of one, so a nearest
+read would fly the swarm through visible cubes of shade.
+
+Three dispatches inside ONE compute pass, in that order, because each reads
+what the one before it wrote and a write inside a pass is visible to the next
+dispatch. The field is counted from where the motes are BEFORE they move and
+read after they have: a tick of lag across a cell several units wide, which is
+a fifth of a unit of travel and nothing anybody can see.
+
+**Two numbers come out of it, because they are two different lights.** The sun
+is one direction, so what stands in its way is the cloud along that line:
+sixteen cells toward it, Beer's law on the counts. The sky and the bounce
+arrive from everywhere, so what shuts them out is the cloud immediately round
+the mote, its own cell and its six faces. Shading the ambient with the key's
+own number would light a mote's dark side out of a cloud that has no light in
+it at all.
+
+Neither ever reaches nought (0.09 and 0.20), which is the ambient lesson from
+further down this file twice over: a mote lit by nothing is the colour of the
+gap between two stars, and a swarm whose middle is a hole is worse than one
+with no shading in it.
+
+**The thickness of the cloud is decided in exactly one place**, which is how
+much of a cell's face one mote covers. That is what turns a count of motes
+into an optical depth, and the app publishes it off the drone's own silhouette
+rather than a shader tuning a number, so a bigger mote shadows more by itself.
+`--thickness 0` is the flat lighting this replaced, which is what an A/B is
+taken against.
+
+**And the key is the SCENE's light now, read rather than copied.** It was a
+constant in the shader, matched by hand to the vector `setup` aims the
+directional light along. That was already one number written down in two
+places, and shadowing makes it three, because the density field marches along
+whatever the app publishes: a cloud shadowed from one side of the sky with its
+highlight on the other is the one thing an eye will not forgive, and it is
+exactly what copies drift into. The claim that the mote draw binds nothing but
+the view and the chitin was the thing to check: it binds the mesh VIEW bind
+group at nought, and `lights` is binding one of it, so the sun the scene is
+actually lit by was there to be read for nothing the whole time. `SUN` in
+`main.rs` is the only place it is written now.
+
+**A glow is EMISSIVE, and nothing in the cloud takes it away.** The lit cells
+used to REPLACE the shaded body wherever they were over one, which made a glow
+and a shadow two settings of one knob. With the cloud shading itself that is
+backwards: the motes whose own lamps are worth looking at are the ones buried
+deepest in it. So the fragment is two channels and the only question about any
+term is which one it is in. Light that ARRIVED (key, fill, specular) is
+attenuated by the field. Light a mote MAKES is added afterwards and attenuated
+by nothing, because a lamp does not go out because the thing beside it is in
+shadow. A mote in the dark heart of the swarm is a dark body with its drive
+still lit, which is the picture.
+
+**A WOUND is in that same channel, and that is the whole reason it can be
+seen.** A mote is hurt rather than only alive or dead (`extra.x`, one down to
+nought), and a hurt one now burns violet, the colour it bleeds rather than the
+green its eyes are lit with, squared so a graze is nearly nothing and a mote
+one shot from coming apart is plainly glowing as it turns for home. Shading
+that would be exactly wrong: the swarm is thickest where the fighting is, so
+shading a wound would put every bright one in the picture precisely where the
+cloud has already put it out.
+
+What it cost is a fifth `vec4` on the mote, on the same terms as the fourth.
+It buys the only thing a shaded swarm cannot do without, which is somewhere to
+put the answer: a mote cannot work its shadow out at draw time and cannot be
+told it either, because nothing about a mote ever comes back to the CPU. The
+mote buffer IS the instance buffer, so a field the tick fills is one the vertex
+shader already has, for no upload and no pass.
+
 ## Hulls are the redux-tribes hulls, one to one
 
 `assets/hulls/*.ftvx` are the twenty three stock hulls, exported from
@@ -1192,6 +1276,28 @@ giving at least two bodies. An eye is a body cell relit on the crown of its
 column, never a cell beside the head: the first cut put eyes in space and the
 lancer came out in three pieces.
 
+**A drone's stern is ONE light, inset.** It was three calls and six cells, two
+of them `DRIVE_HOT`, the near white; against a swarm that shades itself that
+made every bug a bank of headlamps seen from behind, and the darker the bodies
+round it got the more a mote read as its own exhaust. What is left is the
+centreline cell a row BELOW the middle, and it is WALLED IN: `shroud` fills
+whatever is empty on the five faces that are not the aft one, so exactly one
+face of the light is open and it is the one pointing the way the mote came
+from. That is the whole of the difference between a lamp and an exhaust, and
+it was not free by construction: a drive is the aftmost cell of its column, so
+it is open aft AND open wherever the body's ellipsoid stopped short, which
+measured two faces on a good seed and three on most.
+`a_drones_drive_shows_one_face_and_it_faces_aft` holds it per seed, because
+which side the ellipsoid falls short on moves with the radius it rolled.
+It is two cells wide rather than one and that is the mirror and not a choice,
+since anything on the centreline is a pair by construction; they touch, so
+they read as one. The lancer and the chewer keep their hot drives, because
+neither of them is what a hundred thousand of are on screen at once.
+
+`GLOW`, which is what everything ALIVE about an alien is lit with, came down
+from 0x9BFF4A to 0x6FB835 for the same reason. At the emissive a lit cell
+carries it was a lamp rather than an eye once the shading round it went dark.
+
 Their skin is `alien_chitin_n.png`, from `tools/make_chitin_texture.py` on
 the same `texkit` the finishes use: scales overlapping like roof tiles, each
 a dome with a crease at its root, wrinkles across them and pores sunk in, no
@@ -1204,10 +1310,10 @@ moment the mesh has any.
 
 **The motes are lit by the SUN, harshly, and their own shader does it.** A
 mote is not a `StandardMaterial`: a million of them are one instanced draw
-that binds the view and the chitin and nothing else, so `mote.wgsl` lights
-them itself with one hard coded key, and that key is the scene's sun vector
-(`0.42, 0.66, -0.62`, the same line `setup` aims the directional light from)
-so a mote's lit side is the same side as a hull's. The floor under it was cut
+that binds the view and the chitin, so `mote.wgsl` lights them itself, off the
+scene's own directional light: `lights` is binding one of the view bind group
+that draw already binds, so a mote's lit side is the same side as a hull's
+without a copy of the sun vector anywhere in the shader. The floor under it was cut
 by sixty percent (0.22 to 0.088 ambient, 0.15 to 0.06 back fill) with the
 direct term at a full one, and the scene's `AmbientLight` took the same cut
 (6.0 to 2.4): a sun in vacuum makes a hard terminator and a nearly black far
@@ -1228,7 +1334,7 @@ the same failure as one that never loaded.
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 55, the core
+cargo test -p swarm_core                                   # 56, the core
 python3 tools/shape.py --check                             # no file over 900 lines, no function over 100
 cargo fmt --all -- --check                                 # the format
 cargo clippy -p swarm_core -- -D warnings                  # the core's lints
