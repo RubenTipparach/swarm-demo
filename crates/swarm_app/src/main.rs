@@ -3200,15 +3200,55 @@ fn fly_hull(
 /// Which is what makes moving it worth doing: the cloud is pulled along
 /// behind, and a player who runs can watch the swarm string out.
 fn publish_hull(
-    hulls: Query<(&Hull, &Transform), With<Flagship>>,
+    lead_q: Query<(Entity, &Hull, &Transform), With<Flagship>>,
+    // Every player hull, which is the flagship and the wing. NOT the carriers:
+    // they are hulls too now, and a swarm that attacked its own motherships
+    // would be a fight with one side in it.
+    ships: Query<(&Hull, &Transform), Without<Hive>>,
     mut cfg: ResMut<SwarmConfig>,
     mut lead: ResMut<Lead>,
+    mut was: Local<Option<Entity>>,
+    mut last_n: Local<usize>,
 ) {
+    // ---- what the swarm may attack ----
+    //
+    // A LIST, not a centre. The cloud used to chase one published position, so
+    // it was always one animal on one ship: calling in reinforcements put five
+    // frigates on the map and the swarm still sat on exactly one of them,
+    // which is not what a swarm does and makes "divide it by where you put
+    // your ships" impossible to express. Every live hull is a target now and a
+    // mote picks one from its own seed.
+    cfg.targets.clear();
+    for (hull, xf) in &ships {
+        if hull.dead_hull || cfg.targets.len() >= swarm::MAX_TARGETS {
+            continue;
+        }
+        cfg.targets.push(xf.translation.extend(hull.model.radius()));
+    }
+    if *last_n != cfg.targets.len() {
+        info!("the swarm has {} ships to divide between", cfg.targets.len());
+        *last_n = cfg.targets.len();
+    }
+
     // The FLAGSHIP, not whichever hull the query happened to yield last. With
     // one ship those were the same thing and this iterated; with a wing out,
     // the cloud would have chased whichever escort was stored last and the
     // formation would have tried to keep station on itself.
-    let Ok((hull, xf)) = hulls.single() else { return };
+    // The flagship, for the camera, the nav disc and the formation. It is one
+    // of the targets above and has no special standing to the swarm.
+    let n = lead_q.iter().count();
+    if n != 1 {
+        if was.is_some() {
+            warn!("the swarm has {n} flagships to chase, keeping the last target");
+            *was = None;
+        }
+        return;
+    }
+    let Ok((e, hull, xf)) = lead_q.single() else { return };
+    if *was != Some(e) {
+        info!("the flagship is {e}");
+        *was = Some(e);
+    }
     cfg.hull_centre = xf.translation;
     cfg.hull_radius = hull.model.radius();
     lead.pos = xf.translation;
@@ -3256,7 +3296,7 @@ fn call_reinforcements(
     for n in out..out + call {
         call_one(&mut commands, &mut meshes, &mut materials, &tex, &scene.hull, radius, lead.pos, lead.rot, (scene.chewers / 3) as u32, n);
     }
-    info!("{call} reinforcements inbound, {} in the wing", out + call);
+    info!("{call} reinforcements inbound, {} in the wing (escorts, not flagships)", out + call);
 }
 
 /// One line as a quad turned edge on to the eye, which is the same trick the

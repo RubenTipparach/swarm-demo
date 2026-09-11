@@ -333,6 +333,64 @@ So what kills a mote is the shell reaching it, and a player can watch a burst
 travel into the cloud and see the hole appear at the end of its own flight,
 which is the whole reason for having a shell at all.
 
+## The swarm has a LIFE, and it is divided between ships
+
+**One published centre was the wrong requirement, not a wrong implementation.**
+The cloud chased `hull_centre`, a single position, so it could only ever be one
+animal on one ship: calling in four reinforcements put five frigates on the map
+and the swarm still sat on exactly one of them. "Position your ships to drive
+or divide the swarm" is the premise of the whole game, and a single target
+makes dividing it impossible to express at all.
+
+Every live player hull is a target now (`SwarmConfig.targets`, capped at
+`MAX_TARGETS`), and a mote picks one modulo the count from its own seed. That
+makes the division STABLE, so a mote does not change its mind every tick, and
+it means a ship dying shortens the list and its share of the cloud re-homes to
+whatever is left. That is the rule the carriers already keep and it needs no
+code of its own. Carriers are excluded, because they are hulls too now and a
+swarm that attacked its own motherships would be a fight with one side in it.
+
+**And a mote has four legs to its life rather than one.** It used to fly at the
+ship for ever, with a clock flipping it between two standoffs, which is a cloud
+and not an animal.
+
+| leg | what it does |
+| --- | --- |
+| transit | crosses from its carrier to the ship it was given |
+| circle | joins the RING round that ship |
+| attack | leaves the ring, presses to contact, bites |
+| return | goes home to its carrier, docks, and is put back together |
+
+Which leg a mote is on decides exactly one number the steering reads: where it
+wants to be. Everything else about the tick is unchanged, which is what keeps
+four behaviours from being four code paths.
+
+**A mote can be HURT now, and that is the only thing that sends one home.** A
+shot takes `SHOT_BITE` off it instead of removing it: two hits kill and one
+leaves it able to fly but not to fight, so at the end of a pass it breaks off
+for its carrier, repairs, and comes back. That needed a fourth vector on the
+mote (hit points, the leg, its timer and its place round the ring), which is
+sixteen more bytes each and sixteen megabytes at a million. That is the price
+of a mote that can be wounded rather than only alive or dead.
+
+**A RING, not a shell, and the difference is one axis.** The swirl axis belongs
+to the TARGET rather than to the mote: an axis per mote gives orbits at every
+inclination, which is a sphere of traffic, fine for a cloud milling about and
+not a formation. One axis per ship means every mote circling that ship goes
+round the same way on the same plane, and two ships do not ring the same way
+because the axis is hashed off which ship it is. A standoff alone would still
+spread them over that sphere, so there is a term pulling each mote INTO its
+ring's plane: that is what flattens the traffic into a ring somebody can see.
+
+**And a mote comes apart.** On top of the spark burst it throws DEBRIS: bigger,
+slower, longer lived and much dimmer, so what is left after the flash has gone
+is pieces tumbling away rather than nothing at all. They are the same particles
+as the flash and cost the same, which is the point: a mote that came apart into
+real meshes would be nine thousand entities the moment a volley landed.
+
+One WGSL trap on the way: `target` is a reserved keyword and the composer
+refuses the name outright. The field is `ship`.
+
 ## Veins: a share of the swarm runs a ROUTE, and orbits were balls
 
 A fifth of the motes do not go for the ship. They belong to a route between
