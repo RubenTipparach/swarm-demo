@@ -10,7 +10,7 @@
 // They were at 3 and 4 once, which is fine for a cube and collides the moment
 // the mesh carries tangents.
 
-#import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_clip}
+#import bevy_pbr::mesh_view_bindings::view
 
 struct Vertex {
     @location(0) position: vec3<f32>,
@@ -50,7 +50,25 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let b = basis_from(vertex.i_vel_seed.xyz);
     let local = b * (vertex.position * vertex.i_pos_scale.w) + vertex.i_pos_scale.xyz;
     var out: VertexOutput;
-    out.clip_position = mesh_position_local_to_clip(get_world_from_local(0u), vec4<f32>(local, 1.0));
+    // WORLD to clip, straight off the view, exactly as the spark shader does
+    // it. This used to be `mesh_position_local_to_clip(get_world_from_local(0u), ...)`,
+    // and that hard coded `0u` is the bug the whole swarm was flipping on.
+    //
+    // `get_world_from_local` indexes Bevy's MESH INSTANCE buffer, which is
+    // built per frame per view and holds every batched mesh in the scene. Slot
+    // nought is not this entity: it is whichever mesh the batcher happened to
+    // put first, and the batcher orders by pipeline and by distance, so the
+    // answer CHANGES as the camera moves. The whole swarm was being drawn in
+    // some other object's frame, every mote sharing the one wrong matrix, so
+    // they all flipped together the moment the sort order changed and the
+    // cloud looked like it was in a different reference frame from the world.
+    // Turning the camera to a certain angle is exactly what reorders the sort.
+    //
+    // A mote position is already in world space: the compute pass writes world
+    // coordinates and the entity's own transform is the identity. So there was
+    // never a model matrix to look up, which is why reading the wrong one went
+    // unnoticed for as long as slot nought happened to hold an identity.
+    out.clip_position = view.clip_from_world * vec4<f32>(local, 1.0);
     out.color = vertex.color;
     out.normal = b * vertex.normal;
     out.tangent = vec4<f32>(b * vertex.tangent.xyz, vertex.tangent.w);

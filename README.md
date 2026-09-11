@@ -11,6 +11,9 @@ calls in reinforcements**, two per press up to a wing of six, which fly in from
 off the map and keep station on you. Your ship also puts up a squadron of
 fighters of its own.
 
+Escape opens the pause menu, which carries the frame counter toggle. The
+counter is in the top right and shows the frame time beside the rate.
+
 The carriers hold for ten seconds before the first fighter comes out, so there
 is a beat before the swarm arrives. `--launch-delay 0` removes it.
 

@@ -86,8 +86,14 @@ const BITE_CHANCE: f32 = 0.975;
 /// How far out from a rock a mote starts turning, as a share of its radius.
 const ROCK_MARGIN: f32 = 0.55;
 
-/// What share of the swarm winds round a rock instead of going for the ship.
+/// What share of the swarm runs a route between rocks instead of going for
+/// the ship, how much of a route ends at the SHIP rather than at another rock,
+/// how fast a route is walked (in routes a second), and how wide the tube of
+/// traffic is as a share of the rock it leaves.
 const VEIN_SHARE: f32 = 0.22;
+const VEIN_TO_SHIP: f32 = 0.34;
+const VEIN_RATE: f32 = 0.085;
+const VEIN_TUBE: f32 = 0.34;
 
 fn hash(n: u32) -> f32 {
     var x = n * 747796405u + 2891336453u;
@@ -211,10 +217,53 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     var focus_r = p.hull.w;
     var vein = false;
     if (p.rocks > 0u && hash(sh + 907u) < VEIN_SHARE) {
-        let rk = p.rock[sh % p.rocks];
-        focus = rk.xyz;
-        focus_r = rk.w;
         vein = true;
+        // A ROUTE, not an orbit. The first cut gave a vein mote its own
+        // standoff round one rock and its own swirl axis, which is a sphere of
+        // orbits: the swarm came out as a solid BALL round every asteroid,
+        // because that is what a thousand orbits at every inclination is. An
+        // ant does not orbit, it follows a path that other ants are on.
+        //
+        // So a vein mote belongs to a route between two anchors and rides a
+        // point that slides along it. Every mote on the same route is on the
+        // same line, which is what makes a line of traffic rather than a
+        // shell, and the asteroid avoidance below bends the line round
+        // anything standing in it: a trail that weaves is a trail that met
+        // something.
+        let ra = sh % p.rocks;
+        let anchor_a = p.rock[ra];
+        var anchor_b = p.hull;
+        if (p.rocks > 1u && hash(sh + 1301u) > VEIN_TO_SHIP) {
+            let rb = (ra + 1u + (sh / 13u) % (p.rocks - 1u)) % p.rocks;
+            anchor_b = p.rock[rb];
+        }
+        var ab = anchor_b.xyz - anchor_a.xyz;
+        let span = max(length(ab), 1e-4);
+        let along = ab / span;
+        // Surface to surface, so a route starts off the rock it leaves rather
+        // than inside it.
+        let a0 = anchor_a.xyz + along * anchor_a.w * 1.14;
+        let b0 = anchor_b.xyz - along * anchor_b.w * 1.14;
+
+        // How far along it is. `state.w` is the run clock for everything else
+        // and a vein makes no runs, so it carries the route parameter here
+        // instead: one field, two meanings, and nothing reads the wrong one
+        // because `vein` is decided from the seed and never changes.
+        var s = fract(m.state.w + VEIN_RATE * p.dt * (0.65 + 0.7 * hash(sh + 71u)));
+        m.state.w = s;
+
+        // A TUBE rather than a line: a fixed offset per mote about the route,
+        // so the traffic has a cross section a few motes wide instead of every
+        // one of them trying to be at the same point.
+        var e1 = cross(along, vec3<f32>(0.0, 1.0, 0.0));
+        if (length(e1) < 1e-4) { e1 = cross(along, vec3<f32>(1.0, 0.0, 0.0)); }
+        e1 = e1 / max(length(e1), 1e-4);
+        let e2 = cross(along, e1);
+        let ph = hash(sh + 211u) * 6.2831853;
+        let tube = anchor_a.w * VEIN_TUBE * (0.25 + 0.75 * hash(sh + 313u));
+        focus = mix(a0, b0, s) + (e1 * cos(ph) + e2 * sin(ph)) * tube;
+        // It wants to BE there, not to stand off from it.
+        focus_r = 0.0;
     }
 
     let to_hull = focus - me;
@@ -249,7 +298,8 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     // A vein does not make runs. It HOLDS, close in, at its own radius, so
     // the ribbon stays wound round the rock instead of breathing in and out
     // of it.
-    if (vein) { want = focus_r * (1.16 + 0.34 * hash(sh + 71u)); }
+    // A vein has no standoff and makes no runs: it rides its point.
+    if (vein) { want = 0.0; }
 
     // The pull is capped, or a fighter fifty units out would accelerate at
     // fifty and arrive as a bullet. It is the CAP that makes the approach
@@ -273,7 +323,11 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     // arriving down the radius like a dart.
     // A vein runs FAST along its own orbit, which is what turns a set of
     // circles into a stream somebody can see moving.
-    acc = acc + swirl * select(select(1.5, 3.6, inbound), 7.5, vein);
+    // And NO swirl. Swirl round the focus is exactly what turned a vein into
+    // a ball: it is the term that spreads traffic over a sphere, which is
+    // right for a cloud besieging a ship and wrong for a line of them going
+    // somewhere.
+    acc = acc + swirl * select(select(1.5, 3.6, inbound), 0.0, vein);
 
     // ---- the weave ----
     //
@@ -283,10 +337,10 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     // texture at the scale of a single craft.
     let wv = cross(dir, swirl);
     let rate = 1.6 + 3.4 * hash(sh + 57u);
-    acc = acc + wv * sin(p.time * rate + seed * 71.0) * select(2.8, 0.9, vein);
+    acc = acc + wv * sin(p.time * rate + seed * 71.0) * select(2.8, 0.6, vein);
 
     let jit = vec3<f32>(hash(i * 3u + u32(p.time * 7.0)), hash(i * 5u + u32(p.time * 5.0)), hash(i * 7u + u32(p.time * 3.0))) - 0.5;
-    acc = acc + jit * 1.5;
+    acc = acc + jit * select(1.5, 0.5, vein);
 
     // ---- the asteroid field ----
     //

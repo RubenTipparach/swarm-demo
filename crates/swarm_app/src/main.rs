@@ -18,7 +18,7 @@ use bevy::{
     asset::{LoadState, RenderAssetUsages},
     camera::RenderTarget,
     image::{ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler, ImageSamplerDescriptor},
-    input::mouse::{MouseMotion, MouseWheel},
+    input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
     render::{
@@ -77,6 +77,12 @@ struct Args {
     /// default, and nought is what a headless render wants: a shot aimed at
     /// tick ninety cannot wait ten seconds for the swarm to exist.
     launch_delay: f32,
+    /// Draw the HUD in a headless run. It is a window's furniture and there is
+    /// nobody to press it, but a screenshot is the only way to PROVE it draws
+    /// rather than assert it, which is the rule the textures already keep.
+    hud: bool,
+    /// Start paused, with the menu open, for the same reason.
+    paused: bool,
     /// Camera distance in hull radii.
     zoom: f32,
     /// What the camera looks at, in world units. The hull's centre unless
@@ -121,6 +127,8 @@ fn parse_args() -> Args {
         rocks: 14,
         fighters: 12,
         launch_delay: 10.0,
+        hud: false,
+        paused: false,
         zoom: 4.6,
         target: Vec3::ZERO,
         explode: 0,
@@ -166,6 +174,8 @@ fn parse_args() -> Args {
                 i += 1;
             }
             "--showcase" => a.showcase = true,
+            "--hud" => a.hud = true,
+            "--paused" => { a.hud = true; a.paused = true; }
             "--reinforce" => { a.reinforce = next().parse().expect("--reinforce N"); i += 1; }
             "--rocks" => { a.rocks = next().parse().expect("--rocks N"); i += 1; }
             "--launch-delay" => { a.launch_delay = next().parse().expect("--launch-delay SECONDS"); i += 1; }
@@ -201,12 +211,22 @@ fn main() {
             }),
             ..default()
         }))
-        .add_systems(Update, orbit_input)
-        // The HUD is for a window. A headless run has no pointer, nobody to
-        // read a label, and every frame of it is paid for on a software
-        // rasteriser, so it is built only where it can be used.
-        .add_systems(Startup, build_hud)
-        .add_systems(Update, hud_feedback);
+        // BEFORE the camera reads it. These were two separate
+        // `add_systems` calls with no ordering between them, so Bevy was free
+        // to run them either way round and could pick differently from one
+        // frame to the next: a drag then arrived a frame late on some frames
+        // and not others, which is jitter that looks like a second camera
+        // fighting the first. There is only ever one camera; there were two
+        // possible orders.
+        .add_systems(Update, orbit_input.before(orbit_camera));
+    }
+    // The HUD belongs to a window: a headless run has no pointer and nobody to
+    // read a label. `--hud` builds it anyway, because a screenshot is the only
+    // way to PROVE it draws rather than assert it, which is the rule the
+    // finishes and the window maps already keep.
+    if !args.headless || args.hud {
+        app.add_systems(Startup, build_hud)
+            .add_systems(Update, (toggle_pause, hud_feedback, tick_fps));
     }
     if args.fps > 0 {
         app.insert_resource(FrameLimit::new(args.fps)).add_systems(Last, limit_frames);
@@ -238,22 +258,42 @@ fn main() {
         .init_resource::<NavOrder>()
         .init_resource::<BeamQuads>()
         .init_resource::<Lead>()
+        .insert_resource(Hud { paused: args.paused, ..default() })
         .add_systems(Startup, (load_textures, setup).chain())
         .add_systems(
             Update,
             (
-                advance_tick,
-                (apply_nav_to, call_reinforcements, nav_input, fly_hull, publish_hull).chain(),
-                move_hives,
-                (fire_guns, fire_flak).chain(),
-                (launch_fighters, fly_fighters, fighters_fire).chain(),
-                resolve_beams,
-                (chew, vent_smoke, go_critical, bleed_hives),
-                publish_hives,
-                fly_tracers,
-                (age_fx, draw_beams, draw_nav, draw_flames, glow_engines),
+                // Everything that MOVES stops while the menu is open. The
+                // swarm's own clock is stopped by `SwarmConfig.paused`, which
+                // is a separate flag because the cloud is in the render world
+                // and cannot see this one; these are the CPU half, and without
+                // the gate a paused game would still fly its ships, fire its
+                // guns and chew its armour behind a menu that said Paused.
+                (
+                    advance_tick,
+                    (apply_nav_to, call_reinforcements, nav_input, fly_hull, publish_hull).chain(),
+                    move_hives,
+                    (fire_guns, fire_flak).chain(),
+                    (launch_fighters, fly_fighters, fighters_fire).chain(),
+                    resolve_beams,
+                    (chew, vent_smoke, go_critical, bleed_hives),
+                    publish_hives,
+                    fly_tracers,
+                    age_fx,
+                    fly_chunks,
+                    spin_showcase,
+                )
+                    .chain()
+                    .run_if(running),
+                // And everything that only DRAWS keeps running, or a paused
+                // frame would show the last thing that was built rather than
+                // the world as it stands: the beams, the nav disc and the
+                // flames are all rebuilt every frame from state, so skipping
+                // them empties their meshes and the picture goes blank behind
+                // the menu.
+                (draw_beams, draw_nav, draw_flames, glow_engines),
                 remesh_dirty,
-                (fly_chunks, spin_showcase, orbit_camera, ride_the_eye),
+                (orbit_camera, ride_the_eye),
             )
                 .chain(),
         )
@@ -327,7 +367,7 @@ fn advance_tick(time: Res<Time>, scene: Res<Scene>, mut t: ResMut<Tick>) {
         t.tick += 1;
         return;
     }
-    t.acc += time.delta_secs().min(0.25);
+    t.acc += time.delta_secs().min(swarm::STEP_CLAMP);
     while t.acc >= 1.0 / 60.0 {
         t.acc -= 1.0 / 60.0;
         t.tick += 1;
@@ -574,13 +614,19 @@ const ROCK_LATTICE: usize = 22;
 const ROCK_CELL: f32 = 0.16;
 const ROCK_NEAR: f32 = 5.0;
 const ROCK_FAR: f32 = 13.0;
-/// Inscribed rather than circumscribed: a sphere that CONTAINED a lumpy rock
-/// would stand the swarm off well clear of the thin axes, and a cloud
-/// swerving round empty space is worse than one clipping a corner.
-const ROCK_HULL: f32 = 0.72;
+/// Against the VOLUME radius, which is already the rock's mean size, so this
+/// is a small trim rather than the deep inset a bounding sphere needed. A
+/// sphere that CONTAINED a lumpy rock stands the swarm off well clear of the
+/// thin axes, and a cloud swerving round empty space is worse than one
+/// clipping a corner.
+const ROCK_HULL: f32 = 0.95;
 
 /// How fast the camera pans, as a share of its own distance per second.
 const PAN_RATE: f32 = 0.9;
+
+/// The most one mouse event may turn the camera, in pixels. A real drag is a
+/// few dozen a frame; anything past this is the window system, not a hand.
+const MAX_DRAG: f32 = 120.0;
 
 /// What a warship's plating is worth, against the bare material.
 ///
@@ -1176,7 +1222,7 @@ fn setup(
     let mut rng = Rng::new(4242);
     for n in 0..scene.rocks.min(swarm::MAX_ROCKS) {
         let m = swarm_core::rock::generate(ROCK_LATTICE, radius * ROCK_CELL, 700 + n as u64);
-        let rr = m.radius();
+        let rr = m.volume_radius();
         // Strewn between the ship and the carriers, off the plane, so they
         // are cover on the way out rather than scenery at the edge.
         let t = (n as f32 + 0.5) / scene.rocks.max(1) as f32;
@@ -1214,9 +1260,13 @@ fn setup(
                 ChildOf(rock),
             ));
         }
-        // The sphere the swarm is told about: INSIDE the lump, because a
-        // sphere round a lumpy rock is mostly empty space and motes would
-        // swerve round nothing on the thin axes.
+        // The sphere the swarm is told about, and it is the VOLUME radius,
+        // not the bounding one. `radius()` measures to the furthest corner of
+        // the furthest cell, so on a rock stretched half again on one axis it
+        // is set entirely by that axis and stands well clear of the surface
+        // everywhere else. Motes then held station on a sphere with nothing in
+        // it: the cloud was visibly in orbit round empty space beside the
+        // asteroid, which is what "they are orbiting nothing" was.
         rocks.push(at.extend(rr * ROCK_HULL));
     }
     if !rocks.is_empty() {
@@ -1637,7 +1687,7 @@ fn empty_mesh() -> Mesh {
 
 /// Carriers drift across the line to the ship, and turn as they go.
 fn move_hives(time: Res<Time>, scene: Res<Scene>, mut hives: Query<(&Hive, &mut Transform)>) {
-    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(0.25) };
+    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
     for (h, mut xf) in &mut hives {
         xf.translation += h.vel * dt;
         xf.rotate_y(dt * 0.13);
@@ -1724,7 +1774,7 @@ fn fly_fighters(
     mut fighters: Query<(&mut Fighter, &mut Transform)>,
 ) {
     let Ok(hull) = flagship.single() else { return };
-    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(0.25) };
+    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
     let radius = hull.model.radius();
     let station = radius * FIGHTER_STATION;
     for (mut f, mut xf) in &mut fighters {
@@ -1842,6 +1892,129 @@ struct CallButton;
 #[derive(Component)]
 struct CallLabel;
 
+/// What the HUD is showing and whether the game is running.
+///
+/// One resource rather than a flag on each widget, because "is the game
+/// paused" is a fact about the SESSION and three different things need to
+/// agree on it: the swarm's clock, every gameplay system, and the menu that
+/// says so on screen.
+#[derive(Resource)]
+struct Hud {
+    show_fps: bool,
+    paused: bool,
+    /// A smoothed frame rate, in frames a second.
+    fps: f32,
+}
+
+impl Default for Hud {
+    fn default() -> Self {
+        Hud { show_fps: true, paused: false, fps: 0.0 }
+    }
+}
+
+/// The frame rate in the corner.
+#[derive(Component)]
+struct FpsText;
+
+/// The whole pause overlay, shown and hidden by its `display`.
+#[derive(Component)]
+struct PauseMenu;
+
+/// The row in the menu that turns the counter off and on.
+#[derive(Component)]
+struct FpsToggle;
+
+/// And the one that puts you back in the game.
+#[derive(Component)]
+struct ResumeButton;
+
+/// Is the game running? Everything that moves asks this.
+fn running(hud: Res<Hud>) -> bool {
+    !hud.paused
+}
+
+/// Escape opens the menu and Escape closes it.
+///
+/// It sets `SwarmConfig.paused` as well as its own flag, because the swarm
+/// lives in the render world on the other side of an extract and does not see
+/// this resource: `advance_clock` already reads that one and hands the tick a
+/// dt of nought, so the cloud freezes where it is instead of being stepped by
+/// a frame that was not simulated.
+fn toggle_pause(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut hud: ResMut<Hud>,
+    mut cfg: ResMut<SwarmConfig>,
+    mut menu: Query<&mut Node, With<PauseMenu>>,
+    resume: Query<&Interaction, (Changed<Interaction>, With<ResumeButton>)>,
+    mut started: Local<bool>,
+) {
+    // The menu is built hidden, so a session that was asked to START paused
+    // has to be shown once. Done here rather than in `build_hud` because the
+    // display is this system's to own: two places writing it is two places to
+    // keep in step.
+    if !*started {
+        *started = true;
+        if hud.paused {
+            cfg.paused = true;
+            for mut n in &mut menu {
+                n.display = Display::Flex;
+            }
+            return;
+        }
+    }
+    let clicked = resume.iter().any(|i| *i == Interaction::Pressed);
+    if keys.just_pressed(KeyCode::Escape) {
+        hud.paused = !hud.paused;
+    } else if clicked {
+        hud.paused = false;
+    } else {
+        return;
+    }
+    cfg.paused = hud.paused;
+    for mut n in &mut menu {
+        n.display = if hud.paused { Display::Flex } else { Display::None };
+    }
+}
+
+/// The counter itself, off the REAL clock.
+///
+/// `Time` is the virtual clock and Bevy clamps its delta at 250 ms so one
+/// stalled frame cannot fling everything forward, which means a frame slower
+/// than that reports as 250 ms however long it really took. That is exactly
+/// the trap the frame cap fell into once already, and an FPS counter built on
+/// it would read a floor of four however bad things got. `Time<Real>` is the
+/// wall clock and is the only honest input here.
+///
+/// Smoothed on a time constant rather than over a fixed number of frames, so
+/// the number settles at the same rate whatever the frame rate is.
+fn tick_fps(
+    real: Res<Time<Real>>,
+    mut hud: ResMut<Hud>,
+    mut text: Query<(&mut Text, &mut Node), With<FpsText>>,
+) {
+    let dt = real.delta_secs();
+    if dt > 0.0 {
+        let now = 1.0 / dt;
+        let k = 1.0 - (-dt / FPS_SMOOTH).exp();
+        hud.fps = if hud.fps <= 0.0 { now } else { hud.fps + (now - hud.fps) * k };
+    }
+    let Ok((mut t, mut n)) = text.single_mut() else { return };
+    n.display = if hud.show_fps { Display::Flex } else { Display::None };
+    if !hud.show_fps {
+        return;
+    }
+    // The frame TIME beside it, because a frame rate alone cannot be compared
+    // against a budget: sixteen point seven milliseconds is a number somebody
+    // can hold against sixty, and "59 fps" is not.
+    let want = format!("{:.0} fps   {:.1} ms", hud.fps, 1000.0 / hud.fps.max(1e-3));
+    if t.0 != want {
+        t.0 = want;
+    }
+}
+
+/// How long the frame rate takes to settle, in seconds.
+const FPS_SMOOTH: f32 = 0.4;
+
 /// A set the whole HUD hangs off, so a headless run can skip it.
 fn build_hud(mut commands: Commands) {
     commands
@@ -1890,14 +2063,119 @@ fn build_hud(mut commands: Commands) {
                 Pickable::IGNORE,
             ));
         });
+
+    // The counter, in the opposite corner from the controls so it never sits
+    // over anything a player has to press.
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            right: Val::Px(16.0),
+            top: Val::Px(12.0),
+            ..default()
+        },
+        Text::new(""),
+        TextFont { font_size: 14.0, ..default() },
+        TextColor(Color::srgba(0.72, 0.86, 0.98, 0.80)),
+        FpsText,
+        Pickable::IGNORE,
+    ));
+
+    // The pause overlay. Built once and hidden by its own `display` rather
+    // than spawned and despawned, so the buttons keep their identity and
+    // nothing has to rebuild a menu on the frame somebody pressed escape.
+    //
+    // `Display::None` and not `Visibility::Hidden`: a hidden node is still
+    // laid out and still picked, so an invisible Resume button would have gone
+    // on swallowing clicks in the middle of the screen the whole time the game
+    // was running.
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                display: Display::None,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.01, 0.02, 0.04, 0.72)),
+            PauseMenu,
+        ))
+        .with_children(|p| {
+            p.spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(10.0),
+                    padding: UiRect::axes(Val::Px(26.0), Val::Px(22.0)),
+                    border: UiRect::all(Val::Px(1.0)),
+                    min_width: Val::Px(260.0),
+                    ..default()
+                },
+                BorderColor::all(Color::srgba(0.45, 0.85, 1.0, 0.45)),
+                BackgroundColor(Color::srgba(0.03, 0.07, 0.12, 0.95)),
+            ))
+            .with_children(|c| {
+                c.spawn((
+                    Text::new("Paused"),
+                    TextFont { font_size: 22.0, ..default() },
+                    TextColor(Color::srgb(0.86, 0.95, 1.0)),
+                    Pickable::IGNORE,
+                ));
+                for (marker, label) in [("fps", "FPS counter: on"), ("resume", "Resume  (esc)")] {
+                    let mut b = c.spawn((
+                        Button,
+                        Node {
+                            padding: UiRect::axes(Val::Px(14.0), Val::Px(9.0)),
+                            border: UiRect::all(Val::Px(1.0)),
+                            ..default()
+                        },
+                        BorderColor::all(Color::srgba(0.45, 0.85, 1.0, 0.40)),
+                        BackgroundColor(Color::srgba(0.05, 0.12, 0.18, 0.90)),
+                    ));
+                    if marker == "fps" {
+                        b.insert(FpsToggle);
+                    } else {
+                        b.insert(ResumeButton);
+                    }
+                    b.with_children(|t| {
+                        t.spawn((
+                            Text::new(label),
+                            TextFont { font_size: 15.0, ..default() },
+                            TextColor(Color::srgb(0.80, 0.94, 1.0)),
+                            Pickable::IGNORE,
+                        ));
+                    });
+                }
+            });
+        });
 }
 
 /// The button's own colours, and what it says the wing is at.
 fn hud_feedback(
-    mut buttons: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<CallButton>)>,
+    mut buttons: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<Button>)>,
+    toggled: Query<&Interaction, (Changed<Interaction>, With<FpsToggle>)>,
+    toggle_text: Query<&Children, With<FpsToggle>>,
+    mut texts: Query<&mut Text, Without<CallLabel>>,
     escorts: Query<(), With<Escort>>,
     mut label: Query<&mut Text, With<CallLabel>>,
+    mut hud: ResMut<Hud>,
 ) {
+    if toggled.iter().any(|i| *i == Interaction::Pressed) {
+        hud.show_fps = !hud.show_fps;
+        // The row says what it will DO next time, which means it has to say
+        // what the counter is doing now. A toggle whose label never changes is
+        // a control nobody can read the state of, which is the rail rule
+        // redux-tribes keeps.
+        let want = if hud.show_fps { "FPS counter: on" } else { "FPS counter: off" };
+        for kids in &toggle_text {
+            for k in kids.iter() {
+                if let Ok(mut t) = texts.get_mut(k) {
+                    t.0 = want.into();
+                }
+            }
+        }
+    }
     for (i, mut bg) in &mut buttons {
         bg.0 = match i {
             Interaction::Pressed => Color::srgba(0.16, 0.38, 0.52, 0.95),
@@ -2822,7 +3100,7 @@ fn fly_hull(
     // have every carrier flying the flagship's own orders.
     mut hulls: Query<(&mut Hull, &mut Transform, Option<&Escort>), Without<Hive>>,
 ) {
-    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(0.25) };
+    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
     for (mut hull, mut xf, escort) in &mut hulls {
         let radius = hull.model.radius();
         let (speed, accel, arrive) = (radius * HULL_SPEED, radius * HULL_ACCEL, radius * ARRIVE);
@@ -3095,18 +3373,67 @@ fn orbit_input(
     keys: Res<ButtonInput<KeyCode>>,
     mut motion: MessageReader<MouseMotion>,
     mut wheel: MessageReader<MouseWheel>,
+    hud: Res<Hud>,
+    over_ui: Query<&Interaction>,
     mut q: Query<&mut Orbit>,
 ) {
     let Ok(mut o) = q.single_mut() else { return };
-    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(0.25) };
-    for m in motion.read() {
-        if buttons.pressed(MouseButton::Left) {
-            o.yaw -= m.delta.x * 0.005;
-            o.pitch = (o.pitch + m.delta.y * 0.005).clamp(-1.4, 1.4);
+    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
+
+    // The pointer over a button belongs to the BUTTON. `orbit_input` reads the
+    // raw mouse and Bevy's UI does not consume it, so pressing Call
+    // reinforcements used to drag the camera at the same time: every click on
+    // the HUD threw the view sideways, which is most of what "the camera keeps
+    // snapping" was. Drained rather than ignored, so the motion of a drag that
+    // started on a button does not arrive in one lump when it leaves.
+    let on_ui = over_ui.iter().any(|i| *i != Interaction::None);
+    if on_ui || hud.paused {
+        motion.clear();
+        wheel.clear();
+        return;
+    }
+
+    // ---- the drag, and why it used to throw the camera across the map ----
+    //
+    // Motion is DRAINED whenever a drag is not in progress, including on the
+    // frame the button goes down. `MessageReader` keeps everything that
+    // arrived since this system last read it, so a reader that only consumes
+    // events while the button is held is a reader with a backlog: move the
+    // mouse across the desk with the button up and the whole journey is
+    // waiting, and it all applies on the first frame of the next drag.
+    //
+    // And a single event's delta is CLAMPED. The window handing back focus,
+    // the pointer leaving and re-entering, or a compositor releasing a grab
+    // all deliver one event carrying thousands of pixels. At 0.005 radians a
+    // pixel that is several whole turns inside one frame, which is exactly
+    // "the camera jumped to a random angle", and it happens at the edge of the
+    // screen, which is why it seemed to depend on which way you had turned.
+    if !buttons.pressed(MouseButton::Left) || buttons.just_pressed(MouseButton::Left) {
+        motion.clear();
+    } else {
+        for m in motion.read() {
+            let d = m.delta.clamp(Vec2::splat(-MAX_DRAG), Vec2::splat(MAX_DRAG));
+            o.yaw -= d.x * 0.005;
+            o.pitch = (o.pitch + d.y * 0.005).clamp(-1.4, 1.4);
         }
     }
+    // Wrapped, so a long session cannot walk the yaw out to where a float has
+    // no precision left and the camera moves in visible steps.
+    o.yaw = o.yaw.rem_euclid(std::f32::consts::TAU);
+
+    // Zoom is MULTIPLICATIVE and goes through `exp`, which cannot return a
+    // negative number however big the input is. That is the whole fix for the
+    // snap: it was `dist * (1.0 - y * 0.08)`, and a wheel reporting PIXELS
+    // rather than lines hands over a y of a hundred or more per notch, so the
+    // factor came out at minus seven, the distance went negative, and the
+    // clamp slammed the camera to its near stop. One notch the other way and
+    // it slammed to the far one. A trackpad does this on every scroll.
     for w in wheel.read() {
-        o.dist = (o.dist * (1.0 - w.y * 0.08)).clamp(2.0, 400.0);
+        let step = match w.unit {
+            MouseScrollUnit::Line => w.y,
+            MouseScrollUnit::Pixel => w.y / 40.0,
+        };
+        o.dist = (o.dist * (-step.clamp(-4.0, 4.0) * 0.12).exp()).clamp(2.0, 400.0);
     }
 
     // Panning is in the CAMERA's frame, not the world's: pressing left has to
@@ -3148,6 +3475,17 @@ fn orbit_input(
     if keys.just_pressed(KeyCode::Space) {
         o.follow = true;
     }
+
+    // Nothing leaves this function as a NaN. Every expression above is guarded
+    // at the point it could go wrong, so this should never fire; it is here
+    // because a NaN in the camera is not a wrong picture, it is EVERY picture
+    // wrong from now on, since the bad value is stored and fed back in next
+    // frame. A guard that can only ever be redundant is the right price for
+    // that.
+    if !o.yaw.is_finite() || !o.pitch.is_finite() || !o.dist.is_finite() || !o.target.is_finite() {
+        warn!("camera went non finite, reset");
+        *o = Orbit { yaw: 0.6, pitch: 0.38, dist: 40.0, target: Vec3::ZERO, follow: true };
+    }
 }
 
 /// An RTS camera: the focus is a PLACE, and the angles are the player's.
@@ -3170,7 +3508,7 @@ fn orbit_camera(
     hulls: Query<&Transform, (With<Flagship>, Without<Camera3d>)>,
     mut q: Query<(&mut Orbit, &mut Transform), With<Camera3d>>,
 ) {
-    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(0.25) };
+    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
     for (mut o, mut xf) in &mut q {
         if o.follow {
             if let Ok(hull) = hulls.single() {
@@ -3183,7 +3521,12 @@ fn orbit_camera(
                 // a place rather than a lock: the ship then flies out of the
                 // middle of the view under its own power, which is what says
                 // it is going somewhere.
-                if o.target.distance(hull.translation) < hull.translation.length().max(1.0) * 1e-3 + 0.05 {
+                // Against the camera's own DISTANCE, not against how far the
+                // ship happens to be from the world origin. The old test grew
+                // its own threshold as the ship flew away from nothing in
+                // particular, so a focus let go at a different gap depending
+                // on where in the map it was asked for.
+                if o.target.distance(hull.translation) < o.dist * 0.004 {
                     o.follow = false;
                 }
             } else {

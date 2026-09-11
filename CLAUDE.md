@@ -333,22 +333,142 @@ So what kills a mote is the shell reaching it, and a player can watch a burst
 travel into the cloud and see the hole appear at the end of its own flight,
 which is the whole reason for having a shell at all.
 
-## Veins: a share of the swarm winds round the rocks
+## Veins: a share of the swarm runs a ROUTE, and orbits were balls
 
-A fifth of the motes do not go for the ship. They take an asteroid as their
-focus instead, at a standoff of a little over its own radius, and they do not
-make runs: they HOLD, and they run fast along their own orbit.
+A fifth of the motes do not go for the ship. They belong to a route between
+two anchors, a rock and either another rock or the ship, and they ride a point
+that slides along it.
 
-It is one hash and one select, and nothing else in the tick knows which kind a
-mote is. That is the point: a vein is not a second behaviour, it is the same
-behaviour pointed at something else. Combined with the per mote swirl axis it
-draws a braid winding round the rock rather than a shell round it, because a
-few hundred near circular orbits at every inclination is what a braid is.
+**The first cut gave each of them its own standoff round one rock and its own
+swirl axis, and that is a BALL.** A thousand orbits at every inclination is a
+spherical shell by construction, which is the same mistake as the donut with
+the axis freed instead of fixed: the swarm came out as a solid globe round
+every asteroid. An ant does not orbit, it follows a path that other ants are
+on. Every mote on a route is on the same line, which is what makes a line of
+traffic, and the asteroid avoidance bends that line round anything standing in
+it: a trail that weaves is a trail that met something.
 
-Two things had to be told about it. A vein's OWN rock pushes it far less than
-the others do, or the avoidance term would shove the ribbon straight off the
-thing it is wound round, since the standoff is inside the margin by design. And
-a vein does not bite the hull, because it is nowhere near it.
+It carries a TUBE rather than a line, a fixed offset per mote about the route,
+so the traffic has a cross section a few motes wide instead of every one of
+them trying to be at the same point. The route parameter lives in `state.w`,
+which is the run clock for everything else: one field, two meanings, and
+nothing reads the wrong one because `vein` is decided from the seed and never
+changes. A vein gets no swirl at all, which is the term that spreads traffic
+over a sphere: right for a cloud besieging a ship, wrong for a line of them
+going somewhere.
+
+## Three bugs that all looked like the swarm being out of sync
+
+The report was that the cloud flew "in a different frame of reference" from the
+world, that it flipped all at once, that it happened at certain camera angles,
+and that it was not consistent. That is four symptoms of three separate causes,
+and none of them was a sync problem.
+
+**The mote shader read the mesh uniform at a hard coded index nought.** It
+built its clip position with `mesh_position_local_to_clip(get_world_from_local(0u), ...)`.
+`get_world_from_local` indexes Bevy's MESH INSTANCE buffer, which is built per
+frame per view and holds every batched mesh in the scene. Slot nought is not
+this entity: it is whichever mesh the batcher put first, and the batcher orders
+by pipeline and by distance, so **the answer changes as the camera moves**. The
+whole swarm was drawn in some other object's frame, every mote sharing the one
+wrong matrix, so they all flipped together the moment the sort order changed.
+Turning the camera to a certain angle is exactly what reorders the sort.
+
+A mote position is already in world space, because the compute pass writes
+world coordinates and the entity's transform is the identity, so there was
+never a model matrix to look up. `view.clip_from_world` directly, which is what
+the spark shader had been doing correctly the whole time. **The rule: if a
+shader wants a matrix it is not using, that is not a spare argument, it is a
+lookup that can be wrong.**
+
+**The rock the swarm navigated was bigger than the rock that was drawn.**
+`VoxelModel::radius` is the bounding sphere, measured to the furthest CORNER of
+the furthest cell, so on a lump stretched half again on one axis it is set
+entirely by that axis and stands well clear of the surface everywhere else.
+Used as "how big is this", it put motes in orbit round a sphere with nothing in
+it, which is what "they are orbiting nothing" was. `volume_radius` is the
+radius of a sphere with the same VOLUME as the solid cells, which is the same
+measure redux-tribes keeps beside its class table and for the same reason: a
+radius that nothing links to the shape is a radius that disagrees with the
+picture. Both are right answers to different questions, and the suite pins that
+the volume one sits inside the bounding one and is not a token fraction of it.
+
+**And there were two clocks.** The swarm's own clock clamped its step at a
+twentieth of a second and every system on the CPU clamped at a quarter. On any
+frame slower than fifty milliseconds the ship moved by the real elapsed time
+and the cloud chasing it moved by at most a twentieth: the swarm fell behind
+the world by the difference, every slow frame, and never caught up. Two clamps
+is two clocks. `swarm::STEP_CLAMP` is the one number now, read by the swarm's
+clock and by everything on the CPU that integrates anything.
+
+## The camera jumped, and it was the input, not the camera
+
+There is one camera and one system writes its transform. What threw it across
+the map was how its input was read.
+
+**Mouse motion was drained only while dragging.** `MessageReader` keeps
+everything that arrived since the system last read it, and the drag loop only
+consumed events while the button was held. Move the mouse across the desk with
+the button up and the whole journey is waiting: it all applied on the first
+frame of the next drag. Motion is cleared whenever a drag is not in progress,
+including on the frame the button goes down.
+
+**And a single event's delta is clamped.** The window handing back focus, the
+pointer leaving and re-entering, or a compositor releasing a grab all deliver
+one event carrying thousands of pixels. At 0.005 radians a pixel that is
+several whole turns inside one frame, and it happens at the EDGE of the screen,
+which is why it seemed to depend on which way you had turned.
+
+**The wheel could make the distance negative.** It was `dist * (1.0 - y * 0.08)`,
+and a wheel reporting PIXELS rather than lines hands over a y of a hundred or
+more per notch, so the factor came out at minus seven, the distance went
+negative and the clamp slammed the camera to its near stop. One notch the other
+way and it slammed to the far one; a trackpad does this on every scroll. Zoom
+goes through `exp` now, which cannot return a negative number however big the
+input is, and the unit is read off the event rather than assumed.
+
+**The pointer over a button belongs to the button.** Bevy's UI does not consume
+the raw mouse, so pressing Call reinforcements dragged the camera at the same
+time: every click on the HUD threw the view sideways.
+
+**And the two systems had no order between them.** `orbit_input` and
+`orbit_camera` were registered in separate `add_systems` calls, so Bevy was
+free to run them either way round and could pick differently from one frame to
+the next: a drag arrived a frame late on some frames and not others, which is
+jitter that looks like a second camera fighting the first. There is only ever
+one camera; there were two possible orders.
+
+Nothing leaves `orbit_input` as a NaN either. Every expression is guarded where
+it could go wrong, so the check can only ever be redundant, and it is there
+because a NaN in the camera is not a wrong picture, it is every picture wrong
+from now on: the bad value is stored and fed back in next frame.
+
+## A frame counter, and a menu to turn it off
+
+The counter is in the opposite corner from the controls so it never sits over
+anything a player has to press, and it reads off `Time<Real>`.
+
+**Not `Time`.** The virtual clock's delta is clamped at 250 ms so one stalled
+frame cannot fling everything forward, which means a frame slower than that
+reports as 250 ms however long it really took. That is the exact trap the frame
+cap fell into once already, written up further down this file, and a counter
+built on it would read a floor of four frames a second however bad things got.
+It shows the frame TIME beside the rate, because a rate alone cannot be held
+against a budget: 16.7 ms is a number somebody can compare to 60, and "59 fps"
+is not.
+
+Escape opens the pause menu, which carries the toggle and Resume. The menu sets
+`SwarmConfig.paused` as well as its own flag, because the swarm lives in the
+render world on the other side of an extract and does not see the HUD's
+resource. Everything that MOVES is gated behind a run condition and everything
+that only DRAWS keeps running: the beams, the nav disc and the flames are
+rebuilt every frame from state, so skipping them empties their meshes and the
+picture goes blank behind a menu that says Paused.
+
+The overlay is hidden with `Display::None` and not `Visibility::Hidden`,
+because a hidden node is still laid out and still picked: an invisible Resume
+button would have gone on swallowing clicks in the middle of the screen the
+whole time the game was running.
 
 ## The controls are on the screen
 
@@ -667,7 +787,7 @@ the same failure as one that never loaded.
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 51, the core
+cargo test -p swarm_core                                   # 52, the core
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
 cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --motes 5000 --frames 60 --launch-delay 0 --out shot.png

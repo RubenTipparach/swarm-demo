@@ -133,6 +133,15 @@ pub const MAX_HIVES: usize = 16;
 /// place needs a grid rather than a longer list.
 pub const MAX_ROCKS: usize = 32;
 
+/// The longest step anything in the game may take in one frame, in seconds.
+///
+/// ONE number, read by the swarm's own clock and by every system on the CPU
+/// that integrates anything. A frame slower than this runs in slow motion,
+/// which is the right failure: the alternative is a frame that flings
+/// everything across the map, and the alternative to both is two systems
+/// disagreeing about how long the frame was.
+pub const STEP_CLAMP: f32 = 0.25;
+
 /// The capsules that kill this tick, rebuilt by the app every frame.
 ///
 /// A beam is a capsule from muzzle to endpoint; a blast is a capsule of zero
@@ -314,7 +323,13 @@ fn advance_clock(time: Res<Time>, cfg: Res<SwarmConfig>, mut clock: ResMut<Swarm
     } else if cfg.fixed_dt {
         1.0 / 60.0
     } else {
-        time.delta_secs().min(1.0 / 20.0)
+        // The SAME clamp the CPU systems use. It was a twentieth here and a
+        // quarter there, so on any frame slower than fifty milliseconds the
+        // ship moved by the real elapsed time and the cloud chasing it moved
+        // by at most a twentieth of a second: the swarm fell behind the world
+        // by the difference, every slow frame, and never caught up. Two
+        // clamps is two clocks.
+        time.delta_secs().min(STEP_CLAMP)
     };
     clock.time += clock.dt;
     if !cfg.paused {
