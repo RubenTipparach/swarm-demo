@@ -71,6 +71,8 @@ pub(crate) struct Hull {
     /// formation: four frigates fired in one volley, on the same tick, for
     /// ever. A seed per ship is what staggers them.
     pub(crate) seed: u32,
+    /// The sandbox's toggle: bites and the reactor rule leave it alone.
+    pub(crate) invulnerable: bool,
 }
 
 /// One engine cluster, and the cells it was read off.

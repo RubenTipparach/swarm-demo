@@ -215,6 +215,7 @@ pub(crate) fn pick_hull(
 pub(crate) fn build_hud(mut commands: Commands) {
     commands
         .spawn((
+            DespawnOnExit(AppState::Playing),
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(16.0),
@@ -301,6 +302,7 @@ pub(crate) fn build_hud(mut commands: Commands) {
 
     // The distance beside a lifted target. Placed by `hud_orders`.
     commands.spawn((
+        DespawnOnExit(AppState::Playing),
         Node {
             position_type: PositionType::Absolute,
             display: Display::None,
@@ -318,6 +320,7 @@ pub(crate) fn build_hud(mut commands: Commands) {
 
     // The band box. One node, moved and resized in screen pixels.
     commands.spawn((
+        DespawnOnExit(AppState::Playing),
         Node {
             position_type: PositionType::Absolute,
             display: Display::None,
@@ -333,6 +336,7 @@ pub(crate) fn build_hud(mut commands: Commands) {
     // The ship picker, top left, with its list folded away under it.
     commands
         .spawn((
+            DespawnOnExit(AppState::Playing),
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(16.0),
@@ -408,6 +412,7 @@ pub(crate) fn build_hud(mut commands: Commands) {
     // The counter, in the opposite corner from the controls so it never sits
     // over anything a player has to press.
     commands.spawn((
+        DespawnOnExit(AppState::Playing),
         Node {
             position_type: PositionType::Absolute,
             right: Val::Px(16.0),
@@ -434,6 +439,7 @@ pub(crate) fn build_hud(mut commands: Commands) {
     // was running.
     commands
         .spawn((
+            DespawnOnExit(AppState::Playing),
             Node {
                 position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
@@ -473,6 +479,7 @@ pub(crate) fn build_hud(mut commands: Commands) {
                     ("fps", "FPS counter: on"),
                     ("bars", "Health bars: on"),
                     ("resume", "Resume  (esc)"),
+                    ("quit", "Quit to menu"),
                 ] {
                     let mut b = c.spawn((
                         Button,
@@ -488,6 +495,8 @@ pub(crate) fn build_hud(mut commands: Commands) {
                         b.insert(FpsToggle);
                     } else if marker == "bars" {
                         b.insert(BarToggle);
+                    } else if marker == "quit" {
+                        b.insert(QuitButton);
                     } else {
                         b.insert(ResumeButton);
                     }
@@ -593,10 +602,12 @@ pub(crate) struct DistLabel;
 /// zoom and a mesh would not. It is shown only while the target is off the
 /// plane, because on the plane the gold ring already says where, and a label
 /// on every aim is clutter.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn hud_orders(
     mode: Res<OrderMode>,
     order: Res<NavOrder>,
     ack: Res<Ack>,
+    sb: Res<Sandbox>,
     cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut mode_text: Query<&mut Text, (With<ModeText>, Without<AckText>, Without<DistLabel>)>,
     mut ack_text: Query<
@@ -606,10 +617,15 @@ pub(crate) fn hud_orders(
     mut dist: Query<(&mut Node, &mut Text), (With<DistLabel>, Without<ModeText>, Without<AckText>)>,
 ) {
     if let Ok(mut t) = mode_text.single_mut() {
+        let armed = format!(
+            "{} armed: click a cell on the target   esc disarms",
+            sb.weapon.map_or("nothing", Weapon::label)
+        );
         let want = match *mode {
             OrderMode::Idle => "left drag selects   right click opens a move order",
             OrderMode::Box => "release to select what is inside the box",
             OrderMode::Move => "aim on the plane   hold shift to raise or lower   left click confirms   esc cancels",
+            OrderMode::Range => &armed,
         };
         if t.0 != want {
             t.0 = want.into();

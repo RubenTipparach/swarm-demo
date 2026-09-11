@@ -116,6 +116,17 @@ pub struct SwarmConfig {
     /// happening to them.
     pub launch_delay: f32,
     pub paused: bool,
+    /// The cloud holds still and everything else runs: a sandbox toggle, so
+    /// a carve a beam cuts stays cut where a player can look at it. Unlike a
+    /// pause, the shots still land.
+    pub frozen: bool,
+    /// One for real time, a quarter for slow motion. The same number the
+    /// CPU's step is scaled by, because two scales are two clocks.
+    pub time_scale: f32,
+    /// Which scene this swarm belongs to. The render world compares it to
+    /// the one its buffers were built for and rebuilds them when it moves,
+    /// so a new fight starts with every mote inside its carrier again.
+    pub generation: u32,
     /// One tick a frame rather than the wall clock, so a headless render is a
     /// function of its frame count. See `--fixed-dt`.
     pub fixed_dt: bool,
@@ -147,6 +158,9 @@ impl Default for SwarmConfig {
             rocks: Vec::new(),
             launch_delay: 10.0,
             paused: false,
+            frozen: false,
+            time_scale: 1.0,
+            generation: 0,
             fixed_dt: false,
             field: Vec4::new(-100.0, -100.0, -100.0, 200.0 / GRID as f32),
             sun: Vec4::new(0.42, 0.66, -0.62, 0.12),
@@ -408,10 +422,10 @@ pub struct SwarmClock {
 
 fn advance_clock(time: Res<Time>, cfg: Res<SwarmConfig>, mut clock: ResMut<SwarmClock>) {
     // Clamped so a slow frame does not fling the cloud apart.
-    clock.dt = if cfg.paused {
+    clock.dt = if cfg.paused || cfg.frozen {
         0.0
     } else if cfg.fixed_dt {
-        1.0 / 60.0
+        cfg.time_scale / 60.0
     } else {
         // The SAME clamp the CPU systems use. It was a twentieth here and a
         // quarter there, so on any frame slower than fifty milliseconds the
@@ -419,7 +433,7 @@ fn advance_clock(time: Res<Time>, cfg: Res<SwarmConfig>, mut clock: ResMut<Swarm
         // by at most a twentieth of a second: the swarm fell behind the world
         // by the difference, every slow frame, and never caught up. Two
         // clamps is two clocks.
-        time.delta_secs().min(STEP_CLAMP)
+        time.delta_secs().min(STEP_CLAMP) * cfg.time_scale
     };
     clock.time += clock.dt;
     if !cfg.paused {
@@ -446,6 +460,8 @@ pub struct SwarmBuffers {
     /// through, and the sky that does.
     pub light: Buffer,
     pub count: u32,
+    /// Which scene these were built for.
+    pub generation: u32,
     /// Where the app's next spark goes, in its own half of the ring.
     cpu_cursor: u32,
     params: UniformBuffer<Params>,
@@ -522,7 +538,7 @@ fn prepare_swarm_buffers(
     };
 
     if let Some(mut b) = existing {
-        if b.count == cfg.count {
+        if b.count == cfg.count && b.generation == cfg.generation {
             b.params.set(params);
             b.params.write_buffer(&device, &render_queue);
             let mut cursor = b.cpu_cursor;
@@ -619,6 +635,7 @@ fn prepare_swarm_buffers(
         density,
         light,
         count: cfg.count,
+        generation: cfg.generation,
         cpu_cursor: cursor,
         params: params_buf,
     });

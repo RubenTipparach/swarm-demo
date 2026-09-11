@@ -18,11 +18,16 @@
 //!   `sky.ts`.
 //! - [`fx`]: what a shot is, what a blast kills, and what comes off a thing
 //!   that dies.
+//! - [`body`]: a hull as a rigid body, off its live cells: mass, centre,
+//!   inertia, and what a hit at a point does.
+//! - [`ray`]: which live cell a ray meets first, so a click lands on a hull.
 
 pub mod alien;
+pub mod body;
 pub mod damage;
 pub mod fx;
 pub mod mesh;
+pub mod ray;
 pub mod rng;
 pub mod rock;
 pub mod sky;

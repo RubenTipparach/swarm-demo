@@ -216,8 +216,8 @@ pub(crate) fn nav_input(
 
     match *mode {
         // The left button is down on a band box, and nothing here may read
-        // the mouse until it comes back up.
-        OrderMode::Box => return,
+        // the mouse until it comes back up. On the range the click is a shot.
+        OrderMode::Box | OrderMode::Range => return,
         OrderMode::Idle => {
             if !(buttons.just_pressed(MouseButton::Right) && !alt) {
                 return;

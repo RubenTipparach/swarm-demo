@@ -788,7 +788,10 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     let inside = tgt.w * 1.05 - ship_d;
     if (inside > 0.0) { acc = acc - (to_ship / ship_d) * inside * 40.0; }
 
-    var v = (m.vel_seed.xyz + acc * p.dt) * 0.985;
+    // The drag is raised to the STEP, so a frozen cloud (dt of nought) keeps
+    // its speed: at a flat 0.985 a pass, ten seconds of freeze restarted the
+    // whole swarm at a crawl.
+    var v = (m.vel_seed.xyz + acc * p.dt) * pow(0.985, p.dt * 60.0);
     let s = length(v);
     // Fast enough to CROSS. The carriers stand fifty to seventy five units
     // off now, and at the three to six units a second this used to allow, a

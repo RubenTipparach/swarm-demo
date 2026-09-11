@@ -3,10 +3,12 @@
 
 mod camera;
 mod orders;
+mod range;
 mod selection;
 
 pub(crate) use camera::*;
 pub(crate) use orders::*;
+pub(crate) use range::*;
 pub(crate) use selection::*;
 
 use crate::*;
@@ -29,4 +31,6 @@ pub(crate) enum OrderMode {
     Box,
     /// A move order is being aimed: the disc is up.
     Move,
+    /// A weapon is armed on the range: a left click is a shot.
+    Range,
 }

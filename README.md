@@ -130,6 +130,21 @@ pulling, and a wing of reinforcements on station.
 ![The HUD](docs/fx_hud.png)
 ![The pause menu](docs/fx_menu.png)
 
+A front door, a form and a verdict. The menu opens over the live sky; the
+skirmish setup is two columns of steppers (the enemy, your side) that write
+the scene and launch it; the result says how it ended, how long it took and
+what it cost. The sandbox is the same setup with a target dummy and a
+range: arm a weapon, click a cell, and the shot lands there, takes the cells
+it takes and shoves the ship, which turns about its own centre of mass, read
+off its live cells by the core. Freeze holds the cloud still, slow motion is
+a quarter speed, and the flagship can be made invulnerable to watch the
+swarm at work.
+
+![The main menu](docs/ui_menu.png)
+![The skirmish setup](docs/ui_setup.png)
+![The result](docs/ui_result.png)
+![The sandbox: a slug landed two seconds ago and the target is turning](docs/fx_sandbox.png)
+
 The same swarm, the same seed and the same tick, with the shading off
 (`--thickness 0`) and on. Flat, every mote is the same brightness however many
 stand in front of it; shaded, the bodies go dark where the cloud is thick and

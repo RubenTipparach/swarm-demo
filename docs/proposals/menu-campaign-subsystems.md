@@ -316,6 +316,9 @@ knowing anyway:
 
 ## 2. Main menu and skirmish setup
 
+*Built: `AppState`, the menu, the setup and the result. CLAUDE.md, "A front
+door, a form, a verdict and a sandbox".*
+
 The app boots straight into a fight with whatever the command line said, and
 the only way to fight something else is to restart it. That was right for a
 harness. A game has a front door.
@@ -424,6 +427,10 @@ bars, each in one place.
 
 ## 5. Playground and sandbox
 
+*Built, on the rigid body of section 7: the toggles, the dummy and the range
+with all five weapons. The readouts are mass, centre, spin, cells lost and
+shots landed; the subsystem states wait on section 4.*
+
 A third menu entry that is a set of toggles on a skirmish rather than a
 scenario, and a firing range. Every one of these is a question about the game
 that a fight cannot hold still long enough to answer.
@@ -514,6 +521,9 @@ headless render with the swarm frozen to prove the carve, which is what the
 playground's freeze is for.
 
 ## 7. Physics: the tumble, the contacts, and which engine
+
+*The tumble is built, in the core (`body.rs`), as proposed below. The engine
+adoption waits on rich contacts.*
 
 **What this game needs from physics, honestly.** Dozens of rigid bodies (the
 ships, the wrecks, the rocks), not thousands: the swarm is a field on the GPU

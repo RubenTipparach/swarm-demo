@@ -166,6 +166,7 @@ pub(crate) fn spawn_ship(
         dead_hull: false,
         reactor: reactor_of(&model),
         seed,
+        invulnerable: false,
         model,
         damage,
     };
