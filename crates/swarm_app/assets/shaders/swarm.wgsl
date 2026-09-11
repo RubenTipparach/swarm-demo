@@ -118,7 +118,20 @@ struct Wave {
 // through the rest of the swarm, y = how much of the sky does.
 @group(0) @binding(6) var<storage, read_write> light: array<vec2<f32>>;
 
-const SPARKS_PER_MOTE: u32 = 5u;
+/// What comes off a mote that dies: the spray, the pieces, and the ONE flash.
+///
+/// Five and four was a puff. A mote coming apart is the thing a player's guns
+/// are for, and at the size a mote is drawn nine small additive particles
+/// read as a sparkle rather than as a kill, which is why a volley into the
+/// cloud looked like nothing was happening.
+///
+/// The spray is what went up and the flash is what it looked like: one big
+/// short lived particle at the mote's own place, which is the shape of an
+/// explosion. The DEBRIS is deliberately not raised with them, because that
+/// is the half that lasts: four of them a kill at a second and a half each,
+/// over a swarm losing dozens a second, is the violet haze this file already
+/// warned about once. A kill is bright and BRIEF.
+const SPARKS_PER_MOTE: u32 = 11u;
 const RESPAWN: f32 = 0.9;
 
 /// How many sparks a mote throws off the plating when it bites, and how often
@@ -426,7 +439,7 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
         // It comes APART. The ring is claimed with one atomic for the whole
         // burst rather than one each, so a mote's pieces stay together in the
         // buffer and cannot interleave with another's half written ones.
-        let base = atomicAdd(&counter.gpu, SPARKS_PER_MOTE + DEBRIS);
+        let base = atomicAdd(&counter.gpu, SPARKS_PER_MOTE + DEBRIS + 1u);
         for (var k: u32 = 0u; k < SPARKS_PER_MOTE; k = k + 1u) {
             let slot = p.spark_base + ((base + k) % p.spark_cap);
             let h = vec3<f32>(hash(base + k), hash(base + k + 101u), hash(base + k + 211u)) - 0.5;
@@ -469,6 +482,35 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
             sp.colour_seed = vec4<f32>(0.55 * d, 0.30 * d, 0.78 * d, hash(g + 13u));
             sparks[slot] = sp;
         }
+        // ---- and the FLASH ----
+        //
+        // One particle, at the mote's own place, several times its size and
+        // well over white. This is what makes a kill read as a kill: a spray
+        // of small pieces says something came apart somewhere, and a flash
+        // says where.
+        //
+        // A third of a second, and no shorter, which is a trap in the spark
+        // shader rather than a taste: a spark's colour is scaled by
+        // `min(1, life * 3)` at birth, so a flash asked to live a tenth of a
+        // second is born at a third of the brightness it was thrown with. It
+        // is brief because it FADES, not because it is cut off.
+        {
+            let slot = p.spark_base + ((base + SPARKS_PER_MOTE + DEBRIS) % p.spark_cap);
+            var sp: Spark;
+            sp.pos_life = vec4<f32>(me, 0.34);
+            // It drifts with what was flying, so the flash is where the mote
+            // was going rather than pinned to a point in space.
+            sp.vel_size = vec4<f32>(m.vel_seed.xyz * 0.25, m.pos_scale.w * 1.15);
+            // WHITE HOT, and warm rather than violet. The spray that goes
+            // with it is the animal's own gore and stays violet, but the
+            // flash is the moment of bursting rather than anything that came
+            // out, and every other thing in this game that bursts flashes
+            // white: a violet flash on a violet body is a kill that reads as
+            // one more purple mote for the frame it lasts.
+            sp.colour_seed = vec4<f32>(5.6, 4.2, 3.0, hash(base + 71u));
+            sparks[slot] = sp;
+        }
+
         // And it leaves a HOLE the others fly round. A mote coming apart is a
         // thing in the way for a moment, so the swarm opens where one died
         // instead of closing straight over it.
@@ -825,6 +867,21 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     // construction and that is nothing: a mote crosses a fifth of a unit in a
     // tick and a cell is several across.
     let lf = light_at(me);
-    m.shade = vec4<f32>(lf.x, lf.y, 0.0, 0.0);
+    // ---- and what a WOUND does ----
+    //
+    // A hurt mote throbs. The wound's own brightness is worked out in the
+    // draw, where the hit points already are, but the BEAT has to come from
+    // here: `mote.wgsl` has no clock, and a hurt mote that merely sat a little
+    // brighter read as a mote that happened to be a slightly different purple.
+    // A pulse reads as an injury at one glance and at one pixel.
+    //
+    // Its own rate and its own phase off its own seed, for the reason the
+    // weave has them: ten thousand wounded motes beating together is one
+    // animal breathing rather than ten thousand hurt ones.
+    var throb = 0.0;
+    if (hp < 1.0) {
+        throb = 0.55 + 0.45 * sin(p.time * (7.0 + 5.0 * hash(sh + 311u)) + seed * 53.0);
+    }
+    m.shade = vec4<f32>(lf.x, lf.y, throb, 0.0);
     motes[i] = m;
 }
