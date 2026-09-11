@@ -103,6 +103,19 @@ pub struct SwarmConfig {
     /// One tick a frame rather than the wall clock, so a headless render is a
     /// function of its frame count. See `--fixed-dt`.
     pub fixed_dt: bool,
+    /// The box the density field covers: min corner in xyz, world units per
+    /// cell in w. Republished every frame, because the field rides with the
+    /// fight rather than standing still at the origin.
+    pub field: Vec4,
+    /// Which way the sun is, pointing AT it, and how much of a cell's face one
+    /// mote covers in w.
+    ///
+    /// The app owns both. The direction is the same vector it aims the scene's
+    /// key light along, so what the swarm shadows itself against is the light
+    /// it is actually lit by; the area is what turns a count of motes in a
+    /// cell into an optical depth, which is the only place the thickness of
+    /// the cloud is decided.
+    pub sun: Vec4,
 }
 
 impl Default for SwarmConfig {
@@ -118,9 +131,23 @@ impl Default for SwarmConfig {
             launch_delay: 10.0,
             paused: false,
             fixed_dt: false,
+            field: Vec4::new(-100.0, -100.0, -100.0, 200.0 / GRID as f32),
+            sun: Vec4::new(0.42, 0.66, -0.62, 0.12),
         }
     }
 }
+
+/// Cells along one side of the density field the swarm shades itself with.
+///
+/// A quarter of a million cells, which is what the whole of the self shadowing
+/// costs however many motes there are: the grid is cleared, counted into and
+/// marched toward the sun once a tick, and a mote pays one trilinear read. At
+/// sixty four over a box that holds the carriers a cell is about three units,
+/// which is a few mote lengths: fine enough that a clump has an inside and a
+/// surface, coarse enough that the march is sixteen steps and not a hundred.
+pub const GRID: u32 = 64;
+/// And how many that is.
+pub const CELLS: u32 = GRID * GRID * GRID;
 
 /// How many motherships the swarm may fly from at once.
 pub const MAX_HIVES: usize = 16;
@@ -174,6 +201,20 @@ pub struct Mote {
     pub pos_scale: Vec4,
     pub vel_seed: Vec4,
     pub state: Vec4,
+    /// What the LIGHT does to this mote, which the tick writes and the draw
+    /// reads as one more instance attribute: x how much of the sun reaches it
+    /// through the rest of the cloud, y how much of the sky does, z how much
+    /// light it makes of its own, w spare.
+    ///
+    /// Sixteen more bytes a mote, which is a third again on the buffer the
+    /// whole design rests on, and it buys the one thing a shaded swarm cannot
+    /// do without: somewhere to put the answer. A mote cannot work out its own
+    /// shadow at draw time (it would be a march per mote, per frame, on top of
+    /// the march the tick already refuses to do) and it cannot be told at
+    /// draw time either, because nothing about a mote ever comes back to the
+    /// CPU. The mote buffer IS the instance buffer, so a field the tick fills
+    /// is a field the vertex shader already has, for no upload and no pass.
+    pub shade: Vec4,
 }
 
 #[derive(Clone, Copy, Pod, Zeroable, ShaderType, Default)]
@@ -215,8 +256,10 @@ struct Params {
     spark_cap: u32,
     hives: u32,
     rocks: u32,
-    pad1: u32,
+    grid_n: u32,
     pad2: u32,
+    grid: Vec4,
+    sun: Vec4,
     shot: [Vec4; MAX_SHOTS * 2],
     hive: [Vec4; MAX_HIVES],
     rock: [Vec4; MAX_ROCKS],
@@ -334,6 +377,11 @@ pub struct SwarmBuffers {
     pub motes: Buffer,
     pub sparks: Buffer,
     pub counter: Buffer,
+    /// How many motes stand in each cell of the field, counted fresh each tick.
+    pub density: Buffer,
+    /// And what the light makes of that, a `vec2` a cell: the sun that gets
+    /// through, and the sky that does.
+    pub light: Buffer,
     pub count: u32,
     /// Where the app's next spark goes, in its own half of the ring.
     cpu_cursor: u32,
@@ -374,8 +422,13 @@ fn prepare_swarm_buffers(
         spark_cap: GPU_SPARKS,
         hives: hives as u32,
         rocks: rocks as u32,
-        pad1: 0,
+        grid_n: GRID,
         pad2: 0,
+        grid: cfg.field,
+        // Normalised here rather than in the shader: the march steps one cell
+        // at a time along it, so a vector that is not a unit would quietly
+        // change the reach of every shadow in the picture.
+        sun: cfg.sun.truncate().normalize_or(Vec3::Y).extend(cfg.sun.w),
         shot,
         hive,
         rock,
@@ -433,6 +486,9 @@ fn prepare_swarm_buffers(
                 // never exactly nought, which the shader reads as "already
                 // out".
                 state: Vec4::new(cfg.launch_delay + 0.02 + rng.range(0.0, 8.0), scale, hive, 0.0),
+                // Fully lit and idling, which is what it will be told the
+                // first time it is ticked anyway. It draws nothing until then.
+                shade: Vec4::new(1.0, 1.0, 1.0, 0.0),
             }
         })
         .collect();
@@ -451,11 +507,35 @@ fn prepare_swarm_buffers(
         contents: bytemuck::cast_slice(&[0u32; 4]),
         usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
     });
+    // The field. Not sized by the swarm: this is the same two megabytes at a
+    // thousand motes and at a million, which is the point of shading against a
+    // grid rather than against the cloud itself.
+    let density = device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("swarm density"),
+        contents: bytemuck::cast_slice(&vec![0u32; CELLS as usize]),
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+    });
+    let light = device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("swarm light"),
+        // Fully lit until the first pass has run, so a swarm that draws before
+        // it has been counted is the swarm as it always looked.
+        contents: bytemuck::cast_slice(&vec![Vec2::ONE; CELLS as usize]),
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+    });
     let mut params_buf = UniformBuffer::from(params);
     params_buf.write_buffer(&device, &render_queue);
     let mut cursor = 0;
     write_sparks(&sparks, &mut cursor);
-    commands.insert_resource(SwarmBuffers { motes, sparks, counter, count: cfg.count, cpu_cursor: cursor, params: params_buf });
+    commands.insert_resource(SwarmBuffers {
+        motes,
+        sparks,
+        counter,
+        density,
+        light,
+        count: cfg.count,
+        cpu_cursor: cursor,
+        params: params_buf,
+    });
 }
 
 // ------------------------------------------------------------- compute --
@@ -466,6 +546,9 @@ struct TickPipeline {
     particle_layout: BindGroupLayoutDescriptor,
     swarm: CachedComputePipelineId,
     particles: CachedComputePipelineId,
+    /// The three passes that build the field, all off the same shader and the
+    /// same bind group: empty it, count into it, march it toward the sun.
+    field: [CachedComputePipelineId; 3],
 }
 
 fn init_tick_pipeline(mut commands: Commands, assets: Res<AssetServer>, cache: Res<PipelineCache>) {
@@ -478,6 +561,8 @@ fn init_tick_pipeline(mut commands: Commands, assets: Res<AssetServer>, cache: R
                 uniform_buffer::<Params>(false),
                 storage_buffer::<Vec<GpuSpark>>(false),
                 storage_buffer_sized(false, std::num::NonZeroU64::new(16)),
+                storage_buffer::<Vec<u32>>(false),
+                storage_buffer::<Vec<Vec2>>(false),
             ),
         ),
     );
@@ -500,7 +585,15 @@ fn init_tick_pipeline(mut commands: Commands, assets: Res<AssetServer>, cache: R
         entry_point: Some(Cow::from("tick")),
         ..default()
     });
-    commands.insert_resource(TickPipeline { swarm_layout, particle_layout, swarm, particles });
+    let field = ["clear_field", "splat_field", "light_field"].map(|entry| {
+        cache.queue_compute_pipeline(ComputePipelineDescriptor {
+            layout: vec![swarm_layout.clone()],
+            shader: assets.load(SWARM_SHADER),
+            entry_point: Some(Cow::from(entry)),
+            ..default()
+        })
+    });
+    commands.insert_resource(TickPipeline { swarm_layout, particle_layout, swarm, particles, field });
 }
 
 #[derive(Resource)]
@@ -525,6 +618,8 @@ fn prepare_tick_bind_group(
             &b.params,
             b.sparks.as_entire_binding(),
             b.counter.as_entire_binding(),
+            b.density.as_entire_binding(),
+            b.light.as_entire_binding(),
         )),
     );
     let particles = device.create_bind_group(
@@ -548,7 +643,14 @@ impl render_graph::Node for SwarmTickNode {
         let pipeline = world.resource::<TickPipeline>();
         let cache = world.resource::<PipelineCache>();
         let mut ok = 0;
-        for (id, name) in [(pipeline.swarm, SWARM_SHADER), (pipeline.particles, PARTICLE_SHADER)] {
+        let ids = [
+            (pipeline.swarm, SWARM_SHADER),
+            (pipeline.particles, PARTICLE_SHADER),
+            (pipeline.field[0], SWARM_SHADER),
+            (pipeline.field[1], SWARM_SHADER),
+            (pipeline.field[2], SWARM_SHADER),
+        ];
+        for (id, name) in ids {
             match cache.get_compute_pipeline_state(id) {
                 CachedPipelineState::Ok(_) => ok += 1,
                 CachedPipelineState::Err(PipelineCacheError::ShaderNotLoaded(_)) => {}
@@ -556,7 +658,7 @@ impl render_graph::Node for SwarmTickNode {
                 _ => {}
             }
         }
-        self.ready = ok == 2;
+        self.ready = ok == 5;
     }
 
     fn run(
@@ -578,14 +680,34 @@ impl render_graph::Node for SwarmTickNode {
         else {
             return Ok(());
         };
+        let field: Vec<_> = pipeline.field.iter().filter_map(|id| cache.get_compute_pipeline(*id)).collect();
+        if field.len() != 3 {
+            return Ok(());
+        }
         let mut pass = ctx.command_encoder().begin_compute_pass(&ComputePassDescriptor { label: Some("swarm tick"), ..default() });
-        // The swarm first, so a mote killed this tick has its sparks in the
-        // buffer before the pass that ages them runs: a spark that missed its
-        // own first integration would appear one frame late, at the muzzle
-        // rather than where it was thrown.
-        pass.set_pipeline(swarm);
         pass.set_bind_group(0, &bgs.swarm, &[]);
-        pass.dispatch_workgroups(buffers.count.div_ceil(WORKGROUP), 1, 1);
+        // The field first, and in this order, because each pass reads what the
+        // one before it wrote: empty the grid, count every mote into it, then
+        // march each cell toward the sun through the counts. Dispatches inside
+        // one pass are ordered and a write is visible to the next, which is
+        // the whole reason this is three dispatches and not three passes.
+        //
+        // It is built from where the motes are BEFORE they move, and read by
+        // the tick below after they have: a tick of lag over a cell several
+        // units across, which is a fifth of a unit of travel and nothing a
+        // player could see.
+        let cells = CELLS.div_ceil(WORKGROUP);
+        let motes = buffers.count.div_ceil(WORKGROUP);
+        for (p, groups) in [(field[0], cells), (field[1], motes), (field[2], cells)] {
+            pass.set_pipeline(p);
+            pass.dispatch_workgroups(groups, 1, 1);
+        }
+        // Then the swarm, before the sparks, so a mote killed this tick has
+        // its sparks in the buffer before the pass that ages them runs: a
+        // spark that missed its own first integration would appear one frame
+        // late, at the muzzle rather than where it was thrown.
+        pass.set_pipeline(swarm);
+        pass.dispatch_workgroups(motes, 1, 1);
         pass.set_pipeline(particles);
         pass.set_bind_group(0, &bgs.particles, &[]);
         pass.dispatch_workgroups(SPARKS.div_ceil(WORKGROUP), 1, 1);
@@ -735,8 +857,18 @@ macro_rules! instanced_pipeline {
 }
 
 // A mote is an opaque body drawn through the sorted phase: it must write depth
-// or the near ones do not cover the far ones.
-instanced_pipeline!(MotePipeline, MOTE_SHADER, Mote, Vec::<VertexAttribute>::new(), true, false);
+// or the near ones do not cover the far ones. Its third attribute is the
+// shade the tick worked out for it, at the end of the same struct: the mote
+// buffer IS the instance buffer, so this costs a vertex attribute and not an
+// upload.
+instanced_pipeline!(
+    MotePipeline,
+    MOTE_SHADER,
+    Mote,
+    vec![VertexAttribute { format: VertexFormat::Float32x4, offset: 48, shader_location: 10 }],
+    true,
+    false
+);
 // A spark is light. It must NOT write depth, or every spark in a burst
 // occludes the ones behind it and the burst comes out as a shell.
 instanced_pipeline!(

@@ -40,6 +40,81 @@ million motes is sixteen nanoseconds each for the whole frame. So:
   is not built yet. What is built is M0: motes steer on a pull toward the
   hull, a swirl and stride sampled separation, with the hull as a sphere.
 
+## The swarm shades itself, and a shadow is a property of the FIELD
+
+Ten thousand motes lit by one key light are ten thousand equally bright
+specks. The mote on the near face of a clump and the mote buried behind ten
+thousand of its own kind came out the same colour, so a dense cloud read as a
+flat sheet of them: it had no inside. What was missing is the one thing a
+cloud is actually made of, which is that a cloud stops light.
+
+**A mote cannot march toward the sun on its own account.** Sixteen steps each,
+a million of them, is sixteen million samples a tick against a budget of
+sixteen nanoseconds a mote: the same arithmetic that says a mote is not an
+entity says a mote does not get a shadow ray of its own. So the GRID marches.
+A 64^3 density field is cleared, counted into with one atomic per mote, and
+marched toward the sun once a tick, and none of that moves when the swarm
+grows: a quarter of a million cells at a thousand motes and at a million. A
+mote pays one trilinear read to find out how dark it stands, and trilinear
+because a cell is a few units and a mote is a fraction of one, so a nearest
+read would fly the swarm through visible cubes of shade.
+
+Three dispatches inside ONE compute pass, in that order, because each reads
+what the one before it wrote and a write inside a pass is visible to the next
+dispatch. The field is counted from where the motes are BEFORE they move and
+read after they have: a tick of lag across a cell several units wide, which is
+a fifth of a unit of travel and nothing anybody can see.
+
+**Two numbers come out of it, because they are two different lights.** The sun
+is one direction, so what stands in its way is the cloud along that line:
+sixteen cells toward it, Beer's law on the counts. The sky and the bounce
+arrive from everywhere, so what shuts them out is the cloud immediately round
+the mote, its own cell and its six faces. Shading the ambient with the key's
+own number would light a mote's dark side out of a cloud that has no light in
+it at all.
+
+Neither ever reaches nought (0.09 and 0.20), which is the ambient lesson from
+further down this file twice over: a mote lit by nothing is the colour of the
+gap between two stars, and a swarm whose middle is a hole is worse than one
+with no shading in it.
+
+**The thickness of the cloud is decided in exactly one place**, which is how
+much of a cell's face one mote covers. That is what turns a count of motes
+into an optical depth, and the app publishes it off the drone's own silhouette
+rather than a shader tuning a number, so a bigger mote shadows more by itself.
+`--thickness 0` is the flat lighting this replaced, which is what an A/B is
+taken against.
+
+**And the key is the SCENE's light now.** `mote.wgsl` lit the swarm along
+(0.4, 0.8, 0.3) while the app aims the sun along (0.42, 0.66, -0.62): a cloud
+lit from one side of the sky and a fleet lit from the other. It never showed
+while the motes had no shading worth the name and it would have shown the
+moment they had, because a shadow cast one way with a highlight the other is
+the one thing an eye will not forgive. The view bind group is already bound
+for that draw, so the light is simply there to be read, and the density field
+marches along the same vector the app hands the swarm.
+
+**A glow is EMISSIVE, and nothing in the cloud takes it away.** The lit cells
+used to REPLACE the shaded body wherever they were over one, which made a glow
+and a shadow two settings of one knob. With the cloud shading itself that is
+backwards: the motes whose own lamps are worth looking at are the ones buried
+deepest in it. So the fragment is two channels and the only question about any
+term is which one it is in. Light that ARRIVED (key, fill, specular) is
+attenuated by the field. Light a mote MAKES is added afterwards and attenuated
+by nothing, because a lamp does not go out because the thing beside it is in
+shadow. A mote in the dark heart of the swarm is a dark body with its drive
+still lit, which is the picture.
+
+What it cost is a fourth `vec4` on the mote, sixteen bytes on the buffer the
+whole design rests on. It buys the only thing a shaded swarm cannot do
+without, which is somewhere to put the answer: a mote cannot work its shadow
+out at draw time and cannot be told it either, because nothing about a mote
+ever comes back to the CPU. The mote buffer IS the instance buffer, so a field
+the tick fills is a field the vertex shader already has, for no upload and no
+pass. `shade.z` is the one place anything that makes a mote glow writes to: the
+drive on its own speed today, worked out once per mote rather than once per
+vertex, and whatever else is meant to light one up from the inside next.
+
 ## Hulls are the redux-tribes hulls, one to one
 
 `assets/hulls/*.ftvx` are the twenty three stock hulls, exported from
@@ -646,6 +721,19 @@ archetypes to symmetric, one piece, at least two glow cells, and eight seeds
 giving at least two bodies. An eye is a body cell relit on the crown of its
 column, never a cell beside the head: the first cut put eyes in space and the
 lancer came out in three pieces.
+
+**A drone's stern is not the brightest thing on it.** The two cells on the
+centreline used to be `DRIVE_HOT`, the near white, which against a swarm that
+shades itself made every bug a pair of headlamps seen from behind: the darker
+the bodies round it got, the more a mote read as its own exhaust. They are
+gone, and the four `DRIVE` cells either side and below are what is left, so
+the EYES are what reads first on a bug and the stern is what reads second.
+The lancer and the chewer keep their hot drives, because neither of them is
+what a hundred thousand of are on screen at once.
+
+`GLOW`, which is what everything ALIVE about an alien is lit with, came down
+from 0x9BFF4A to 0x6FB835 for the same reason. At the emissive a lit cell
+carries it was a lamp rather than an eye once the shading round it went dark.
 
 Their skin is `alien_chitin_n.png`, from `tools/make_chitin_texture.py` on
 the same `texkit` the finishes use: scales overlapping like roof tiles, each

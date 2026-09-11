@@ -61,7 +61,11 @@ pub mod palette {
     pub const CHITIN: u32 = 0x4A2A66;
     pub const CHITIN_LIT: u32 = 0x7A4DA8;
     pub const BONE: u32 = 0xD9C7A8;
-    pub const GLOW: u32 = 0x9BFF4A;
+    /// What is ALIVE about a mote is lit with this: eyes, and the lights down
+    /// a carrier's flank. Taken down from 0x9BFF4A, which at the emissive a
+    /// lit cell carries came out as a lamp rather than as an eye once the
+    /// bodies round it went dark.
+    pub const GLOW: u32 = 0x6FB835;
     pub const GLOW_HOT: u32 = 0xE8FFB0;
     pub const MAW: u32 = 0x1A0A22;
     /// What a drive burns. Cold blue against the green everything ALIVE about
@@ -264,7 +268,13 @@ fn drone(b: &mut Builder, rng: &mut Rng, c: f32) {
     // Mandibles hang under the head and reach forward.
     b.hang(c as i32 + 1, hz - 1, &[[0, -1, 0], [0, 0, 1], [0, 0, 1], [1, 0, 0]], mat::MACHINE, BONE);
     // The drives, at the stern, either side of the centreline.
-    b.engine(c as i32, c as i32, DRIVE_HOT);
+    //
+    // FOUR, and none of them DRIVE_HOT. The pair on the centreline used to be
+    // the hot white, which is the brightest thing on a mote by a distance:
+    // against the swarm shading itself it made every bug a pair of headlamps
+    // seen from behind, and a stern that outshone the eyes is a bug flying
+    // backwards as far as the picture is concerned. The eyes are what should
+    // read first.
     b.engine(c as i32 + 1, c as i32, DRIVE);
     b.engine(c as i32, c as i32 - 1, DRIVE);
     // Legs: two or three pairs off the flank, out then down.

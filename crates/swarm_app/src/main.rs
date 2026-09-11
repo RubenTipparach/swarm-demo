@@ -42,7 +42,9 @@ use swarm_core::{
     VoxelModel, SURF_COUNT,
 };
 use swarm_core::voxel::SURF_DRIVE;
-use swarm::{spawn_mote_mesh, spawn_spark_mesh, Capsule, FxTextures, Shots, SparkQueue, SwarmClock, SwarmConfig, SwarmPlugin};
+use swarm::{
+    spawn_mote_mesh, spawn_spark_mesh, Capsule, FxTextures, Shots, SparkQueue, SwarmClock, SwarmConfig, SwarmPlugin, GRID,
+};
 
 const HULLS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/hulls/");
 /// Shaders and textures, pinned at build time: Bevy otherwise looks beside
@@ -97,6 +99,10 @@ struct Args {
     showcase: bool,
     /// Frames a second, at most. Nought lifts the cap.
     fps: u32,
+    /// How thick the swarm is to light, as a multiplier on how much of a
+    /// cell one mote blocks. Nought is the flat lighting this replaced, which
+    /// is what an A/B of the shading is taken against.
+    thickness: f32,
     /// Advance exactly one tick a frame rather than by the wall clock.
     ///
     /// A software rasteriser draws at four frames a second, so a frame here
@@ -129,6 +135,7 @@ fn parse_args() -> Args {
         order: None,
         showcase: false,
         fps: 120,
+        thickness: 1.0,
         fixed_dt: false,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -171,6 +178,7 @@ fn parse_args() -> Args {
             "--launch-delay" => { a.launch_delay = next().parse().expect("--launch-delay SECONDS"); i += 1; }
             "--fighters" => { a.fighters = next().parse().expect("--fighters N"); i += 1; }
             "--fps" => { a.fps = next().parse().expect("--fps N, or 0 for no cap"); i += 1; }
+            "--thickness" => { a.thickness = next().parse().expect("--thickness R"); i += 1; }
             other => panic!("unknown argument {other}"),
         }
         i += 1;
@@ -227,6 +235,7 @@ fn main() {
             hives: args.hives.min(swarm::MAX_HIVES),
             order: args.order,
             showcase: args.showcase,
+            thickness: args.thickness,
             fixed_dt: args.fixed_dt,
         })
         .init_resource::<Tick>()
@@ -249,7 +258,7 @@ fn main() {
                 (launch_fighters, fly_fighters, fighters_fire).chain(),
                 resolve_beams,
                 (chew, vent_smoke, go_critical, bleed_hives),
-                publish_hives,
+                (publish_hives, publish_field).chain(),
                 fly_tracers,
                 (age_fx, draw_beams, draw_nav, draw_flames, glow_engines),
                 remesh_dirty,
@@ -310,6 +319,7 @@ struct Scene {
     hives: usize,
     order: Option<Vec3>,
     showcase: bool,
+    thickness: f32,
     fixed_dt: bool,
 }
 
@@ -615,6 +625,16 @@ const FIGHTER_BURST: f32 = 0.30;
 /// How many escorts a wing holds, and how many one press of R brings.
 const WING_MAX: u32 = 6;
 const WING_WAVE: u32 = 2;
+
+/// Where the sun is, pointing AT it.
+///
+/// One vector with two consumers, and they have to be the same one. The key
+/// light is aimed along it, and the swarm marches its density field along it
+/// to work out what of that light reaches a mote buried in the cloud. Lit
+/// from one side of the sky and shadowed from the other is the single thing
+/// an eye will not forgive, and it is exactly what two numbers written down
+/// in two places drift into.
+const SUN: Vec3 = Vec3::new(0.42, 0.66, -0.62);
 
 /// Where the carriers sit, in hull radii. They used to be at seven, which put
 /// them inside the swarm's own standoff and made the whole picture one clump;
@@ -1234,6 +1254,14 @@ fn setup(
 
     // The swarm's body: a drone, drawn once per mote off the GPU buffer.
     let drone = generate(Archetype::Drone, 1);
+    // And how much of a cell's face one of them covers, which is the only
+    // place the thickness of the cloud is decided: it is what turns a count of
+    // motes in a cell of the density field into an optical depth. A disc the
+    // size of the drone's own silhouette, halved, because a drone is limbs and
+    // the gaps between them rather than a ball.
+    let area = std::f32::consts::PI * drone.radius() * drone.radius() * 0.5 * scene.thickness.max(0.0);
+    cfg.sun = SUN.normalize().extend(area);
+    info!("a mote covers {:.3} square units of the light, thickness {:.2}", area, scene.thickness);
     spawn_mote_mesh(&mut commands, meshes.add(to_mote_mesh(&greedy_mesh(&drone, None))));
 
     // And one unit quad, drawn once per spark off the other half of it. The
@@ -1371,7 +1399,7 @@ fn setup(
     info!("stars: {}", stars.len());
 
     // ---- the backdrop: one sun, one key light, two bodies (skirmish) ----
-    let sun = Vec3::new(0.42, 0.66, -0.62).normalize();
+    let sun = SUN.normalize();
     let sun_colour = Color::srgb_u8(0xff, 0xf0, 0xd2);
     commands.spawn((
         DirectionalLight { illuminance: 9000.0, color: sun_colour, shadows_enabled: false, ..default() },
@@ -1915,6 +1943,34 @@ fn hud_feedback(
         if t.0 != want {
             t.0 = want;
         }
+    }
+}
+
+/// Where the density field stands this frame.
+///
+/// It rides with the fight rather than standing still at the origin, and it is
+/// sized to hold everything the swarm actually flies to: the flagship, the
+/// carriers the motes launch from and the rocks the veins wind round. A cube,
+/// so a cell is a cube and a shadow is the same length whichever way the sun
+/// happens to be pointing.
+///
+/// Outside it the field's answer is "nothing in the way", which is the right
+/// answer rather than a fallback: a mote out beyond the carriers is on its own
+/// in open space and there is nothing out there to shadow it.
+fn publish_field(mut cfg: ResMut<SwarmConfig>, mut said: Local<bool>) {
+    let centre = cfg.hull_centre;
+    // Never smaller than the ship and the traffic round it, or a swarm that
+    // has killed every carrier would shrink its own field to a point.
+    let mut half = cfg.hull_radius * 8.0;
+    for x in cfg.hives.iter().chain(cfg.rocks.iter()) {
+        half = half.max((x.truncate() - centre).abs().max_element() + x.w);
+    }
+    half *= 1.15;
+    let cell = 2.0 * half / GRID as f32;
+    cfg.field = (centre - Vec3::splat(half)).extend(cell);
+    if !*said {
+        *said = true;
+        info!("density field: {GRID}^3 cells of {cell:.2} units over a box {:.0} across", 2.0 * half);
     }
 }
 
@@ -3314,7 +3370,19 @@ fn headless_capture(
             };
             let all = lit(0, w, 0, hh);
             let mid = lit(w / 3, 2 * w / 3, hh / 4, 3 * hh / 4);
-            println!("screenshot {out}: {}x{}, {} lit pixels ({:.1}%), {} in the middle third ({:.1}%)", w, hh, all, 100.0 * all as f32 / (w * hh) as f32, mid, 100.0 * mid as f32 / ((w / 3) * (hh / 2)) as f32);
+            // And how much light there is on the screen at all, which is what
+            // an A/B of the shading is read off. A swarm that shades itself
+            // puts less of it there for the same number of motes, and "it
+            // looks darker now" is not a measurement.
+            let mut sum = 0u64;
+            for y in 0..hh {
+                for x in 0..w {
+                    let o = (y * w + x) * 4;
+                    sum += data[o] as u64 + data[o + 1] as u64 + data[o + 2] as u64;
+                }
+            }
+            let mean = sum as f64 / (w * hh * 3) as f64;
+            println!("screenshot {out}: {}x{}, {} lit pixels ({:.1}%), {} in the middle third ({:.1}%), mean {:.2} of 255", w, hh, all, 100.0 * all as f32 / (w * hh) as f32, mid, 100.0 * mid as f32 / ((w / 3) * (hh / 2)) as f32, mean);
             let ok = all > (w * hh) / 100 && mid > 0 && textures_ok;
             exit.write(if ok { AppExit::Success } else { AppExit::error() });
         });
