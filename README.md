@@ -108,8 +108,9 @@ baked at launch. See `CLAUDE.md` for the design and the rules.
 ![Karisen cruiser](docs/karisen_close.png)
 
 Effects: a hull burning where the swarm has chewed it, guns raking the cloud,
-a reactor going three ticks in, the engines burning on the throttle they are
-actually pulling, and a wing of reinforcements on station.
+a reactor going three ticks in and the wreck it leaves (big hull sections and
+the guns, tumbling), the engines burning on the throttle they are actually
+pulling, and a wing of reinforcements on station.
 
 ![Ten carriers](docs/fx_hives.png)
 ![A move order: the range disc, the destination, the triangle](docs/fx_order.png)
@@ -117,6 +118,7 @@ actually pulling, and a wing of reinforcements on station.
 ![A burning hull](docs/fx_wound.png)
 ![Beams](docs/fx_beams.png)
 ![A reactor going](docs/fx_boom.png)
+![The wreck it leaves](docs/fx_wreck.png)
 ![Geometric flames](docs/fx_flame.png)
 ![A wing on station](docs/fx_wing.png)
 ![The whole battle](docs/fx_battle.png)

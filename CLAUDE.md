@@ -402,6 +402,47 @@ Written by one thread and read by the others a tick later, which is the only
 order available, and one tick of lag on a wave lasting most of a second is not
 a thing anybody can see.
 
+## A ship that dies leaves a WRECK
+
+**The reactor took the whole ship, and three turrets hung in space where a
+frigate had been.** `go_critical` blasted a sphere of one and a half radii,
+which on any hull is every cell of it, and threw up to four hundred and fifty
+single cell cubes: the picture after a death was a spray of dust and the
+guns, which are children with meshes of their own that nothing had touched.
+The owner caught both off one screenshot.
+
+**A wreck is a few BIG pieces, and each piece is a hull.** The reactor takes
+the ball around it (`HULL_HOLE`, well under the radius, or there is no
+wreck), and `fx::shatter` breaks what is left along two planes through the
+blast, hashed off the ship's seed: one near across the long axis, so a hull
+breaks into a bow and a stern, one along it at a hashed roll, so each of
+those breaks port from starboard or deck from keel, and then each sector's
+connected runs of live cells. Two planes rather than three, because eight
+pieces of a frigate are not giant and giant is the point. Anything under
+`WRECK_MIN` cells is dust and is thrown as before. The suite holds a block
+with a hole in it to three to eight pieces, every one connected, the biggest
+a real share of the hull and never the whole of it, and the pieces and the
+dust accounting for every live cell exactly once.
+
+Each piece is spawned as a `Hull` of its own: a copy of the dead ship's model
+and damage grid with every live cell that is not in the piece KILLED at the
+blast tick, so its cut faces are wounds, white hot and cooling on the same
+ramp as any bite, and `remesh_dirty` cools them without knowing it is looking
+at a wreck. It is meshed once, over only the bricks the piece touches, and it
+is `dead_hull` from birth, so everything that already skips a dead hull (the
+swarm's targets, the guns, the bars, the orders, the chewers) never looks at
+it; `fly_hull` says `Without<Wreck>` and `drift_wrecks` is its whole flight.
+It SMOKES, and nothing was written for that: `vent_smoke` asks the damage
+grid where a hit opened a face, and a wreck's cut is a wound like any other.
+A piece tumbles about its OWN middle: its cells are laid out about the hull's
+origin, which is not the piece's centre, so the tumble is kept as a pivot and
+a rotation and the entity is placed from those every frame, because rotating
+an off centre piece about its origin swings it round in an arc. The guns come
+off whole, cut loose from the hull and thrown a little harder than a section.
+And the ship that was is despawned: every cell of it is in a piece, in the
+dust or in the fireball now. A minute later the pieces go too, because ten
+carriers' wrecks are ten thousand bricks of mesh.
+
 ## The controls are an RTS's now
 
 **Selection takes the left button, so the camera gave it up.** Orbit is the
@@ -1144,6 +1185,8 @@ cargo build --release -p swarm_app
     --frames 140 --zoom 3.4 --out beams.png             # guns into the swarm
 ./target/release/swarm_app --headless --fixed-dt --motes 900 --explode 90 \
     --frames 93 --zoom 6.0 --out boom.png               # three ticks after the reactor
+./target/release/swarm_app --headless --fixed-dt --motes 900 --explode 90 \
+    --frames 300 --zoom 5.5 --out wreck.png             # the wreck, three and a half seconds on
 ./target/release/swarm_app --headless --fixed-dt --motes 800 --reinforce 4 \
     --move 30,3,-16 --chewers 0 --frames 320 --zoom 7 --out wing.png   # a wing on station
 ./target/release/swarm_app --headless --fixed-dt --motes 800 --chewers 0 --hud \

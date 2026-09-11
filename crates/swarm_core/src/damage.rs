@@ -293,6 +293,13 @@ impl DamageGrid {
         Some(Breach { cell: n as u32, tick, outward })
     }
 
+    /// Kill a cell outright, whatever its hit points. What a reactor does to
+    /// the ball around it, and what a wreck's cut does to the cells on the
+    /// other side of it. A cell already dead or never there is left alone.
+    pub fn kill(&mut self, n: usize, tick: u32) -> Option<Breach> {
+        self.chip(n, f32::MAX, tick, [0.0; 3])
+    }
+
     /// The nearest live cell with a face open to space, within `reach` cells
     /// of a point in the model's frame. This is where a bite lands: a mote
     /// chews the surface it is standing on, and the surface is whatever is

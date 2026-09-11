@@ -35,7 +35,7 @@ use std::{
 use swarm_core::{
     alien::{generate, Archetype},
     damage::{chunk_for, Chunk, DamageGrid, Vent},
-    fx::{blast_sparks, breach_sparks, engines_of, gun_clusters, muzzle_sparks, reactor_of, Beam, Blast, Gun, Spark, SparkKind},
+    fx::{blast_sparks, breach_sparks, engines_of, gun_clusters, muzzle_sparks, reactor_of, shatter, Beam, Blast, Gun, Spark, SparkKind},
     mesh::{greedy_mesh, mesh_region, srgb_to_linear, MeshData, Surfaces},
     rng::{drift_of, Rng},
     sky::{bake_cubemap, starfield, to_half, SkyPreset},
@@ -342,6 +342,7 @@ fn main() {
                     fly_tracers,
                     age_fx,
                     fly_chunks,
+                    drift_wrecks,
                     spin_showcase,
                 )
                     .chain()
@@ -787,6 +788,41 @@ struct Debris {
     vel: Vec3,
     born: u32,
 }
+
+/// A piece of a ship that died: a hull section, or a gun that came off whole.
+///
+/// It drifts and tumbles about its OWN middle. A section's cells are laid out
+/// about the hull's origin, which is not the section's centre, so the tumble
+/// is kept as a pivot and a rotation and the entity is placed from those every
+/// frame: rotating the entity about its origin would swing an off centre
+/// piece round in an arc.
+#[derive(Component)]
+struct Wreck {
+    /// Where the piece's middle is, in the world.
+    pivot: Vec3,
+    /// Where that middle is in the piece's own frame.
+    centroid: Vec3,
+    vel: Vec3,
+    /// Axis times rate, in radians a second.
+    spin: Vec3,
+    born: u32,
+}
+
+/// What a reactor takes of its own hull, in hull radii: the hole in the
+/// middle of the wreck. Well under the radius, or there is no wreck: at
+/// 0.38 the hole was forty percent of a frigate's cells and the pieces were
+/// stubs, at 0.3 it is about a fifth and the pieces are the ship in quarters.
+const HULL_HOLE: f32 = 0.3;
+/// Fewer cells than this is dust, not a piece.
+const WRECK_MIN: usize = 30;
+/// How fast a piece leaves the blast, in hull radii a second. Slow: a hull
+/// section is heavy, and the dust that flies past it is what says so.
+const WRECK_SPEED: f32 = 0.35;
+/// How fast a piece tumbles, in radians a second, least and most.
+const WRECK_SPIN: (f32, f32) = (0.25, 0.6);
+/// How long a piece drifts before it is taken away, in ticks: a minute. Not
+/// for ever, because ten carriers' wrecks are ten thousand bricks of mesh.
+const WRECK_TICKS: u32 = 3600;
 
 /// Rides the eye: a thing with a direction and no position, which a camera
 /// move must not slide across the sky.
@@ -1772,6 +1808,27 @@ fn remesh_dirty(tick: Res<Tick>, mut hulls: Query<(Entity, &mut Hull)>, mut comm
             let (lo, hi) = hull.damage.brick_bounds(b);
             let s = mesh_region(&hull.model, Some((&hull.damage, tick.tick)), lo, hi);
             place_brick(&mut commands, &mut meshes, hull, b, &s, entity);
+        }
+    }
+}
+
+/// The wreck drifts. A piece keeps the way it was thrown and turns about its
+/// own middle, and after a minute it is gone.
+fn drift_wrecks(
+    time: Res<Time>,
+    scene: Res<Scene>,
+    tick: Res<Tick>,
+    mut commands: Commands,
+    mut q: Query<(Entity, &mut Transform, &mut Wreck)>,
+) {
+    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
+    for (e, mut xf, mut w) in &mut q {
+        let step = w.vel * dt;
+        w.pivot += step;
+        xf.rotation = (Quat::from_scaled_axis(w.spin * dt) * xf.rotation).normalize();
+        xf.translation = w.pivot - xf.rotation * (w.centroid * xf.scale);
+        if tick.tick.saturating_sub(w.born) > WRECK_TICKS {
+            commands.entity(e).despawn();
         }
     }
 }
@@ -3258,6 +3315,7 @@ fn go_critical(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut chunk_mats: ResMut<ChunkMaterials>,
+    turrets: Query<(Entity, &GlobalTransform, &ChildOf), With<Turret>>,
 ) {
     for (entity, mut hull, xf) in &mut hulls {
         let hull = &mut *hull;
@@ -3279,10 +3337,10 @@ fn go_critical(
         let radius = hull.model.radius();
         let centre = xf.translation;
         let blast = Blast { at: centre.to_array(), radius: radius * 1.8, born: tick.tick };
-        // What it does to the HULL is a smaller sphere than what it does to
-        // the swarm: a reactor takes the ship it is in, and the pressure wave
-        // goes further than the wreck does.
-        let hull_blast = Blast { at: [0.0; 3], radius: radius * 1.5, born: tick.tick };
+        // What it does to the HULL is a much smaller sphere than what it does
+        // to the swarm: a reactor takes the ball around it, and the pressure
+        // wave goes a long way further than the hole does.
+        let hull_blast = Blast { at: [0.0; 3], radius: radius * HULL_HOLE, born: tick.tick };
         info!(
             "hull went critical at tick {} ({:.0}% of its {} reactor cells gone{}): blast radius {:.2}",
             tick.tick,
@@ -3292,9 +3350,27 @@ fn go_critical(
             blast.radius
         );
 
-        // The hull itself: everything inside the sphere is gone at once, and
-        // every cell that went is thrown.
-        let breaches = hull.damage.blast_cells(&hull.model, &hull_blast, tick.tick);
+        // ---- the hull: a hole where the reactor was, and the rest in PIECES ----
+        //
+        // It used to take a sphere of one and a half radii, which on any hull
+        // is the whole ship: the picture after a reactor went was a spray of
+        // single cells and three turrets hanging in space where a frigate had
+        // been. A ship that dies leaves a WRECK. The reactor takes the ball
+        // around it, and what is left is broken along two planes through the
+        // blast into big pieces (`fx::shatter`), each of which is a hull of
+        // its own from here on: the same cells, the same damage, the same
+        // materials, meshed once with its cut faces white hot and cooling on
+        // the same ramp as any wound, tumbling away from the blast. The guns
+        // come off whole, because a turret is a piece too.
+        let started = Instant::now();
+        let mut breaches = hull.damage.blast_cells(&hull.model, &hull_blast, tick.tick);
+        let broken = shatter(&hull.model, &hull.damage, [0.0; 3], hull.seed ^ tick.tick, WRECK_MIN);
+        // Whatever is too small to be a piece is dust, and dust is thrown.
+        for &c in &broken.dust {
+            if let Some(b) = hull.damage.kill(c, tick.tick) {
+                breaches.push(b);
+            }
+        }
         let cube = meshes.add(Cuboid::from_length(hull.model.cell * 0.9));
         // A cap, because a cruiser inside its own blast is ten thousand cells
         // and ten thousand entities is a stall, not an explosion. The ones
@@ -3321,6 +3397,112 @@ fn go_critical(
                 Debris { vel: Vec3::from(ch.velocity) + away * radius * 1.6, born: ch.born },
             ));
         }
+
+        // The pieces. Each is a hull: a copy of this one's model and damage
+        // with every live cell that is not in the piece killed at this tick,
+        // so its cut faces are wounds and burn like any other, meshed once
+        // over only the bricks the piece touches. Dead from birth, so nothing
+        // that skips a dead hull (the swarm, the guns, the bars, the orders)
+        // ever looks at it, and `remesh_dirty` cools its burns exactly as it
+        // cools a ship's.
+        let mut sizes = Vec::new();
+        for (i, piece) in broken.pieces.iter().enumerate() {
+            let mut member = vec![false; hull.model.len()];
+            for &c in piece {
+                member[c] = true;
+            }
+            let mut damage = hull.damage.clone();
+            for c in 0..hull.model.len() {
+                if !member[c] && hull.model.grid[c] != mat::EMPTY && !damage.is_dead(c) {
+                    damage.kill(c, tick.tick);
+                }
+            }
+            damage.take_dirty();
+            let centroid = piece.iter().map(|&c| Vec3::from(hull.model.centre_of(c))).sum::<Vec3>() / piece.len() as f32;
+            let mut wreck = Hull {
+                model: hull.model.clone(),
+                bricks: (0..damage.brick_count()).map(|_| Brick::default()).collect(),
+                damage,
+                surface_mats: hull.surface_mats.clone(),
+                window_mats: hull.window_mats.clone(),
+                inner_mat: hull.inner_mat.clone(),
+                wound_mat: hull.wound_mat.clone(),
+                scorch_mat: hull.scorch_mat.clone(),
+                chewers: Vec::new(),
+                guns: Vec::new(),
+                engines: Vec::new(),
+                order: None,
+                vel: Vec3::ZERO,
+                accel: Vec3::ZERO,
+                breaches: 0,
+                last_heat_key: 0,
+                cells: piece.len(),
+                dead_hull: true,
+                reactor: Vec::new(),
+                seed: hull.seed ^ (i as u32 + 1),
+            };
+            let wreck_e = commands.spawn((*xf, Visibility::default())).id();
+            let mut touched = vec![false; wreck.damage.brick_count()];
+            for &c in piece {
+                touched[wreck.damage.brick_of(c)] = true;
+            }
+            for b in 0..wreck.damage.brick_count() {
+                if !touched[b] {
+                    continue;
+                }
+                let (lo, hi) = wreck.damage.brick_bounds(b);
+                let s = mesh_region(&wreck.model, Some((&wreck.damage, tick.tick)), lo, hi);
+                place_brick(&mut commands, &mut meshes, &mut wreck, b, &s, wreck_e);
+            }
+            let pivot = xf.transform_point(centroid);
+            let away = (pivot - centre).normalize_or(Vec3::Y);
+            let mut rng = Rng::new(((hull.seed as u64) << 16) ^ (i as u64) ^ ((tick.tick as u64) << 32));
+            let axis = Vec3::new(rng.range(-1.0, 1.0), rng.range(-1.0, 1.0), rng.range(-1.0, 1.0)).normalize_or(Vec3::X);
+            let jitter = Vec3::new(rng.range(-0.08, 0.08), rng.range(-0.08, 0.08), rng.range(-0.08, 0.08));
+            sizes.push(piece.len());
+            commands.entity(wreck_e).insert((
+                wreck,
+                Wreck {
+                    pivot,
+                    centroid,
+                    vel: hull.vel + (away * WRECK_SPEED + jitter) * radius,
+                    spin: axis * rng.range(WRECK_SPIN.0, WRECK_SPIN.1),
+                    born: tick.tick,
+                },
+            ));
+        }
+
+        // The guns come off whole. A turret is its own child with its own
+        // mesh, so it is cut loose from the hull, put where it was, and thrown
+        // a little harder than a section: it is lighter.
+        let mut guns = 0u32;
+        for (t, gxf, child_of) in &turrets {
+            if child_of.parent() != entity {
+                continue;
+            }
+            let (scale, rotation, translation) = gxf.to_scale_rotation_translation();
+            let away = (translation - centre).normalize_or(Vec3::Y);
+            let mut rng = Rng::new(((hull.seed as u64) << 16) ^ (0x77 + guns as u64) ^ ((tick.tick as u64) << 32));
+            let axis = Vec3::new(rng.range(-1.0, 1.0), rng.range(-1.0, 1.0), rng.range(-1.0, 1.0)).normalize_or(Vec3::X);
+            commands.entity(t).remove::<ChildOf>().remove::<Turret>().insert((
+                Transform { translation, rotation, scale },
+                Wreck {
+                    pivot: translation,
+                    centroid: Vec3::ZERO,
+                    vel: hull.vel + away * radius * WRECK_SPEED * 1.6,
+                    spin: axis * rng.range(WRECK_SPIN.1, WRECK_SPIN.1 * 2.5),
+                    born: tick.tick,
+                },
+            ));
+            guns += 1;
+        }
+        info!(
+            "the wreck is {} pieces of {:?} cells, {guns} guns and {} dust, built in {:.1} ms",
+            sizes.len(),
+            sizes,
+            broken.dust.len(),
+            started.elapsed().as_secs_f32() * 1000.0
+        );
 
         // The fireball is SPARKS, not a shell.
         //
@@ -3351,9 +3533,9 @@ fn go_critical(
         }
         sparks.extend(flash);
         fx.blasts.push(blast);
-        // The whole hull re-meshes: a sphere of it just went.
-        hull.damage.mark_all_dirty();
-        let _ = entity;
+        // And the hull that was is gone. Every cell of it is in a piece, in
+        // the dust or in the fireball now, and its bricks go with it.
+        commands.entity(entity).despawn();
     }
 }
 
@@ -4179,8 +4361,9 @@ fn fly_hull(
     // WITHOUT a carrier. A mothership is a `Hull` now so that cells come off
     // it the way they come off a ship, and every system that takes hulls
     // therefore takes carriers too unless it says otherwise. This one would
-    // have every carrier flying the flagship's own orders.
-    mut hulls: Query<(&mut Hull, &mut Transform, Option<&Escort>), Without<Hive>>,
+    // have every carrier flying the flagship's own orders. And WITHOUT a
+    // wreck, which is a hull too and drifts on its own rule.
+    mut hulls: Query<(&mut Hull, &mut Transform, Option<&Escort>), (Without<Hive>, Without<Wreck>)>,
 ) {
     let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
     for (mut hull, mut xf, escort) in &mut hulls {

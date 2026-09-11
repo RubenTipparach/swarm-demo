@@ -12,6 +12,7 @@
 //! reads a clock or rolls a die: a spark's drift is hashed off the thing that
 //! threw it, so two screens watching one explosion throw the same debris.
 
+use crate::damage::DamageGrid;
 use crate::rng::{drift_of, hash_cell, Rng};
 use crate::voxel::{mat, purpose, VoxelModel, SURF_DRIVE, SURF_WEAPON};
 
@@ -962,5 +963,181 @@ mod reactor_tests {
     fn an_empty_model_has_no_reactor() {
         let m = VoxelModel::new(8, 8, 8, 0.1);
         assert!(reactor_of(&m).is_empty());
+    }
+}
+
+// ------------------------------------------------------------- wrecks --
+
+/// What a hull that has gone critical breaks INTO: the big pieces, each one
+/// connected run of live cells, and the dust that is too small to be a piece.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Shatter {
+    /// Biggest first. Each is a list of cell indices in the model's lattice.
+    pub pieces: Vec<Vec<usize>>,
+    /// Everything under `min_piece` cells, to be thrown as single chunks.
+    pub dust: Vec<usize>,
+}
+
+/// The six face neighbours: two cells meeting at an edge are not one piece.
+const SIX: [(i32, i32, i32); 6] = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)];
+
+/// Break what is left of a hull into wreck pieces.
+///
+/// A ship that dies leaves a WRECK, and a wreck is a few big pieces rather
+/// than a spray of cells. The reactor has already taken the ball around it
+/// (`DamageGrid::blast_cells`); this cuts the survivors along two planes
+/// through the blast, hashed off the seed so two screens watching one ship
+/// die see the same pieces, and then takes each sector's connected runs of
+/// live cells. The first plane lies near ACROSS the long axis, so a hull
+/// breaks into a bow and a stern; the second runs along it at a hashed roll,
+/// so each of those breaks port from starboard, or deck from keel. Two
+/// planes rather than three, because eight pieces of a frigate are not
+/// giant, and giant is the point. Anything under `min_piece` cells is dust.
+pub fn shatter(m: &VoxelModel, d: &DamageGrid, centre: [f32; 3], seed: u32, min_piece: usize) -> Shatter {
+    let n = m.len();
+    let live = |c: usize| m.grid[c] != mat::EMPTY && !d.is_dead(c);
+    let mut rng = Rng::new(seed as u64 ^ 0x5EED_C0DE);
+    let n1 = normalise([rng.range(-0.35, 0.35), rng.range(-0.35, 0.35), 1.0]);
+    let roll = rng.range(0.0, std::f32::consts::TAU);
+    let n2 = normalise([roll.cos(), roll.sin(), rng.range(-0.25, 0.25)]);
+    let sector = |c: usize| -> u8 {
+        let p = sub(m.centre_of(c), centre);
+        ((dot(p, n1) >= 0.0) as u8) | (((dot(p, n2) >= 0.0) as u8) << 1)
+    };
+    let mut seen = vec![false; n];
+    let mut pieces: Vec<Vec<usize>> = Vec::new();
+    let mut dust = Vec::new();
+    for start in 0..n {
+        if seen[start] || !live(start) {
+            continue;
+        }
+        let s = sector(start);
+        let mut stack = vec![start];
+        let mut piece = Vec::new();
+        seen[start] = true;
+        while let Some(c) = stack.pop() {
+            piece.push(c);
+            let (i, j, k) = m.at(c);
+            for (di, dj, dk) in SIX {
+                let (ni, nj, nk) = (i as i32 + di, j as i32 + dj, k as i32 + dk);
+                if !m.inside(ni, nj, nk) {
+                    continue;
+                }
+                let nb = m.index(ni as usize, nj as usize, nk as usize);
+                if seen[nb] || !live(nb) || sector(nb) != s {
+                    continue;
+                }
+                seen[nb] = true;
+                stack.push(nb);
+            }
+        }
+        if piece.len() >= min_piece {
+            piece.sort_unstable();
+            pieces.push(piece);
+        } else {
+            dust.extend(piece);
+        }
+    }
+    pieces.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));
+    dust.sort_unstable();
+    Shatter { pieces, dust }
+}
+
+#[cfg(test)]
+mod shatter_tests {
+    use super::*;
+
+    fn block(nx: usize, ny: usize, nz: usize) -> VoxelModel {
+        let mut m = VoxelModel::new(nx, ny, nz, 0.1);
+        for k in 1..nz - 1 {
+            for j in 1..ny - 1 {
+                for i in 1..nx - 1 {
+                    let n = m.index(i, j, k);
+                    m.grid[n] = mat::PLATE;
+                }
+            }
+        }
+        m
+    }
+
+    /// How many connected runs a set of cells is, on six neighbours.
+    fn runs(m: &VoxelModel, cells: &[usize]) -> usize {
+        let mut inside = vec![false; m.len()];
+        for &c in cells {
+            inside[c] = true;
+        }
+        let mut seen = vec![false; m.len()];
+        let mut count = 0;
+        for &start in cells {
+            if seen[start] {
+                continue;
+            }
+            count += 1;
+            let mut stack = vec![start];
+            seen[start] = true;
+            while let Some(c) = stack.pop() {
+                let (i, j, k) = m.at(c);
+                for (di, dj, dk) in SIX {
+                    let (ni, nj, nk) = (i as i32 + di, j as i32 + dj, k as i32 + dk);
+                    if !m.inside(ni, nj, nk) {
+                        continue;
+                    }
+                    let nb = m.index(ni as usize, nj as usize, nk as usize);
+                    if inside[nb] && !seen[nb] {
+                        seen[nb] = true;
+                        stack.push(nb);
+                    }
+                }
+            }
+        }
+        count
+    }
+
+    /// The whole point: a hull comes apart into a FEW BIG pieces, every one
+    /// of them in one piece, and between them and the dust they account for
+    /// every live cell exactly once.
+    #[test]
+    fn a_wreck_breaks_into_big_pieces_and_dust() {
+        let m = block(12, 12, 28);
+        let mut d = DamageGrid::new(&m);
+        // The reactor takes the ball around it first.
+        let hole = Blast { at: [0.0; 3], radius: m.cell * 4.5, born: 7 };
+        let taken = d.blast_cells(&m, &hole, 7).len();
+        assert!(taken > 200, "the hole took {taken} cells");
+        let live: Vec<bool> = (0..m.len()).map(|c| m.grid[c] != mat::EMPTY && !d.is_dead(c)).collect();
+        let alive = live.iter().filter(|&&l| l).count();
+
+        let sh = shatter(&m, &d, [0.0; 3], 3, 30);
+        assert!((3..=8).contains(&sh.pieces.len()), "{} pieces", sh.pieces.len());
+        for p in &sh.pieces {
+            assert!(p.len() >= 30, "a piece of {} cells is dust", p.len());
+            assert_eq!(runs(&m, p), 1, "a piece must be one piece");
+        }
+        assert!(sh.pieces[0].len() * 8 >= alive, "the biggest piece is {} of {alive} live cells", sh.pieces[0].len());
+        // Sorted biggest first, and the biggest is not the whole hull.
+        assert!(sh.pieces.windows(2).all(|w| w[0].len() >= w[1].len()));
+        assert!(sh.pieces[0].len() * 2 < alive, "one piece of {} took the whole {alive}", sh.pieces[0].len());
+
+        let mut count = vec![0u8; m.len()];
+        for p in &sh.pieces {
+            for &c in p {
+                count[c] += 1;
+            }
+        }
+        for &c in &sh.dust {
+            count[c] += 1;
+        }
+        for c in 0..m.len() {
+            assert_eq!(count[c], u8::from(live[c]), "cell {c}: dead cells are nobody's and live cells are exactly one's");
+        }
+        // A function of its inputs.
+        assert_eq!(shatter(&m, &d, [0.0; 3], 3, 30), sh);
+    }
+
+    #[test]
+    fn an_empty_hull_leaves_nothing() {
+        let m = VoxelModel::new(4, 4, 4, 0.1);
+        let d = DamageGrid::new(&m);
+        assert_eq!(shatter(&m, &d, [0.0; 3], 1, 30), Shatter::default());
     }
 }
