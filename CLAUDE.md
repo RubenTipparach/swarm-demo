@@ -402,6 +402,49 @@ Written by one thread and read by the others a tick later, which is the only
 order available, and one tick of lag on a wave lasting most of a second is not
 a thing anybody can see.
 
+## A turret is its own object, and it turns
+
+A gun that swivels cannot be part of the mesh it is bolted to, so its cells are
+lifted OUT of the hull's model before the bricks are built and given a child
+entity pivoting on the cluster's own middle. `gun_clusters` returns what the
+cluster walk already knew and used to throw away: the cells and the pivot.
+
+**This is deliberately not redux-tribes' approach.** That project rewrites a
+turret's quads inside the ship's own geometry every frame, for a reason that
+does not apply here: its hulls carve holes through the same buffers, so a mount
+with meshes of its own would mean the carve had to know which of four buffers a
+quad lives in. Here a gun is three to a ship, nothing carves it, and a child
+transform is free: the mesh is built once and only a rotation changes.
+
+The aim is the SAME answer `fire_guns` uses, so the barrel and the beam agree.
+A turret that pointed somewhere the beam did not come out of would be a
+decoration rather than a gun. It eases on a slew cap and stands down to the
+facing its own cluster looks out along when nothing is in reach.
+
+Everything is in the HULL's frame: a child's rotation is relative to its
+parent, so the target goes into that frame first and the rotation is then a
+plain `looking_to` with no ship pose in it at all.
+
+**And both companion queries need `Without<Turret>`.** Bevy proves two queries
+disjoint from their FILTERS, not from what you know about the data: it cannot
+tell that nothing is both a carrier and a turret, so a plain `&Transform` on
+the carriers conflicts with the `&mut Transform` on the turrets and the app
+panics at startup with B0001.
+
+## A beam lasts a second, and that is what a sweep needs
+
+`BEAM_TICKS` was nine, which is a flash: it lit, it killed whatever was on its
+line at that instant, and it was gone before anything it set off could be
+watched. Sixty is a second at sixty frames, and a sweep needs time to travel,
+because the whole point of sweeping is the line of kills a player can follow.
+
+That pushed straight through the shot cap. Seven ships with three guns each,
+every beam alive for sixty ticks, plus the flak already running at two dozen
+live bursts, goes well past thirty two, and what is past the cap is silently
+TRUNCATED: a beam that draws and kills nothing. `MAX_SHOTS` is sixty four, and
+the array in the shader is a hundred and twenty eight vectors, because the
+capsules are stored in pairs.
+
 ## The swarm has a LIFE, and it is divided between ships
 
 **One published centre was the wrong requirement, not a wrong implementation.**

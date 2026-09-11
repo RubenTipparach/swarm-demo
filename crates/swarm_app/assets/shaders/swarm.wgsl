@@ -29,7 +29,8 @@ struct Params {
     targets: u32,           // how many ships the swarm may attack
     pad2: u32,
     // Pairs: even = from.xyz + radius, odd = to.xyz + spare.
-    shot: array<vec4<f32>, 64>,
+    // Pairs, so sixty four capsules is a hundred and twenty eight vectors.
+    shot: array<vec4<f32>, 128>,
     // Where each mothership is and how big it is. Compacted every frame to
     // the LIVE ones, so a hive that dies simply shortens the list and the
     // motes that flew from it re-home by modulo.

@@ -63,7 +63,14 @@ const WORKGROUP: u32 = 256;
 
 /// How many capsules the swarm may be told about in one tick. A beam and a
 /// blast are the same shape, so this is every shot in the air at once.
-pub const MAX_SHOTS: usize = 32;
+/// How many kill volumes the swarm is tested against at once.
+///
+/// Sixty four rather than thirty two, because a beam now lives a whole second
+/// instead of nine ticks. Seven ships with three guns each, every beam alive
+/// for sixty ticks, plus the flak already running at two dozen live bursts,
+/// went straight past thirty two, and what is past the cap is silently
+/// truncated: a beam that draws and kills nothing.
+pub const MAX_SHOTS: usize = 64;
 /// The app's half of the spark ring.
 pub const CPU_SPARKS: u32 = 24_576;
 /// The swarm's half.

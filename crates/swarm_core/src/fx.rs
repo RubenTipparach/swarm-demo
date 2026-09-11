@@ -41,7 +41,13 @@ pub struct Blast {
 /// How long a beam is live, in ticks. Long enough to see, short enough that a
 /// mote flying through the line a moment later is not killed by a beam that
 /// has stopped firing.
-pub const BEAM_TICKS: u32 = 9;
+/// How long a beam lasts, in ticks, which is a second at sixty.
+///
+/// Nine was a flash: it lit, it killed what was on its line at that instant,
+/// and it was gone before anything it set off could be watched. A beam is a
+/// SWEEP now and a sweep needs time to travel, so this is what decides how far
+/// the arc it carves actually goes.
+pub const BEAM_TICKS: u32 = 60;
 /// How long a blast keeps expanding and killing.
 pub const BLAST_TICKS: u32 = 24;
 
@@ -332,7 +338,7 @@ pub struct Gun {
 /// rather than two copies of it. `aft` is what separates them: a gun looks
 /// out from the hull's own axis, and a drive looks backwards along it,
 /// because that is what a drive is.
-fn clusters_of(m: &VoxelModel, surf: u8, purp: Option<u8>, least: usize, aft: bool) -> Vec<Gun> {
+fn clusters_of(m: &VoxelModel, surf: u8, purp: Option<u8>, least: usize, aft: bool) -> Vec<(Gun, [f32; 3], Vec<usize>)> {
     let n = m.len();
     let is = |c: usize| {
         m.grid[c] != mat::EMPTY && m.surf[c] == surf && purp.is_none_or(|p| m.purp[c] == p)
@@ -407,10 +413,10 @@ fn clusters_of(m: &VoxelModel, surf: u8, purp: Option<u8>, least: usize, aft: bo
             mid[1] + best.2[1] * reach,
             mid[2] + best.2[2] * reach,
         ];
-        out.push(Gun { at, out: best.2, cell: best.1 as u32 });
+        out.push((Gun { at, out: best.2, cell: best.1 as u32 }, mid, cells));
     }
     // In cell order, so two runs give the same placements in the same order.
-    out.sort_by_key(|g| g.cell);
+    out.sort_by_key(|(g, _, _)| g.cell);
     out
 }
 
@@ -426,6 +432,11 @@ fn clusters_of(m: &VoxelModel, surf: u8, purp: Option<u8>, least: usize, aft: bo
 /// back of an engine and a muzzle flash the front of a barrel, and each is the
 /// outermost cell of its cluster along its own line.
 pub fn engines_of(m: &VoxelModel) -> Vec<Gun> {
+    engine_clusters(m).into_iter().map(|(g, _, _)| g).collect()
+}
+
+/// The same drives, with the cells each one is made of and where it pivots.
+pub fn engine_clusters(m: &VoxelModel) -> Vec<(Gun, [f32; 3], Vec<usize>)> {
     // Two cells, not six: the purpose is already the filter that matters, and
     // a mote's engines are single cells that only touch where their columns
     // happen to end level with each other.
@@ -443,6 +454,15 @@ pub fn engines_of(m: &VoxelModel) -> Vec<Gun> {
 /// cell rather than its centre, because a barrel fires from its end and a
 /// muzzle flash inside a barbette is a light under a box.
 pub fn guns_of(m: &VoxelModel) -> Vec<Gun> {
+    gun_clusters(m).into_iter().map(|(g, _, _)| g).collect()
+}
+
+/// The guns, with the CELLS each one is made of and the point it turns about.
+///
+/// A turret that swivels has to be drawn separately from the hull it is bolted
+/// to, which means knowing which cells are the turret and where its pivot is.
+/// The cluster walk already found both and threw them away.
+pub fn gun_clusters(m: &VoxelModel) -> Vec<(Gun, [f32; 3], Vec<usize>)> {
     clusters_of(m, SURF_WEAPON, None, 6, false)
 }
 
