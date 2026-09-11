@@ -236,9 +236,13 @@ flowchart TB
 
 **It is proved by the pictures not changing.** The split moves code and
 changes no behaviour, so every headless render in the suites is taken
-before and after at a fixed step and compared. A byte identical picture is
-the acceptance test, and a picture that differs is a change that has to be
-explained.
+before and after at a fixed step and compared with `tools/pngdiff.py`. Not
+byte for byte: two runs of the SAME binary differ, by up to a sixth of a
+percent of the order picture, because the tick reads its neighbours out of
+the buffer it is writing and a software rasteriser's thread order is not the
+same twice. The acceptance test is the share of pixels that moved, held
+against that scene's own floor, and a picture over it is a change that has
+to be explained.
 
 Cost: a session for the split and the format, its own pull request, before
 any feature. Half a day of it is moving functions; the rest is the four

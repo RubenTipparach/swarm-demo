@@ -38,7 +38,9 @@ first three are checks: `.claude/skills/tidy/SKILL.md` runs them all.
 - **clippy is clean at `-D warnings` in the core**, and its count in the app
   never rises.
 - **No em dashes or en dashes anywhere**, checked by
-  `LC_ALL=C.UTF-8 git ls-files -z | xargs -0 grep -lP '[\x{2013}\x{2014}]'`.
+  `git ls-files -z | LC_ALL=C.UTF-8 xargs -0 grep -lP '[\x{2013}\x{2014}]'`.
+  The locale goes on the grep, not on git: without it grep refuses the
+  code points and the check passes by printing an error instead of a file.
 - **Single responsibility.** A module owns one thing and its first line says
   what; a Bevy system does one thing and is named as a verb phrase
   (`fly_hull`, `draw_nav`), a component is a noun, a marker is an adjective.
@@ -84,6 +86,81 @@ first three are checks: `.claude/skills/tidy/SKILL.md` runs them all.
   The section of that name at the end of this file is the long form.
 - **Before a push**: `/simplify` on the diff for reuse and altitude,
   `/code-review` for correctness, then the suites.
+
+## The app is folders now, and the split was mechanical
+
+`main.rs` was 5241 lines after the merge that preceded it. It is the
+arguments, the `App` and the schedule now, and everything else is in the
+folders the proposal drew: `app/` (the scene, the clocks, the headless
+harness), `world/` (assets, backdrop, rocks), `ships/` (hull, spec, flight,
+formation, damage, wreck, turrets, flames), `weapons/` (beams, flak),
+`fighters/`, `hives/`, `controllers/` (selection, orders, camera), `ui/`
+(hud, pause, bars) and `fx/` (nav). A folder's `mod.rs` names its files and
+re-exports them `pub(crate)`; a file's first line says what it owns.
+
+**Nothing was rewritten.** A script moved every top level item whole, with
+the comments and attributes above it, into exactly one file, and refused to
+run on an item that was not in its map. The only edits were `pub(crate)` on
+every moved item, field and inherent method, and one rename: `Scene` is
+`SceneSpec`, because `bevy::prelude` exports a `Scene` of its own, and two
+glob imports supplying one name is an error the moment the name is used.
+Every module opens with `use crate::*;`, so the import block is written once,
+in `main.rs`, and a module sees exactly what the root sees. The script then
+checked that every non blank line of the old file is in the new tree exactly
+once, modulo the prefix and the rename, and it is.
+
+**It is proved by the pictures.** Five headless scenes (the order, the
+wreck, the beams, the battle and the wing) were rendered on the binary from
+before and on the binary from after and compared with `tools/pngdiff.py`:
+
+| scene | before vs after | the before binary vs itself |
+| --- | --- | --- |
+| order | 0.141% | 0.013%, 0.166%, 0.167% (three runs, every pair) |
+| wreck | 0.032% | 0.249% (two runs of the pre merge binary) |
+| beams | 0.733% | 0.847% |
+| battle | 0.429% | 0.418% |
+| wing | 2.869% | 3.144% |
+
+Every share is of pixels moved by more than 8 of 255. The wing is the noisy
+one because it runs three hundred and twenty frames with an order in it,
+and the next section says why an order made a fixed step picture depend on
+the machine; the after picture against the before binary's OTHER run is
+2.221%.
+
+The floor is two runs of the SAME binary, and it is not nought: the tick
+reads its neighbours' positions out of the buffer it is writing them into
+(`motes[j]` at line 767 of `swarm.wgsl`, `motes[i] = m` at 829), so which
+of them a mote sees already moved depends on thread order, and a software
+rasteriser's thread order is not the same twice. Measured on the order
+picture, three runs of the before binary against each other: 0.013%,
+0.166% and 0.167% of the pixels; the HUD's frame counter alone is about two
+hundred of them, because it reads real time. So a pair is judged against
+that scene's OWN floor, never against a number typed into a skill, and a
+share inside it is a refactor. One trap on the way: the before pictures
+were being taken off `target/release/swarm_app` while cargo was replacing
+it, so the last of them came from the binary under test. Copy a binary aside
+before it is the control for anything.
+
+**What this stage did not do, on purpose.** The eleven functions over a
+hundred lines are exactly where they were, only in smaller files: `setup`
+(476), `build_hud` (238), `go_critical` (233), `spawn_ship` (180) and the
+rest, and `swarm.rs` and the core's `fx.rs` are still one file each. They
+come apart in the next stage, with the four `SystemSet`s and the explicit
+imports that replace `use crate::*;` once each module knows what it reads.
+`tools/shape.py --check` therefore still fails, on those, and the list it
+prints is that stage's work.
+
+**Then the format, on its own.** The tree had never been through rustfmt:
+RUSTFMT_HUNKS hunks at the default width, which is the width redux-tribes
+keeps too. That commit carries nothing else and is in
+`.git-blame-ignore-revs`, so `git blame` reads through it.
+
+**And clippy.** The core is clean at `-D warnings`. Its one `allow` is the
+star phase in `sky.rs`, which multiplies by 6.283 because sky.ts writes
+6.283 and the port is line for line. The app's four deny by default errors
+are gone: the rock rotations drew from `0.0..6.283` three times and draw from
+`TAU` now, which is at most eighteen hundred thousandths of a radian on an
+asteroid, and `ride_the_eye` computed a zero two ways and added it.
 
 ## The swarm is a field, not a million entities
 
@@ -158,7 +235,7 @@ exactly what copies drift into. The claim that the mote draw binds nothing but
 the view and the chitin was the thing to check: it binds the mesh VIEW bind
 group at nought, and `lights` is binding one of it, so the sun the scene is
 actually lit by was there to be read for nothing the whole time. `SUN` in
-`main.rs` is the only place it is written now.
+`world/backdrop.rs` is the only place it is written now.
 
 **A glow is EMISSIVE, and nothing in the cloud takes it away.** The lit cells
 used to REPLACE the shaded body wherever they were over one, which made a glow
@@ -1338,6 +1415,7 @@ cargo test -p swarm_core                                   # 56, the core
 python3 tools/shape.py --check                             # no file over 900 lines, no function over 100
 cargo fmt --all -- --check                                 # the format
 cargo clippy -p swarm_core -- -D warnings                  # the core's lints
+python3 tools/pngdiff.py before.png after.png --grid       # a refactor's pictures, against the scene's own floor
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
 cargo run --release -p swarm_core --example hull_stats -- assets/hulls   # what makes a hull tough
 cargo build --release -p swarm_app

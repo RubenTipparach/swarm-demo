@@ -5,6 +5,7 @@ refactor is judged by its pictures.
 
     python3 tools/pngdiff.py before.png after.png            # the numbers
     python3 tools/pngdiff.py before.png after.png --max 0.5  # exit 1 over half a percent
+    python3 tools/pngdiff.py before.png after.png --grid     # and WHERE, on a 4 by 4 map
 
 Two fixed step renders of the same scene are NOT byte identical: the spark
 ring is claimed with atomics on the GPU and a software rasteriser's thread
@@ -93,16 +94,24 @@ def main():
     width, height, channels, _ = a
     differ = 0
     worst = 0
-    for ra, rb in zip(a[3], b[3]):
+    cells = [[0] * 4 for _ in range(4)]
+    for y, (ra, rb) in enumerate(zip(a[3], b[3])):
+        row = cells[y * 4 // height]
         for x in range(0, width * channels, channels):
             d = max(abs(ra[x + c] - rb[x + c]) for c in range(3))
             if d > step:
                 differ += 1
+                row[x // channels * 4 // width] += 1
             if d > worst:
                 worst = d
     total = width * height
     share = 100.0 * differ / total
     print(f"{differ} of {total} pixels differ by more than {step} of 255 ({share:.3f}%), worst {worst}")
+    if "--grid" in sys.argv:
+        # Where the moved pixels are: a swarm that diverged run to run is
+        # spread over the cloud, a HUD that changed is one cell.
+        for row in cells:
+            print("  " + " ".join(f"{n:6d}" for n in row))
     if limit is not None and share > limit:
         print(f"pngdiff: FAILED, over {limit}%")
         sys.exit(1)
