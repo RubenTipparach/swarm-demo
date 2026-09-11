@@ -12,6 +12,7 @@
 //! reads a clock or rolls a die: a spark's drift is hashed off the thing that
 //! threw it, so two screens watching one explosion throw the same debris.
 
+use crate::damage::DamageGrid;
 use crate::rng::{drift_of, hash_cell, Rng};
 use crate::voxel::{mat, purpose, VoxelModel, SURF_DRIVE, SURF_WEAPON};
 
@@ -41,7 +42,13 @@ pub struct Blast {
 /// How long a beam is live, in ticks. Long enough to see, short enough that a
 /// mote flying through the line a moment later is not killed by a beam that
 /// has stopped firing.
-pub const BEAM_TICKS: u32 = 9;
+/// How long a beam lasts, in ticks, which is a second at sixty.
+///
+/// Nine was a flash: it lit, it killed what was on its line at that instant,
+/// and it was gone before anything it set off could be watched. A beam is a
+/// SWEEP now and a sweep needs time to travel, so this is what decides how far
+/// the arc it carves actually goes.
+pub const BEAM_TICKS: u32 = 60;
 /// How long a blast keeps expanding and killing.
 pub const BLAST_TICKS: u32 = 24;
 
@@ -332,7 +339,7 @@ pub struct Gun {
 /// rather than two copies of it. `aft` is what separates them: a gun looks
 /// out from the hull's own axis, and a drive looks backwards along it,
 /// because that is what a drive is.
-fn clusters_of(m: &VoxelModel, surf: u8, purp: Option<u8>, least: usize, aft: bool) -> Vec<Gun> {
+fn clusters_of(m: &VoxelModel, surf: u8, purp: Option<u8>, least: usize, aft: bool) -> Vec<(Gun, [f32; 3], Vec<usize>)> {
     let n = m.len();
     let is = |c: usize| {
         m.grid[c] != mat::EMPTY && m.surf[c] == surf && purp.is_none_or(|p| m.purp[c] == p)
@@ -391,10 +398,26 @@ fn clusters_of(m: &VoxelModel, surf: u8, purp: Option<u8>, least: usize, aft: bo
                 best = (reach, c, dir);
             }
         }
-        out.push(Gun { at: m.centre_of(best.1), out: best.2, cell: best.1 as u32 });
+        // The muzzle is the cluster's own MIDDLE carried out to its outer
+        // face, not the cell that happened to reach furthest.
+        //
+        // On a drive bell three cells square, a dozen cells tie at the same
+        // reach along the axis and the first one found wins, which is a
+        // CORNER. Every flame was therefore drawn off the corner of its own
+        // engine rather than out of the middle of it, and on a block of six
+        // bells that reads as the whole set being misaligned. Projecting the
+        // midpoint along the same axis puts it where the bell actually is.
+        let tip = m.centre_of(best.1);
+        let reach = dot(sub(tip, mid), best.2);
+        let at = [
+            mid[0] + best.2[0] * reach,
+            mid[1] + best.2[1] * reach,
+            mid[2] + best.2[2] * reach,
+        ];
+        out.push((Gun { at, out: best.2, cell: best.1 as u32 }, mid, cells));
     }
     // In cell order, so two runs give the same placements in the same order.
-    out.sort_by_key(|g| g.cell);
+    out.sort_by_key(|(g, _, _)| g.cell);
     out
 }
 
@@ -410,6 +433,11 @@ fn clusters_of(m: &VoxelModel, surf: u8, purp: Option<u8>, least: usize, aft: bo
 /// back of an engine and a muzzle flash the front of a barrel, and each is the
 /// outermost cell of its cluster along its own line.
 pub fn engines_of(m: &VoxelModel) -> Vec<Gun> {
+    engine_clusters(m).into_iter().map(|(g, _, _)| g).collect()
+}
+
+/// The same drives, with the cells each one is made of and where it pivots.
+pub fn engine_clusters(m: &VoxelModel) -> Vec<(Gun, [f32; 3], Vec<usize>)> {
     // Two cells, not six: the purpose is already the filter that matters, and
     // a mote's engines are single cells that only touch where their columns
     // happen to end level with each other.
@@ -427,6 +455,15 @@ pub fn engines_of(m: &VoxelModel) -> Vec<Gun> {
 /// cell rather than its centre, because a barrel fires from its end and a
 /// muzzle flash inside a barbette is a light under a box.
 pub fn guns_of(m: &VoxelModel) -> Vec<Gun> {
+    gun_clusters(m).into_iter().map(|(g, _, _)| g).collect()
+}
+
+/// The guns, with the CELLS each one is made of and the point it turns about.
+///
+/// A turret that swivels has to be drawn separately from the hull it is bolted
+/// to, which means knowing which cells are the turret and where its pivot is.
+/// The cluster walk already found both and threw them away.
+pub fn gun_clusters(m: &VoxelModel) -> Vec<(Gun, [f32; 3], Vec<usize>)> {
     clusters_of(m, SURF_WEAPON, None, 6, false)
 }
 
@@ -651,6 +688,53 @@ mod tests {
         let thrusters = (0..m.len()).filter(|&n| m.purp[n] == purpose::ATTITUDE).count();
         assert!(thrusters > 0, "and it has thrusters, which are not engines");
         eprintln!("terran_frigate: {} guns, {} engines, {} thruster cells", guns.len(), engines.len(), thrusters);
+    }
+}
+
+#[cfg(test)]
+mod muzzle_tests {
+    use super::*;
+    use crate::voxel::{mat, VoxelModel, SURF_DRIVE};
+
+    /// A drive's flame comes out of the MIDDLE of its bell.
+    ///
+    /// Built as one square block of drive cells, which is the shape that
+    /// exposed this: every cell on its outer face ties for "furthest along the
+    /// axis", so picking the winner picks a corner, and the flame was drawn
+    /// half a bell up and half a bell across from where the engine is.
+    #[test]
+    fn a_drive_plumes_from_the_centre_of_its_bell() {
+        let mut m = VoxelModel::new(16, 16, 16, 0.25);
+        // A 4x4x2 block of drive, centred on the lattice in x and y, aft in z.
+        for k in 2..4 {
+            for j in 6..10 {
+                for i in 6..10 {
+                    let n = m.index(i, j, k);
+                    m.grid[n] = mat::MACHINE;
+                    m.surf[n] = SURF_DRIVE;
+                    m.purp[n] = crate::voxel::purpose::PROPULSION;
+                }
+            }
+        }
+        let drives = engines_of(&m);
+        assert_eq!(drives.len(), 1, "one block is one drive");
+        let g = &drives[0];
+        // The lattice centre in x and y, which is where the block is centred.
+        let mid = m.centre_of(m.index(8, 8, 3));
+        assert!(
+            (g.at[0] - (mid[0] - m.cell * 0.5)).abs() < m.cell * 0.51,
+            "muzzle x {} is off the bell centre {}",
+            g.at[0],
+            mid[0] - m.cell * 0.5
+        );
+        assert!(
+            (g.at[1] - (mid[1] - m.cell * 0.5)).abs() < m.cell * 0.51,
+            "muzzle y {} is off the bell centre {}",
+            g.at[1],
+            mid[1] - m.cell * 0.5
+        );
+        // And it points aft, because the block is aft of the middle.
+        assert!(g.out[2] < -0.5, "a drive aft of the middle plumes forward: {:?}", g.out);
     }
 }
 
@@ -879,5 +963,181 @@ mod reactor_tests {
     fn an_empty_model_has_no_reactor() {
         let m = VoxelModel::new(8, 8, 8, 0.1);
         assert!(reactor_of(&m).is_empty());
+    }
+}
+
+// ------------------------------------------------------------- wrecks --
+
+/// What a hull that has gone critical breaks INTO: the big pieces, each one
+/// connected run of live cells, and the dust that is too small to be a piece.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Shatter {
+    /// Biggest first. Each is a list of cell indices in the model's lattice.
+    pub pieces: Vec<Vec<usize>>,
+    /// Everything under `min_piece` cells, to be thrown as single chunks.
+    pub dust: Vec<usize>,
+}
+
+/// The six face neighbours: two cells meeting at an edge are not one piece.
+const SIX: [(i32, i32, i32); 6] = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)];
+
+/// Break what is left of a hull into wreck pieces.
+///
+/// A ship that dies leaves a WRECK, and a wreck is a few big pieces rather
+/// than a spray of cells. The reactor has already taken the ball around it
+/// (`DamageGrid::blast_cells`); this cuts the survivors along two planes
+/// through the blast, hashed off the seed so two screens watching one ship
+/// die see the same pieces, and then takes each sector's connected runs of
+/// live cells. The first plane lies near ACROSS the long axis, so a hull
+/// breaks into a bow and a stern; the second runs along it at a hashed roll,
+/// so each of those breaks port from starboard, or deck from keel. Two
+/// planes rather than three, because eight pieces of a frigate are not
+/// giant, and giant is the point. Anything under `min_piece` cells is dust.
+pub fn shatter(m: &VoxelModel, d: &DamageGrid, centre: [f32; 3], seed: u32, min_piece: usize) -> Shatter {
+    let n = m.len();
+    let live = |c: usize| m.grid[c] != mat::EMPTY && !d.is_dead(c);
+    let mut rng = Rng::new(seed as u64 ^ 0x5EED_C0DE);
+    let n1 = normalise([rng.range(-0.35, 0.35), rng.range(-0.35, 0.35), 1.0]);
+    let roll = rng.range(0.0, std::f32::consts::TAU);
+    let n2 = normalise([roll.cos(), roll.sin(), rng.range(-0.25, 0.25)]);
+    let sector = |c: usize| -> u8 {
+        let p = sub(m.centre_of(c), centre);
+        ((dot(p, n1) >= 0.0) as u8) | (((dot(p, n2) >= 0.0) as u8) << 1)
+    };
+    let mut seen = vec![false; n];
+    let mut pieces: Vec<Vec<usize>> = Vec::new();
+    let mut dust = Vec::new();
+    for start in 0..n {
+        if seen[start] || !live(start) {
+            continue;
+        }
+        let s = sector(start);
+        let mut stack = vec![start];
+        let mut piece = Vec::new();
+        seen[start] = true;
+        while let Some(c) = stack.pop() {
+            piece.push(c);
+            let (i, j, k) = m.at(c);
+            for (di, dj, dk) in SIX {
+                let (ni, nj, nk) = (i as i32 + di, j as i32 + dj, k as i32 + dk);
+                if !m.inside(ni, nj, nk) {
+                    continue;
+                }
+                let nb = m.index(ni as usize, nj as usize, nk as usize);
+                if seen[nb] || !live(nb) || sector(nb) != s {
+                    continue;
+                }
+                seen[nb] = true;
+                stack.push(nb);
+            }
+        }
+        if piece.len() >= min_piece {
+            piece.sort_unstable();
+            pieces.push(piece);
+        } else {
+            dust.extend(piece);
+        }
+    }
+    pieces.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));
+    dust.sort_unstable();
+    Shatter { pieces, dust }
+}
+
+#[cfg(test)]
+mod shatter_tests {
+    use super::*;
+
+    fn block(nx: usize, ny: usize, nz: usize) -> VoxelModel {
+        let mut m = VoxelModel::new(nx, ny, nz, 0.1);
+        for k in 1..nz - 1 {
+            for j in 1..ny - 1 {
+                for i in 1..nx - 1 {
+                    let n = m.index(i, j, k);
+                    m.grid[n] = mat::PLATE;
+                }
+            }
+        }
+        m
+    }
+
+    /// How many connected runs a set of cells is, on six neighbours.
+    fn runs(m: &VoxelModel, cells: &[usize]) -> usize {
+        let mut inside = vec![false; m.len()];
+        for &c in cells {
+            inside[c] = true;
+        }
+        let mut seen = vec![false; m.len()];
+        let mut count = 0;
+        for &start in cells {
+            if seen[start] {
+                continue;
+            }
+            count += 1;
+            let mut stack = vec![start];
+            seen[start] = true;
+            while let Some(c) = stack.pop() {
+                let (i, j, k) = m.at(c);
+                for (di, dj, dk) in SIX {
+                    let (ni, nj, nk) = (i as i32 + di, j as i32 + dj, k as i32 + dk);
+                    if !m.inside(ni, nj, nk) {
+                        continue;
+                    }
+                    let nb = m.index(ni as usize, nj as usize, nk as usize);
+                    if inside[nb] && !seen[nb] {
+                        seen[nb] = true;
+                        stack.push(nb);
+                    }
+                }
+            }
+        }
+        count
+    }
+
+    /// The whole point: a hull comes apart into a FEW BIG pieces, every one
+    /// of them in one piece, and between them and the dust they account for
+    /// every live cell exactly once.
+    #[test]
+    fn a_wreck_breaks_into_big_pieces_and_dust() {
+        let m = block(12, 12, 28);
+        let mut d = DamageGrid::new(&m);
+        // The reactor takes the ball around it first.
+        let hole = Blast { at: [0.0; 3], radius: m.cell * 4.5, born: 7 };
+        let taken = d.blast_cells(&m, &hole, 7).len();
+        assert!(taken > 200, "the hole took {taken} cells");
+        let live: Vec<bool> = (0..m.len()).map(|c| m.grid[c] != mat::EMPTY && !d.is_dead(c)).collect();
+        let alive = live.iter().filter(|&&l| l).count();
+
+        let sh = shatter(&m, &d, [0.0; 3], 3, 30);
+        assert!((3..=8).contains(&sh.pieces.len()), "{} pieces", sh.pieces.len());
+        for p in &sh.pieces {
+            assert!(p.len() >= 30, "a piece of {} cells is dust", p.len());
+            assert_eq!(runs(&m, p), 1, "a piece must be one piece");
+        }
+        assert!(sh.pieces[0].len() * 8 >= alive, "the biggest piece is {} of {alive} live cells", sh.pieces[0].len());
+        // Sorted biggest first, and the biggest is not the whole hull.
+        assert!(sh.pieces.windows(2).all(|w| w[0].len() >= w[1].len()));
+        assert!(sh.pieces[0].len() * 2 < alive, "one piece of {} took the whole {alive}", sh.pieces[0].len());
+
+        let mut count = vec![0u8; m.len()];
+        for p in &sh.pieces {
+            for &c in p {
+                count[c] += 1;
+            }
+        }
+        for &c in &sh.dust {
+            count[c] += 1;
+        }
+        for c in 0..m.len() {
+            assert_eq!(count[c], u8::from(live[c]), "cell {c}: dead cells are nobody's and live cells are exactly one's");
+        }
+        // A function of its inputs.
+        assert_eq!(shatter(&m, &d, [0.0; 3], 3, 30), sh);
+    }
+
+    #[test]
+    fn an_empty_hull_leaves_nothing() {
+        let m = VoxelModel::new(4, 4, 4, 0.1);
+        let d = DamageGrid::new(&m);
+        assert_eq!(shatter(&m, &d, [0.0; 3], 1, 30), Shatter::default());
     }
 }

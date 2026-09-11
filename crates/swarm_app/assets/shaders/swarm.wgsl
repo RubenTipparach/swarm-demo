@@ -26,10 +26,11 @@ struct Params {
     spark_cap: u32,         // how many it may use
     hives: u32,             // how many motherships are still flying
     rocks: u32,             // how many asteroids are in the field
-    pad1: u32,
+    targets: u32,           // how many ships the swarm may attack
     pad2: u32,
     // Pairs: even = from.xyz + radius, odd = to.xyz + spare.
-    shot: array<vec4<f32>, 64>,
+    // Pairs, so sixty four capsules is a hundred and twenty eight vectors.
+    shot: array<vec4<f32>, 128>,
     // Where each mothership is and how big it is. Compacted every frame to
     // the LIVE ones, so a hive that dies simply shortens the list and the
     // motes that flew from it re-home by modulo.
@@ -40,6 +41,15 @@ struct Params {
     // is the navigation shape and not the picture: the margin below is what
     // keeps the two from disagreeing where it would show.
     rock: array<vec4<f32>, 32>,
+    // Every live hull, centre xyz and radius w. The cloud used to chase one
+    // published centre, so it could only ever be ONE animal on ONE ship and
+    // "divide the swarm by where you put your ships" could not be expressed at
+    // all. A mote takes its index modulo the count, so a ship dying shortens
+    // the list and its share re-homes to whatever is left, which is the rule
+    // the carriers already keep.
+    // `ship`, not `target`: that word is reserved in WGSL and the composer
+    // refuses it by name.
+    ship: array<vec4<f32>, 16>,
 };
 
 struct Mote {
@@ -47,8 +57,11 @@ struct Mote {
     vel_seed: vec4<f32>,    // xyz, w = seed in 0..1
     state: vec4<f32>,       // x = respawn countdown, y = the scale it had,
                             // z = which mothership it flies from,
-                            // w = the run clock: how long is left on this leg,
-                            //     positive boring in and negative breaking off
+                            // w = the route parameter, for a vein
+    extra: vec4<f32>,       // x = how much of it is left, one down to nought
+                            // y = which leg of its life it is on, PH_*
+                            // z = how long is left on that leg
+                            // w = where it sits round its ship's ring
 };
 
 struct Spark {
@@ -62,15 +75,27 @@ struct Spark {
 // the binding refused a sixteen byte buffer by name.
 struct Counter {
     gpu: atomic<u32>,
-    pad0: u32,
+    /// Where the next death wave goes in the ring below.
+    wave: atomic<u32>,
     pad1: u32,
     pad2: u32,
+};
+
+/// A shock from a mote coming apart: centre xyz, and the time it went off.
+///
+/// Written by whichever mote died and read by every mote on the NEXT tick,
+/// which is the only order available: nothing here can see what another thread
+/// is doing this tick. One tick of lag on a wave that lasts most of a second
+/// is not a thing anybody can see.
+struct Wave {
+    at: vec4<f32>,
 };
 
 @group(0) @binding(0) var<storage, read_write> motes: array<Mote>;
 @group(0) @binding(1) var<uniform> p: Params;
 @group(0) @binding(2) var<storage, read_write> sparks: array<Spark>;
 @group(0) @binding(3) var<storage, read_write> counter: Counter;
+@group(0) @binding(4) var<storage, read_write> waves: array<Wave>;
 
 const SPARKS_PER_MOTE: u32 = 5u;
 const RESPAWN: f32 = 0.9;
@@ -83,11 +108,57 @@ const RESPAWN: f32 = 0.9;
 const BITE_SPARKS: u32 = 3u;
 const BITE_CHANCE: f32 = 0.975;
 
+/// The legs of a mote's life.
+///
+/// It used to have one: fly at the ship for ever, with a clock flipping it
+/// between two standoffs. That is a cloud, not an animal. A mote crosses from
+/// its carrier, joins the RING round the ship it was given, leaves the ring to
+/// make a pass, and goes home to its carrier to be put back together if the
+/// pass cost it too much.
+const PH_TRANSIT: f32 = 0.0;
+const PH_CIRCLE: f32 = 1.0;
+const PH_ATTACK: f32 = 2.0;
+const PH_RETURN: f32 = 3.0;
+
+/// What a shot takes off a mote, and how little it can have left before it
+/// breaks off for home. Two hits kill; one sends it limping.
+const SHOT_BITE: f32 = 0.6;
+const RETURN_AT: f32 = 0.5;
+
+/// The ring, in target radii, and the pass.
+const RING_R: f32 = 2.7;
+const ATTACK_R: f32 = 0.90;
+/// How hard a mote is pulled into its ship's own ring PLANE. This is what
+/// makes a ring rather than a shell: a standoff alone spreads the traffic over
+/// a sphere, and a sphere has no formation in it.
+const RING_FLAT: f32 = 5.0;
+
+/// How many pieces a mote comes apart into, on top of its own spark burst.
+const DEBRIS: u32 = 4u;
+
+/// The shock a dying mote leaves behind: how many are remembered at once, how
+/// long one lasts, how wide it opens and how hard it shoves.
+///
+/// A ring rather than a list, overwritten oldest first, because a swarm loses
+/// dozens a second and nothing is going to tidy up after them. Every mote
+/// tests every slot every tick, so this is a budget: sixty four is about a
+/// microsecond of the tick at a million motes.
+const WAVES: u32 = 64u;
+const WAVE_LIFE: f32 = 0.7;
+const WAVE_R: f32 = 2.4;
+const WAVE_PUSH: f32 = 26.0;
+
 /// How far out from a rock a mote starts turning, as a share of its radius.
 const ROCK_MARGIN: f32 = 0.55;
 
-/// What share of the swarm winds round a rock instead of going for the ship.
+/// What share of the swarm runs a route between rocks instead of going for
+/// the ship, how much of a route ends at the SHIP rather than at another rock,
+/// how fast a route is walked (in routes a second), and how wide the tube of
+/// traffic is as a share of the rock it leaves.
 const VEIN_SHARE: f32 = 0.22;
+const VEIN_TO_SHIP: f32 = 0.34;
+const VEIN_RATE: f32 = 0.085;
+const VEIN_TUBE: f32 = 0.34;
 
 fn hash(n: u32) -> f32 {
     var x = n * 747796405u + 2891336453u;
@@ -148,7 +219,7 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
             // It comes out of the tube already on a run, and on its OWN
             // clock: a wave that all flipped together would breathe in and
             // out as one animal rather than read as a thousand of them.
-            m.state.w = 0.9 + 2.6 * hash(i + 31u);
+            m.extra = vec4<f32>(1.0, PH_TRANSIT, 0.0, m.extra.w);
         }
         motes[i] = m;
         return;
@@ -156,19 +227,25 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     let me = m.pos_scale.xyz;
 
-    // Did anything reach it this tick? First one wins; a mote dies once.
-    var killed = false;
+    // Did anything reach it this tick? A mote is HURT now rather than simply
+    // removed: a hit takes a share off it, two kill, and one leaves it able to
+    // fly but not to fight.
+    var hp = m.extra.x;
+    var hit = false;
     for (var s: u32 = 0u; s < p.shots; s = s + 1u) {
         let a = p.shot[s * 2u];
         let b = p.shot[s * 2u + 1u];
-        if (capsule_hit(a.xyz, b.xyz, a.w, me)) { killed = true; break; }
+        if (capsule_hit(a.xyz, b.xyz, a.w, me)) { hit = true; break; }
     }
-    if (killed) {
-        // Its own colour, thrown out from where it was. The ring is claimed
-        // with one atomic for the whole burst rather than one each, so a
-        // mote's sparks stay together in the buffer and cannot interleave
-        // with another's half written ones.
-        let base = atomicAdd(&counter.gpu, SPARKS_PER_MOTE);
+    if (hit) {
+        hp = hp - SHOT_BITE;
+    }
+
+    if (hit && hp <= 0.0) {
+        // It comes APART. The ring is claimed with one atomic for the whole
+        // burst rather than one each, so a mote's pieces stay together in the
+        // buffer and cannot interleave with another's half written ones.
+        let base = atomicAdd(&counter.gpu, SPARKS_PER_MOTE + DEBRIS);
         for (var k: u32 = 0u; k < SPARKS_PER_MOTE; k = k + 1u) {
             let slot = p.spark_base + ((base + k) % p.spark_cap);
             let h = vec3<f32>(hash(base + k), hash(base + k + 101u), hash(base + k + 211u)) - 0.5;
@@ -185,8 +262,41 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
             sp.colour_seed = vec4<f32>(2.3 * hot, 0.55 * hot, 3.1 * hot, hash(base + k + 13u));
             sparks[slot] = sp;
         }
+        // And the DEBRIS: bigger, slower, longer lived and much dimmer than
+        // the burst, so what is left after the flash has gone is pieces of a
+        // mote tumbling away rather than nothing at all. They are the same
+        // particles as the flash and cost the same, which is the point: a mote
+        // that came apart into real meshes would be nine thousand entities the
+        // moment a volley landed.
+        for (var k: u32 = 0u; k < DEBRIS; k = k + 1u) {
+            let slot = p.spark_base + ((base + SPARKS_PER_MOTE + k) % p.spark_cap);
+            let g = base + SPARKS_PER_MOTE + k;
+            let h = vec3<f32>(hash(g + 17u), hash(g + 53u), hash(g + 97u)) - 0.5;
+            var sp: Spark;
+            sp.pos_life = vec4<f32>(me, 0.7 + 0.9 * hash(g + 5u));
+            sp.vel_size = vec4<f32>(m.vel_seed.xyz * 0.5 + h * (1.6 + 3.4 * hash(g + 3u)),
+                                    m.pos_scale.w * (0.22 + 0.30 * hash(g + 7u)));
+            // Barely over white: a chunk of shell is LIT by the scene, and the
+            // only tool here is an additive particle, so it is kept dim enough
+            // to read as matter instead of as another spark.
+            // Dim, and this is the line to watch. Additive particles stack:
+            // four a kill at two seconds each, over a swarm losing dozens a
+            // second, is a violet haze over the whole battle rather than
+            // pieces of anything. Bright debris is the mothership's green
+            // emissive by another route, so it is kept under a third.
+            let d = 0.16 + 0.16 * hash(g + 11u);
+            sp.colour_seed = vec4<f32>(0.55 * d, 0.30 * d, 0.78 * d, hash(g + 13u));
+            sparks[slot] = sp;
+        }
+        // And it leaves a HOLE the others fly round. A mote coming apart is a
+        // thing in the way for a moment, so the swarm opens where one died
+        // instead of closing straight over it.
+        let w = atomicAdd(&counter.wave, 1u) % WAVES;
+        waves[w].at = vec4<f32>(me, p.time);
+
         m.state.y = max(m.pos_scale.w, m.state.y);
         m.state.x = RESPAWN;
+        m.extra = vec4<f32>(1.0, PH_TRANSIT, 0.0, m.extra.w);
         m.pos_scale = vec4<f32>(me, 0.0);
         motes[i] = m;
         return;
@@ -207,73 +317,165 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     // It costs one hash and one select. The rest of the tick does not know
     // which it is, which is the point: a vein is not a second behaviour, it is
     // the same behaviour pointed at something else.
-    var focus = p.hull.xyz;
-    var focus_r = p.hull.w;
+    // ---- which ship this mote is on ----
+    //
+    // Seeded, so the division is stable: a mote does not change its mind every
+    // tick, and the same seed gives the same share of the cloud to each ship.
+    // Put two ships far apart and the swarm splits between them; bring them
+    // together and it converges. That is the whole game, and it is one line.
+    var tgt = p.hull;
+    var ring_seed = 7777u;
+    if (p.targets > 0u) {
+        let ti = sh % p.targets;
+        tgt = p.ship[ti];
+        // The ring's own axis is hashed off WHICH ship it is round, so every
+        // mote on that ship shares it and two ships do not ring the same way.
+        ring_seed = ti * 2654435761u;
+    }
+    var focus = tgt.xyz;
+    var focus_r = tgt.w;
+    // A mote going home aims at its own carrier instead.
+    if (m.extra.y == PH_RETURN && p.hives > 0u) {
+        let h = p.hive[u32(max(m.state.z, 0.0)) % p.hives];
+        focus = h.xyz;
+        focus_r = h.w;
+    }
     var vein = false;
     if (p.rocks > 0u && hash(sh + 907u) < VEIN_SHARE) {
-        let rk = p.rock[sh % p.rocks];
-        focus = rk.xyz;
-        focus_r = rk.w;
         vein = true;
+        // A ROUTE, not an orbit. The first cut gave a vein mote its own
+        // standoff round one rock and its own swirl axis, which is a sphere of
+        // orbits: the swarm came out as a solid BALL round every asteroid,
+        // because that is what a thousand orbits at every inclination is. An
+        // ant does not orbit, it follows a path that other ants are on.
+        //
+        // So a vein mote belongs to a route between two anchors and rides a
+        // point that slides along it. Every mote on the same route is on the
+        // same line, which is what makes a line of traffic rather than a
+        // shell, and the asteroid avoidance below bends the line round
+        // anything standing in it: a trail that weaves is a trail that met
+        // something.
+        let ra = sh % p.rocks;
+        let anchor_a = p.rock[ra];
+        var anchor_b = p.hull;
+        if (p.rocks > 1u && hash(sh + 1301u) > VEIN_TO_SHIP) {
+            let rb = (ra + 1u + (sh / 13u) % (p.rocks - 1u)) % p.rocks;
+            anchor_b = p.rock[rb];
+        }
+        var ab = anchor_b.xyz - anchor_a.xyz;
+        let span = max(length(ab), 1e-4);
+        let along = ab / span;
+        // Surface to surface, so a route starts off the rock it leaves rather
+        // than inside it.
+        let a0 = anchor_a.xyz + along * anchor_a.w * 1.14;
+        let b0 = anchor_b.xyz - along * anchor_b.w * 1.14;
+
+        // How far along it is. `state.w` is the run clock for everything else
+        // and a vein makes no runs, so it carries the route parameter here
+        // instead: one field, two meanings, and nothing reads the wrong one
+        // because `vein` is decided from the seed and never changes.
+        var s = fract(m.state.w + VEIN_RATE * p.dt * (0.65 + 0.7 * hash(sh + 71u)));
+        m.state.w = s;
+
+        // A TUBE rather than a line: a fixed offset per mote about the route,
+        // so the traffic has a cross section a few motes wide instead of every
+        // one of them trying to be at the same point.
+        var e1 = cross(along, vec3<f32>(0.0, 1.0, 0.0));
+        if (length(e1) < 1e-4) { e1 = cross(along, vec3<f32>(1.0, 0.0, 0.0)); }
+        e1 = e1 / max(length(e1), 1e-4);
+        let e2 = cross(along, e1);
+        let ph = hash(sh + 211u) * 6.2831853;
+        let tube = anchor_a.w * VEIN_TUBE * (0.25 + 0.75 * hash(sh + 313u));
+        focus = mix(a0, b0, s) + (e1 * cos(ph) + e2 * sin(ph)) * tube;
+        // It wants to BE there, not to stand off from it.
+        focus_r = 0.0;
     }
 
     let to_hull = focus - me;
     let dist = max(length(to_hull), 0.001);
     let dir = to_hull / dist;
 
-    // ---- the run clock ----
+    // ---- the leg it is on ----
     //
-    // A mote used to want ONE standoff for ever, and one standoff plus one
-    // swirl axis is a torus: the cloud settled into a donut round the ship
-    // and stayed there. A strike craft makes RUNS. The clock counts down the
-    // current leg and flips at the end of it, so a mote bores in to contact,
-    // breaks away well clear, and comes back round.
-    var leg = abs(m.state.w) - p.dt;
-    var inbound = m.state.w > 0.0;
-    if (leg <= 0.0) {
-        inbound = !inbound;
-        let r = hash(i * 2246822519u + p.tick);
-        // In is short and committed; the break is longer, because a pass
-        // that turned round the moment it arrived would never get clear
-        // enough for the next one to read as an approach.
-        if (inbound) { leg = 1.3 + 1.7 * r; } else { leg = 1.6 + 2.2 * r; }
+    // Cross from the carrier, join the RING round the ship it was given, leave
+    // the ring to make a pass, and go home to be put back together if the pass
+    // cost too much. Four legs, and which one a mote is on decides the one
+    // number the steering below actually reads: where it wants to be.
+    var phase = m.extra.y;
+    var timer = m.extra.z - p.dt;
+    let r = hash(i * 2246822519u + p.tick);
+    if (phase == PH_TRANSIT) {
+        // Arrived: near enough the ring to be part of it.
+        if (dist < focus_r * RING_R * 1.7) {
+            phase = PH_CIRCLE;
+            timer = 2.2 + 3.4 * r;
+        }
+    } else if (phase == PH_CIRCLE) {
+        if (timer <= 0.0) {
+            phase = PH_ATTACK;
+            timer = 1.3 + 1.7 * r;
+        }
+    } else if (phase == PH_ATTACK) {
+        if (timer <= 0.0) {
+            // Hurt enough and it goes home rather than round again. This is
+            // the only thing that ever sends a mote back to its carrier, and
+            // it is why a mote has hit points at all.
+            if (hp < RETURN_AT) {
+                phase = PH_RETURN;
+                timer = 0.0;
+            } else {
+                phase = PH_CIRCLE;
+                timer = 2.2 + 3.4 * r;
+            }
+        }
+    } else {
+        // Home. Docked, repaired, and out again.
+        if (dist < focus_r * 1.35) {
+            hp = 1.0;
+            phase = PH_TRANSIT;
+            timer = 0.0;
+        }
     }
-    m.state.w = select(-leg, leg, inbound);
+    m.extra = vec4<f32>(hp, phase, timer, m.extra.w);
 
-    // Where it wants to be on this leg. In, that is CONTACT, just off the
-    // plating, which is what puts the swarm on the ship instead of in a ring
-    // round it. Out, it is several lengths clear.
-    let press = focus_r * (0.86 + 0.26 * hash(sh));
-    let clear = focus_r * (3.0 + 3.6 * hash(sh + 3u));
-    var want = select(clear, press, inbound);
-    // A vein does not make runs. It HOLDS, close in, at its own radius, so
-    // the ribbon stays wound round the rock instead of breathing in and out
-    // of it.
-    if (vein) { want = focus_r * (1.16 + 0.34 * hash(sh + 71u)); }
+    // Where it wants to be, which is the whole of what the leg decides.
+    var want = focus_r * RING_R;
+    if (phase == PH_ATTACK) { want = focus_r * ATTACK_R; }
+    if (phase == PH_RETURN) { want = focus_r * 1.2; }
+    // A vein has no legs and no standoff: it rides its point.
+    if (vein) { want = 0.0; }
 
     // The pull is capped, or a fighter fifty units out would accelerate at
-    // fifty and arrive as a bullet. It is the CAP that makes the approach
-    // read as a flight rather than as a teleport.
+    // fifty and arrive as a bullet. It is the CAP that makes the approach read
+    // as a flight rather than as a teleport.
     var acc = dir * clamp(dist - want, -8.0, 8.0) * 1.6;
 
-    // ---- the swirl, about the mote's OWN axis ----
+    // ---- the ring ----
     //
-    // This is the other half of the donut, and the bigger half. The swirl
-    // used to be `cross(dir, up)` with one global up, so every mote in the
-    // swarm circulated about the same axis: a torus by construction, however
-    // the standoffs were spread. An axis per mote, from its own seed, gives
-    // orbits at every inclination, which is a sphere of traffic rather than
-    // a ring.
-    var ax = vec3<f32>(hash(sh + 11u), hash(sh + 23u), hash(sh + 41u)) - 0.5;
+    // The swirl axis belongs to the TARGET, not to the mote, and that is what
+    // makes a ring rather than a shell. An axis per mote gives orbits at every
+    // inclination, which is a sphere of traffic: fine for a cloud that is only
+    // milling about, and not a formation. One axis per ship means every mote
+    // circling that ship is going round the same way on the same plane.
+    var ax = vec3<f32>(hash(ring_seed + 11u), hash(ring_seed + 23u), hash(ring_seed + 41u)) - 0.5;
     ax = ax / max(length(ax), 1e-4);
     var swirl = cross(dir, ax);
     let sl = length(swirl);
     if (sl > 1e-4) { swirl = swirl / sl; } else { swirl = vec3<f32>(0.0, 1.0, 0.0); }
-    // Harder on the way in, so a pass CURVES across the hull rather than
-    // arriving down the radius like a dart.
-    // A vein runs FAST along its own orbit, which is what turns a set of
-    // circles into a stream somebody can see moving.
-    acc = acc + swirl * select(select(1.5, 3.6, inbound), 7.5, vein);
+    // Hard while circling, barely at all on the way in or home.
+    var spin = 1.0;
+    if (phase == PH_CIRCLE) { spin = 6.0; }
+    if (phase == PH_ATTACK) { spin = 2.2; }
+    if (vein) { spin = 0.0; }
+    acc = acc + swirl * spin;
+
+    // And pulled INTO the plane. Without this the standoff spreads the traffic
+    // over a sphere and there is no ring to see: this is the term that flattens
+    // it into one.
+    if (!vein && (phase == PH_CIRCLE || phase == PH_ATTACK)) {
+        let off_plane = dot(me - focus, ax);
+        acc = acc - ax * off_plane * RING_FLAT;
+    }
 
     // ---- the weave ----
     //
@@ -283,10 +485,10 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     // texture at the scale of a single craft.
     let wv = cross(dir, swirl);
     let rate = 1.6 + 3.4 * hash(sh + 57u);
-    acc = acc + wv * sin(p.time * rate + seed * 71.0) * select(2.8, 0.9, vein);
+    acc = acc + wv * sin(p.time * rate + seed * 71.0) * select(2.2, 0.6, vein);
 
     let jit = vec3<f32>(hash(i * 3u + u32(p.time * 7.0)), hash(i * 5u + u32(p.time * 5.0)), hash(i * 7u + u32(p.time * 3.0))) - 0.5;
-    acc = acc + jit * 1.5;
+    acc = acc + jit * select(1.5, 0.5, vein);
 
     // ---- the asteroid field ----
     //
@@ -307,13 +509,46 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
         let sdf = dr - rk.w;
         if (sdf < margin) {
             let nrm = off / dr;
-            let push = clamp((margin - sdf) / max(margin, 1e-4), 0.0, 2.0);
-            acc = acc + nrm * push * push * 38.0;
-            // And take the INTO component off what it already has, or a mote
-            // arriving fast carries its own momentum through the rock before
-            // the push can turn it.
-            let into = min(dot(m.vel_seed.xyz, nrm), 0.0);
-            acc = acc - nrm * into * 3.0;
+            // Steer AROUND, do not push away. A radial push outside the
+            // surface is a force with nothing to spend itself on: it balances
+            // against the pull toward the ship at some radius and every mote
+            // that arrives is held there, which builds a standing shell round
+            // the rock out of the traffic that was only meant to pass it. So
+            // outside the surface the only correction is to cancel the part of
+            // the velocity going INTO the rock and to keep the part going
+            // along it, which is a mote sliding past an obstacle.
+            let into = dot(m.vel_seed.xyz, nrm);
+            if (into < 0.0) {
+                acc = acc - nrm * into * 4.0;
+                var tang = m.vel_seed.xyz - nrm * into;
+                let tl = length(tang);
+                if (tl > 1e-4) { acc = acc + (tang / tl) * 9.0; }
+            }
+            // A real push only once it is actually INSIDE, where there is
+            // something to be pushed out of.
+            if (sdf < 0.0) { acc = acc + nrm * (-sdf) * 40.0; }
+        }
+    }
+
+    // ---- the shocks ----
+    //
+    // Every mote that died recently is a sphere to get out of, opening over
+    // its life and fading as it goes. Same shape as the rock field and the
+    // same gradient steering, so a swarm flying through its own dead reads as
+    // one flowing round obstacles rather than as one ignoring them.
+    for (var w: u32 = 0u; w < WAVES; w = w + 1u) {
+        let wv = waves[w].at;
+        let age = p.time - wv.w;
+        if (age < 0.0 || age > WAVE_LIFE) { continue; }
+        let off = me - wv.xyz;
+        let dr = max(length(off), 1e-4);
+        // Opens fast and stops, which is what a shock does, and is the same
+        // `sqrt` curve a blast's radius already uses.
+        let grow = sqrt(age / WAVE_LIFE);
+        let r = WAVE_R * grow * m.pos_scale.w;
+        if (dr < r) {
+            let fade = 1.0 - age / WAVE_LIFE;
+            acc = acc + (off / dr) * (1.0 - dr / r) * WAVE_PUSH * fade;
         }
     }
 
@@ -325,7 +560,7 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     // on screen that the cloud is the reason. Gated hard, because thousands
     // of motes are in contact at once and the ring is shared with everything
     // that dies.
-    if (!vein && inbound && dist < p.hull.w * 1.10 && hash(i * 40503u + p.tick) > BITE_CHANCE) {
+    if (!vein && phase == PH_ATTACK && dist < tgt.w * 1.10 && hash(i * 40503u + p.tick) > BITE_CHANCE) {
         let base = atomicAdd(&counter.gpu, BITE_SPARKS);
         for (var k: u32 = 0u; k < BITE_SPARKS; k = k + 1u) {
             let slot = p.spark_base + ((base + k) % p.spark_cap);
@@ -354,9 +589,23 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     acc = acc + sep * 0.15;
 
-    // Not through the hull. A sphere for now.
-    let inside = p.hull.w * 1.05 - dist;
-    if (inside > 0.0) { acc = acc - dir * inside * 40.0; }
+    // Not through the hull, and measured against the HULL rather than against
+    // whatever this mote's focus happens to be.
+    //
+    // This is where the balls came from. `dist` and `dir` are relative to the
+    // FOCUS, which for an attacking mote is the ship and for a vein mote is a
+    // point on its route: guarding a vein against its own route point pushed
+    // it out to a shell of the SHIP's radius round that point, at up to a
+    // hundred and forty against a pull of at most thirteen, so it could never
+    // get in. Every vein settled onto a sphere three and a half units across
+    // centred on wherever its route had reached, which is a ball, and the
+    // routes run between rocks, so the balls sat on the rocks. A guard that
+    // silently changed what it was guarding against the day the focus became
+    // a variable.
+    let to_ship = tgt.xyz - me;
+    let ship_d = max(length(to_ship), 1e-4);
+    let inside = tgt.w * 1.05 - ship_d;
+    if (inside > 0.0) { acc = acc - (to_ship / ship_d) * inside * 40.0; }
 
     var v = (m.vel_seed.xyz + acc * p.dt) * 0.985;
     let s = length(v);

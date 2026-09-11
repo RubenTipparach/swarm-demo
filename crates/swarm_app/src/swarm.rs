@@ -63,7 +63,14 @@ const WORKGROUP: u32 = 256;
 
 /// How many capsules the swarm may be told about in one tick. A beam and a
 /// blast are the same shape, so this is every shot in the air at once.
-pub const MAX_SHOTS: usize = 32;
+/// How many kill volumes the swarm is tested against at once.
+///
+/// Sixty four rather than thirty two, because a beam now lives a whole second
+/// instead of nine ticks. Seven ships with three guns each, every beam alive
+/// for sixty ticks, plus the flak already running at two dozen live bursts,
+/// went straight past thirty two, and what is past the cap is silently
+/// truncated: a beam that draws and kills nothing.
+pub const MAX_SHOTS: usize = 64;
 /// The app's half of the spark ring.
 pub const CPU_SPARKS: u32 = 24_576;
 /// The swarm's half.
@@ -84,9 +91,16 @@ pub struct SwarmConfig {
     pub count: u32,
     pub neighbours: u32,
     pub seed: u64,
-    /// The hull the swarm wants, as a sphere for now.
+    /// The FLAGSHIP, as a sphere. Still published, because a vein that ends at
+    /// "the ship" means the one the player is flying, and because the camera
+    /// and the formation want it.
     pub hull_centre: Vec3,
     pub hull_radius: f32,
+    /// Every live hull the swarm may attack: centre xyz, radius w. A mote
+    /// takes its index modulo the length, so a ship dying shortens the list
+    /// and its share of the cloud re-homes to whatever is left, which is the
+    /// same rule the carriers already keep and needs no code of its own.
+    pub targets: Vec<Vec4>,
     /// Where every LIVE mothership is (xyz) and how big it is (w). Compacted
     /// by the app each frame, so a hive that dies shortens the list and the
     /// motes that flew from it re-home to whatever is left.
@@ -114,6 +128,7 @@ impl Default for SwarmConfig {
             hull_centre: Vec3::ZERO,
             hull_radius: 3.5,
             hives: Vec::new(),
+            targets: Vec::new(),
             rocks: Vec::new(),
             launch_delay: 10.0,
             paused: false,
@@ -132,6 +147,28 @@ pub const MAX_HIVES: usize = 16;
 /// million motes, and a field that needs more than thirty two rocks in one
 /// place needs a grid rather than a longer list.
 pub const MAX_ROCKS: usize = 32;
+
+/// How many ships the swarm can be divided between.
+///
+/// The cloud used to chase ONE published centre, which is the wrong shape for
+/// this game: "position your ships to drive or divide the swarm" is the whole
+/// premise, and a single target makes dividing it impossible to express. Every
+/// live hull is a target now and a mote picks one from its own seed.
+pub const MAX_TARGETS: usize = 16;
+
+/// How many mote deaths are remembered as obstacles at once. Mirrored in
+/// `swarm.wgsl`, which is the one number both sides have to agree on: a ring
+/// sized differently on the two sides is a read past the end of the buffer.
+pub const WAVES: usize = 64;
+
+/// The longest step anything in the game may take in one frame, in seconds.
+///
+/// ONE number, read by the swarm's own clock and by every system on the CPU
+/// that integrates anything. A frame slower than this runs in slow motion,
+/// which is the right failure: the alternative is a frame that flings
+/// everything across the map, and the alternative to both is two systems
+/// disagreeing about how long the frame was.
+pub const STEP_CLAMP: f32 = 0.25;
 
 /// The capsules that kill this tick, rebuilt by the app every frame.
 ///
@@ -174,6 +211,17 @@ pub struct Mote {
     pub pos_scale: Vec4,
     pub vel_seed: Vec4,
     pub state: Vec4,
+    /// x: how much of it is left, one down to nought.
+    /// y: which leg of its life it is on, `PH_*` in the shader.
+    /// z: how long is left on that leg.
+    /// w: where it sits round its ship's ring, so a thousand of them space out
+    ///    instead of piling into one arc.
+    ///
+    /// A fourth vector rather than more sign tricks in the third. Sixteen more
+    /// bytes a mote is sixteen megabytes at a million, which is the price of a
+    /// mote that can be HURT rather than only alive or dead, and being hurt is
+    /// what sends one home.
+    pub extra: Vec4,
 }
 
 #[derive(Clone, Copy, Pod, Zeroable, ShaderType, Default)]
@@ -215,11 +263,12 @@ struct Params {
     spark_cap: u32,
     hives: u32,
     rocks: u32,
-    pad1: u32,
+    targets: u32,
     pad2: u32,
     shot: [Vec4; MAX_SHOTS * 2],
     hive: [Vec4; MAX_HIVES],
     rock: [Vec4; MAX_ROCKS],
+    ship: [Vec4; MAX_TARGETS],
 }
 
 /// Put this on an entity with a `Mesh3d` and that mesh is drawn once per mote.
@@ -314,7 +363,13 @@ fn advance_clock(time: Res<Time>, cfg: Res<SwarmConfig>, mut clock: ResMut<Swarm
     } else if cfg.fixed_dt {
         1.0 / 60.0
     } else {
-        time.delta_secs().min(1.0 / 20.0)
+        // The SAME clamp the CPU systems use. It was a twentieth here and a
+        // quarter there, so on any frame slower than fifty milliseconds the
+        // ship moved by the real elapsed time and the cloud chasing it moved
+        // by at most a twentieth of a second: the swarm fell behind the world
+        // by the difference, every slow frame, and never caught up. Two
+        // clamps is two clocks.
+        time.delta_secs().min(STEP_CLAMP)
     };
     clock.time += clock.dt;
     if !cfg.paused {
@@ -334,6 +389,7 @@ pub struct SwarmBuffers {
     pub motes: Buffer,
     pub sparks: Buffer,
     pub counter: Buffer,
+    pub waves: Buffer,
     pub count: u32,
     /// Where the app's next spark goes, in its own half of the ring.
     cpu_cursor: u32,
@@ -362,6 +418,9 @@ fn prepare_swarm_buffers(
     let mut rock = [Vec4::ZERO; MAX_ROCKS];
     let rocks = cfg.rocks.len().min(MAX_ROCKS);
     rock[..rocks].copy_from_slice(&cfg.rocks[..rocks]);
+    let mut ship = [Vec4::ZERO; MAX_TARGETS];
+    let targets = cfg.targets.len().min(MAX_TARGETS);
+    ship[..targets].copy_from_slice(&cfg.targets[..targets]);
     let params = Params {
         dt: clock.dt,
         time: clock.time,
@@ -374,11 +433,12 @@ fn prepare_swarm_buffers(
         spark_cap: GPU_SPARKS,
         hives: hives as u32,
         rocks: rocks as u32,
-        pad1: 0,
+        targets: targets as u32,
         pad2: 0,
         shot,
         hive,
         rock,
+        ship,
     };
 
     let write_sparks = |buffer: &Buffer, cursor: &mut u32| {
@@ -433,6 +493,8 @@ fn prepare_swarm_buffers(
                 // never exactly nought, which the shader reads as "already
                 // out".
                 state: Vec4::new(cfg.launch_delay + 0.02 + rng.range(0.0, 8.0), scale, hive, 0.0),
+                // Whole, in transit, and its own place round the ring.
+                extra: Vec4::new(1.0, 0.0, 0.0, rng.range(0.0, std::f32::consts::TAU)),
             }
         })
         .collect();
@@ -451,11 +513,19 @@ fn prepare_swarm_buffers(
         contents: bytemuck::cast_slice(&[0u32; 4]),
         usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
     });
+    let waves = device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("death shocks"),
+        // Four floats a slot: where it went off and when. Zeroed, and a zero
+        // time reads as "went off at the start of the run", which is behind
+        // every wave's life by the first frame anybody looks.
+        contents: bytemuck::cast_slice(&vec![0.0f32; WAVES * 4]),
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+    });
     let mut params_buf = UniformBuffer::from(params);
     params_buf.write_buffer(&device, &render_queue);
     let mut cursor = 0;
     write_sparks(&sparks, &mut cursor);
-    commands.insert_resource(SwarmBuffers { motes, sparks, counter, count: cfg.count, cpu_cursor: cursor, params: params_buf });
+    commands.insert_resource(SwarmBuffers { motes, sparks, counter, waves, count: cfg.count, cpu_cursor: cursor, params: params_buf });
 }
 
 // ------------------------------------------------------------- compute --
@@ -478,6 +548,9 @@ fn init_tick_pipeline(mut commands: Commands, assets: Res<AssetServer>, cache: R
                 uniform_buffer::<Params>(false),
                 storage_buffer::<Vec<GpuSpark>>(false),
                 storage_buffer_sized(false, std::num::NonZeroU64::new(16)),
+                // The shock ring: where motes that came apart are, so the ones
+                // still flying can get out of the way.
+                storage_buffer_sized(false, std::num::NonZeroU64::new(WAVES as u64 * 16)),
             ),
         ),
     );
@@ -525,6 +598,7 @@ fn prepare_tick_bind_group(
             &b.params,
             b.sparks.as_entire_binding(),
             b.counter.as_entire_binding(),
+            b.waves.as_entire_binding(),
         )),
     );
     let particles = device.create_bind_group(
@@ -736,7 +810,16 @@ macro_rules! instanced_pipeline {
 
 // A mote is an opaque body drawn through the sorted phase: it must write depth
 // or the near ones do not cover the far ones.
-instanced_pipeline!(MotePipeline, MOTE_SHADER, Mote, Vec::<VertexAttribute>::new(), true, false);
+instanced_pipeline!(
+    MotePipeline,
+    MOTE_SHADER,
+    Mote,
+    // Location 10 carries the life: the shader needs how hurt a mote is to
+    // draw it hurt, and 48 is where `extra` sits in the struct.
+    vec![VertexAttribute { format: VertexFormat::Float32x4, offset: 48, shader_location: 10 }],
+    true,
+    false
+);
 // A spark is light. It must NOT write depth, or every spark in a burst
 // occludes the ones behind it and the burst comes out as a shell.
 instanced_pipeline!(
