@@ -45,11 +45,15 @@ pub(crate) fn aim_turrets(
 ) {
     let dt = scene.step(&time);
     for (t, parent, mut xf) in &mut turrets {
-        let Ok((hull, ship)) = hulls.get(parent.parent()) else { continue };
+        let Ok((hull, ship)) = hulls.get(parent.parent()) else {
+            continue;
+        };
         if hull.dead_hull {
             continue;
         }
-        let Some(gun) = hull.guns.get(t.slot) else { continue };
+        let Some(gun) = hull.guns.get(t.slot) else {
+            continue;
+        };
         let radius = hull.model.radius();
         let muzzle = ship.transform_point(Vec3::from(gun.at));
 
@@ -74,7 +78,9 @@ pub(crate) fn aim_turrets(
         let want_local = (ship.rotation.inverse() * want_world).normalize_or(t.rest);
         // Negated for the reason every hull here is negated: Bevy's forward is
         // minus Z and a barrel points along plus Z.
-        let goal = Transform::IDENTITY.looking_to(-want_local, Vec3::Y).rotation;
+        let goal = Transform::IDENTITY
+            .looking_to(-want_local, Vec3::Y)
+            .rotation;
         xf.rotation = xf.rotation.slerp(goal, (dt * TURRET_SLEW).min(1.0));
     }
 }

@@ -48,13 +48,25 @@ impl SkyPreset {
     /// `space_mission_4`: green over near black purple, the archived
     /// Skirmish scene's own sky.
     pub fn skirmish() -> Self {
-        SkyPreset { a: srgb_hex(0x00714b), b: srgb_hex(0x0a0616), seed: [0.0, 0.0, 0.0] }
+        SkyPreset {
+            a: srgb_hex(0x00714b),
+            b: srgb_hex(0x0a0616),
+            seed: [0.0, 0.0, 0.0],
+        }
     }
     pub fn duel() -> Self {
-        SkyPreset { a: srgb_hex(0x1d4d86), b: srgb_hex(0x05070f), seed: [11.3, 4.1, 27.7] }
+        SkyPreset {
+            a: srgb_hex(0x1d4d86),
+            b: srgb_hex(0x05070f),
+            seed: [11.3, 4.1, 27.7],
+        }
     }
     pub fn binary() -> Self {
-        SkyPreset { a: srgb_hex(0x7a3560), b: srgb_hex(0x0b0512), seed: [17.5, 28.3, 2.2] }
+        SkyPreset {
+            a: srgb_hex(0x7a3560),
+            b: srgb_hex(0x0b0512),
+            seed: [17.5, 28.3, 2.2],
+        }
     }
 }
 
@@ -80,7 +92,11 @@ fn fract(x: f32) -> f32 {
 
 /// `hash13` from the shader: no `sin`, so it is the same on every machine.
 fn hash13(p: [f32; 3]) -> f32 {
-    let mut p = [fract(p[0] * 0.1031), fract(p[1] * 0.1031), fract(p[2] * 0.1031)];
+    let mut p = [
+        fract(p[0] * 0.1031),
+        fract(p[1] * 0.1031),
+        fract(p[2] * 0.1031),
+    ];
     let d = p[0] * (p[1] + 33.33) + p[1] * (p[2] + 33.33) + p[2] * (p[0] + 33.33);
     p[0] += d;
     p[1] += d;
@@ -97,7 +113,11 @@ fn mix(a: f32, b: f32, t: f32) -> f32 {
 fn noise3(p: [f32; 3]) -> f32 {
     let i = [p[0].floor(), p[1].floor(), p[2].floor()];
     let f = [p[0] - i[0], p[1] - i[1], p[2] - i[2]];
-    let f = [f[0] * f[0] * (3.0 - 2.0 * f[0]), f[1] * f[1] * (3.0 - 2.0 * f[1]), f[2] * f[2] * (3.0 - 2.0 * f[2])];
+    let f = [
+        f[0] * f[0] * (3.0 - 2.0 * f[0]),
+        f[1] * f[1] * (3.0 - 2.0 * f[1]),
+        f[2] * f[2] * (3.0 - 2.0 * f[2]),
+    ];
     let h = |dx: f32, dy: f32, dz: f32| hash13([i[0] + dx, i[1] + dy, i[2] + dz]);
     let n00 = mix(h(0.0, 0.0, 0.0), h(1.0, 0.0, 0.0), f[0]);
     let n10 = mix(h(0.0, 1.0, 0.0), h(1.0, 1.0, 0.0), f[0]);
@@ -134,11 +154,22 @@ fn remap(v: f32, i: [f32; 2], o: [f32; 2]) -> f32 {
 
 /// The sky in one direction, linear RGB. The shader's `main`, minus the stars.
 pub fn sky_at(preset: &SkyPreset, dir: [f32; 3]) -> [f32; 3] {
-    let len = (dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]).sqrt().max(1e-6);
+    let len = (dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2])
+        .sqrt()
+        .max(1e-6);
     let d = [dir[0] / len, dir[1] / len, dir[2] / len];
-    let p = [d[0] + preset.seed[0], d[1] + preset.seed[1], d[2] + preset.seed[2]];
+    let p = [
+        d[0] + preset.seed[0],
+        d[1] + preset.seed[1],
+        d[2] + preset.seed[2],
+    ];
     let t1 = turb(p, OCT_1, FREQ_1, AMP_1);
-    let t2 = turb([p[0] + 17.0, p[1] + 17.0, p[2] + 17.0], OCT_2, FREQ_2, AMP_2);
+    let t2 = turb(
+        [p[0] + 17.0, p[1] + 17.0, p[2] + 17.0],
+        OCT_2,
+        FREQ_2,
+        AMP_2,
+    );
     let mask = smoothstep(HIGH - FUZZ * 0.5, HIGH + FUZZ * 0.5, t1 * 0.65 + t2 * 0.35);
     let density = remap(t1 * 1.4 + t2 * 0.8, REMAP_IN, REMAP_OUT);
     let gas = (mask * density).clamp(0.0, 1.0) * NEB_GAIN;
@@ -201,7 +232,11 @@ pub fn to_half(x: f32) -> u16 {
         let half = m >> shift;
         let rem = m & ((1 << shift) - 1);
         let mid = 1 << (shift - 1);
-        let round = if rem > mid || (rem == mid && (half & 1) == 1) { 1 } else { 0 };
+        let round = if rem > mid || (rem == mid && (half & 1) == 1) {
+            1
+        } else {
+            0
+        };
         return sign | (half + round) as u16;
     }
     let mut half = ((e as u32) << 10) | (mant >> 13);
@@ -253,9 +288,17 @@ pub fn starfield(preset: &SkyPreset) -> Vec<Star> {
                 if !(lo..=hi).contains(&len) {
                     continue;
                 }
-                let b = hash33(i as f32 * 3.1 + 5.0, j as f32 * 3.1 + 5.0, k as f32 * 3.1 + 5.0)[0];
+                let b = hash33(
+                    i as f32 * 3.1 + 5.0,
+                    j as f32 * 3.1 + 5.0,
+                    k as f32 * 3.1 + 5.0,
+                )[0];
                 let bright = b.powi(7);
-                let c = hash33(i as f32 * 1.7 + 9.0, j as f32 * 1.7 + 9.0, k as f32 * 1.7 + 9.0)[0];
+                let c = hash33(
+                    i as f32 * 1.7 + 9.0,
+                    j as f32 * 1.7 + 9.0,
+                    k as f32 * 1.7 + 9.0,
+                )[0];
                 let warm = 0.45 + 0.55 * bright;
                 out.push(Star {
                     dir: [fx / len, fy / len, fz / len],
@@ -288,7 +331,11 @@ mod tests {
                 for x in 0..32 {
                     let d = cube_dir(face, (x as f32 + 0.5) / 32.0, (y as f32 + 0.5) / 32.0);
                     let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-                    let p = [d[0] / l + preset.seed[0], d[1] / l + preset.seed[1], d[2] / l + preset.seed[2]];
+                    let p = [
+                        d[0] / l + preset.seed[0],
+                        d[1] / l + preset.seed[1],
+                        d[2] / l + preset.seed[2],
+                    ];
                     v.push(turb(p, OCT_1, FREQ_1, AMP_1));
                 }
             }
@@ -308,7 +355,10 @@ mod tests {
         for face in 0..6 {
             for y in 0..24 {
                 for x in 0..24 {
-                    let c = sky_at(&preset, cube_dir(face, (x as f32 + 0.5) / 24.0, (y as f32 + 0.5) / 24.0));
+                    let c = sky_at(
+                        &preset,
+                        cube_dir(face, (x as f32 + 0.5) / 24.0, (y as f32 + 0.5) / 24.0),
+                    );
                     n += 1;
                     if c[1] > preset.b[1] + 0.02 {
                         lit += 1;
@@ -347,12 +397,19 @@ mod tests {
             } else {
                 (1.0 + m as f32 / 1024.0) * 2f32.powi(e - 15)
             };
-            if s == 1 { -v } else { v }
+            if s == 1 {
+                -v
+            } else {
+                v
+            }
         };
         for &x in &[0.0f32, 1.0, 0.5, 0.0123, 0.00012, 1.5, 65504.0, -2.0, 0.333] {
             let h = to_half(x);
             let r = back(h);
-            assert!((r - x).abs() <= x.abs() * 1e-3 + 1e-7, "{x} -> {h:#x} -> {r}");
+            assert!(
+                (r - x).abs() <= x.abs() * 1e-3 + 1e-7,
+                "{x} -> {h:#x} -> {r}"
+            );
         }
         assert_eq!(to_half(1.0), 0x3C00);
         assert_eq!(to_half(f32::INFINITY), 0x7C00);
@@ -374,7 +431,15 @@ mod tests {
             assert!(s.size >= 1.0 && s.size <= 3.6);
         }
         let bright = a.iter().filter(|s| s.size > 2.5).count();
-        assert!(bright > 10 && bright < a.len() / 10, "{bright} bright of {}", a.len());
-        assert_ne!(starfield(&SkyPreset::duel()), a, "a seed reshapes the field");
+        assert!(
+            bright > 10 && bright < a.len() / 10,
+            "{bright} bright of {}",
+            a.len()
+        );
+        assert_ne!(
+            starfield(&SkyPreset::duel()),
+            a,
+            "a seed reshapes the field"
+        );
     }
 }

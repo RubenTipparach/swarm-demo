@@ -47,11 +47,16 @@ pub(crate) fn select_input(
     mut mode: ResMut<OrderMode>,
     mut marquee: ResMut<Marquee>,
     mut commands: Commands,
-    ships: Query<(Entity, &Transform, Option<&Hull>, Option<&Fighter>), Or<(With<Hull>, With<Fighter>)>>,
+    ships: Query<
+        (Entity, &Transform, Option<&Hull>, Option<&Fighter>),
+        Or<(With<Hull>, With<Fighter>)>,
+    >,
     hives: Query<(), With<Hive>>,
 ) {
     let Ok(window) = windows.single() else { return };
-    let Ok((cam, cam_xf)) = cams.single() else { return };
+    let Ok((cam, cam_xf)) = cams.single() else {
+        return;
+    };
     let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
 
     match *mode {
@@ -65,7 +70,9 @@ pub(crate) fn select_input(
             if !buttons.just_pressed(MouseButton::Left) {
                 return;
             }
-            let Some(cursor) = window.cursor_position() else { return };
+            let Some(cursor) = window.cursor_position() else {
+                return;
+            };
             marquee.from = cursor;
             marquee.to = cursor;
             *mode = OrderMode::Box;
@@ -111,7 +118,9 @@ pub(crate) fn select_input(
         if hull.map(|h| h.dead_hull).unwrap_or(false) {
             continue;
         }
-        let Ok(p) = cam.world_to_viewport(cam_xf, xf.translation) else { continue };
+        let Ok(p) = cam.world_to_viewport(cam_xf, xf.translation) else {
+            continue;
+        };
         if click {
             let d = p.distance(to);
             if d < PICK_PX && best.map_or(true, |(bd, _)| d < bd) {

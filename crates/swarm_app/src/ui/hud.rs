@@ -37,7 +37,12 @@ pub(crate) struct Hud {
 
 impl Default for Hud {
     fn default() -> Self {
-        Hud { show_fps: true, show_bars: true, paused: false, fps: 0.0 }
+        Hud {
+            show_fps: true,
+            show_bars: true,
+            paused: false,
+            fps: 0.0,
+        }
     }
 }
 
@@ -82,10 +87,20 @@ pub(crate) fn tick_fps(
     if dt > 0.0 {
         let now = 1.0 / dt;
         let k = 1.0 - (-dt / FPS_SMOOTH).exp();
-        hud.fps = if hud.fps <= 0.0 { now } else { hud.fps + (now - hud.fps) * k };
+        hud.fps = if hud.fps <= 0.0 {
+            now
+        } else {
+            hud.fps + (now - hud.fps) * k
+        };
     }
-    let Ok((mut t, mut n)) = text.single_mut() else { return };
-    n.display = if hud.show_fps { Display::Flex } else { Display::None };
+    let Ok((mut t, mut n)) = text.single_mut() else {
+        return;
+    };
+    n.display = if hud.show_fps {
+        Display::Flex
+    } else {
+        Display::None
+    };
     if !hud.show_fps {
         return;
     }
@@ -155,11 +170,19 @@ pub(crate) fn pick_hull(
 ) {
     if opener.iter().any(|i| *i == Interaction::Pressed) {
         for mut n in &mut menu {
-            n.display = if n.display == Display::None { Display::Flex } else { Display::None };
+            n.display = if n.display == Display::None {
+                Display::Flex
+            } else {
+                Display::None
+            };
         }
     }
-    let Some((_, pick)) = picks.iter().find(|(i, _)| **i == Interaction::Pressed) else { return };
-    let Some(&which) = PICKABLE.get(pick.0) else { return };
+    let Some((_, pick)) = picks.iter().find(|(i, _)| **i == Interaction::Pressed) else {
+        return;
+    };
+    let Some(&which) = PICKABLE.get(pick.0) else {
+        return;
+    };
     for mut n in &mut menu {
         n.display = Display::None;
     }
@@ -217,14 +240,20 @@ pub(crate) fn build_hud(mut commands: Commands) {
             .with_children(|b| {
                 b.spawn((
                     Text::new("Call reinforcements  (R)"),
-                    TextFont { font_size: 15.0, ..default() },
+                    TextFont {
+                        font_size: 15.0,
+                        ..default()
+                    },
                     TextColor(Color::srgb(0.80, 0.94, 1.0)),
                     Pickable::IGNORE,
                 ));
             });
             p.spawn((
                 Text::new(""),
-                TextFont { font_size: 12.0, ..default() },
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
                 TextColor(Color::srgba(0.70, 0.82, 0.92, 0.85)),
                 CallLabel,
                 Pickable::IGNORE,
@@ -239,7 +268,10 @@ pub(crate) fn build_hud(mut commands: Commands) {
                     "right button opens the move disc, left click confirms, esc cancels\n",
                     "shift lifts the target off the plane   space pauses   esc opens the menu",
                 )),
-                TextFont { font_size: 12.0, ..default() },
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
                 TextColor(Color::srgba(0.62, 0.74, 0.86, 0.72)),
                 Pickable::IGNORE,
             ));
@@ -247,14 +279,20 @@ pub(crate) fn build_hud(mut commands: Commands) {
             // the acknowledgement of the last order, which fades.
             p.spawn((
                 Text::new(""),
-                TextFont { font_size: 13.0, ..default() },
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
                 TextColor(Color::srgba(0.55, 0.92, 0.95, 0.95)),
                 ModeText,
                 Pickable::IGNORE,
             ));
             p.spawn((
                 Text::new(""),
-                TextFont { font_size: 14.0, ..default() },
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
                 TextColor(Color::srgba(1.0, 0.86, 0.45, 0.0)),
                 AckText,
                 Pickable::IGNORE,
@@ -263,9 +301,16 @@ pub(crate) fn build_hud(mut commands: Commands) {
 
     // The distance beside a lifted target. Placed by `hud_orders`.
     commands.spawn((
-        Node { position_type: PositionType::Absolute, display: Display::None, ..default() },
+        Node {
+            position_type: PositionType::Absolute,
+            display: Display::None,
+            ..default()
+        },
         Text::new(""),
-        TextFont { font_size: 13.0, ..default() },
+        TextFont {
+            font_size: 13.0,
+            ..default()
+        },
         TextColor(Color::srgb(1.0, 0.40, 0.34)),
         DistLabel,
         Pickable::IGNORE,
@@ -273,7 +318,12 @@ pub(crate) fn build_hud(mut commands: Commands) {
 
     // The band box. One node, moved and resized in screen pixels.
     commands.spawn((
-        Node { position_type: PositionType::Absolute, display: Display::None, border: UiRect::all(Val::Px(1.0)), ..default() },
+        Node {
+            position_type: PositionType::Absolute,
+            display: Display::None,
+            border: UiRect::all(Val::Px(1.0)),
+            ..default()
+        },
         BorderColor::all(Color::srgba(0.50, 0.95, 1.0, 0.90)),
         BackgroundColor(Color::srgba(0.30, 0.75, 1.0, 0.10)),
         MarqueeBox,
@@ -296,7 +346,11 @@ pub(crate) fn build_hud(mut commands: Commands) {
         .with_children(|p| {
             p.spawn((
                 Button,
-                Node { padding: UiRect::axes(Val::Px(12.0), Val::Px(7.0)), border: UiRect::all(Val::Px(1.0)), ..default() },
+                Node {
+                    padding: UiRect::axes(Val::Px(12.0), Val::Px(7.0)),
+                    border: UiRect::all(Val::Px(1.0)),
+                    ..default()
+                },
                 BorderColor::all(Color::srgba(0.45, 0.85, 1.0, 0.55)),
                 BackgroundColor(Color::srgba(0.04, 0.10, 0.16, 0.85)),
                 HullButton,
@@ -307,20 +361,31 @@ pub(crate) fn build_hud(mut commands: Commands) {
                     // glyph draws as a hollow box, which reads as a bug in the
                     // button rather than as a caret.
                     Text::new("Ship  v"),
-                    TextFont { font_size: 14.0, ..default() },
+                    TextFont {
+                        font_size: 14.0,
+                        ..default()
+                    },
                     TextColor(Color::srgb(0.80, 0.94, 1.0)),
                     Pickable::IGNORE,
                 ));
             });
             p.spawn((
-                Node { flex_direction: FlexDirection::Column, display: Display::None, ..default() },
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    display: Display::None,
+                    ..default()
+                },
                 HullMenu,
             ))
             .with_children(|list| {
                 for (n, name) in PICKABLE.iter().enumerate() {
                     list.spawn((
                         Button,
-                        Node { padding: UiRect::axes(Val::Px(12.0), Val::Px(5.0)), border: UiRect::all(Val::Px(1.0)), ..default() },
+                        Node {
+                            padding: UiRect::axes(Val::Px(12.0), Val::Px(5.0)),
+                            border: UiRect::all(Val::Px(1.0)),
+                            ..default()
+                        },
                         BorderColor::all(Color::srgba(0.45, 0.85, 1.0, 0.25)),
                         BackgroundColor(Color::srgba(0.03, 0.08, 0.13, 0.95)),
                         HullPick(n),
@@ -328,7 +393,10 @@ pub(crate) fn build_hud(mut commands: Commands) {
                     .with_children(|t| {
                         t.spawn((
                             Text::new(name.replace('_', " ")),
-                            TextFont { font_size: 13.0, ..default() },
+                            TextFont {
+                                font_size: 13.0,
+                                ..default()
+                            },
                             TextColor(Color::srgb(0.78, 0.90, 1.0)),
                             Pickable::IGNORE,
                         ));
@@ -347,7 +415,10 @@ pub(crate) fn build_hud(mut commands: Commands) {
             ..default()
         },
         Text::new(""),
-        TextFont { font_size: 14.0, ..default() },
+        TextFont {
+            font_size: 14.0,
+            ..default()
+        },
         TextColor(Color::srgba(0.72, 0.86, 0.98, 0.80)),
         FpsText,
         Pickable::IGNORE,
@@ -391,13 +462,18 @@ pub(crate) fn build_hud(mut commands: Commands) {
             .with_children(|c| {
                 c.spawn((
                     Text::new("Paused"),
-                    TextFont { font_size: 22.0, ..default() },
+                    TextFont {
+                        font_size: 22.0,
+                        ..default()
+                    },
                     TextColor(Color::srgb(0.86, 0.95, 1.0)),
                     Pickable::IGNORE,
                 ));
-                for (marker, label) in
-                    [("fps", "FPS counter: on"), ("bars", "Health bars: on"), ("resume", "Resume  (esc)")]
-                {
+                for (marker, label) in [
+                    ("fps", "FPS counter: on"),
+                    ("bars", "Health bars: on"),
+                    ("resume", "Resume  (esc)"),
+                ] {
                     let mut b = c.spawn((
                         Button,
                         Node {
@@ -418,7 +494,10 @@ pub(crate) fn build_hud(mut commands: Commands) {
                     b.with_children(|t| {
                         t.spawn((
                             Text::new(label),
-                            TextFont { font_size: 15.0, ..default() },
+                            TextFont {
+                                font_size: 15.0,
+                                ..default()
+                            },
                             TextColor(Color::srgb(0.80, 0.94, 1.0)),
                             Pickable::IGNORE,
                         ));
@@ -442,7 +521,11 @@ pub(crate) fn hud_feedback(
 ) {
     if bars_toggled.iter().any(|i| *i == Interaction::Pressed) {
         hud.show_bars = !hud.show_bars;
-        let want = if hud.show_bars { "Health bars: on" } else { "Health bars: off" };
+        let want = if hud.show_bars {
+            "Health bars: on"
+        } else {
+            "Health bars: off"
+        };
         for kids in &bars_text {
             for k in kids.iter() {
                 if let Ok(mut t) = texts.get_mut(k) {
@@ -457,7 +540,11 @@ pub(crate) fn hud_feedback(
         // what the counter is doing now. A toggle whose label never changes is
         // a control nobody can read the state of, which is the rail rule
         // redux-tribes keeps.
-        let want = if hud.show_fps { "FPS counter: on" } else { "FPS counter: off" };
+        let want = if hud.show_fps {
+            "FPS counter: on"
+        } else {
+            "FPS counter: off"
+        };
         for kids in &toggle_text {
             for k in kids.iter() {
                 if let Ok(mut t) = texts.get_mut(k) {
@@ -512,7 +599,10 @@ pub(crate) fn hud_orders(
     ack: Res<Ack>,
     cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut mode_text: Query<&mut Text, (With<ModeText>, Without<AckText>, Without<DistLabel>)>,
-    mut ack_text: Query<(&mut Text, &mut TextColor), (With<AckText>, Without<ModeText>, Without<DistLabel>)>,
+    mut ack_text: Query<
+        (&mut Text, &mut TextColor),
+        (With<AckText>, Without<ModeText>, Without<DistLabel>),
+    >,
     mut dist: Query<(&mut Node, &mut Text), (With<DistLabel>, Without<ModeText>, Without<AckText>)>,
 ) {
     if let Ok(mut t) = mode_text.single_mut() {
@@ -531,10 +621,18 @@ pub(crate) fn hud_orders(
         }
         c.0 = Color::srgba(1.0, 0.86, 0.45, (ack.left / ACK_LIFE).clamp(0.0, 1.0));
     }
-    let Ok((mut node, mut text)) = dist.single_mut() else { return };
-    let Ok((cam, cam_xf)) = cams.single() else { return };
+    let Ok((mut node, mut text)) = dist.single_mut() else {
+        return;
+    };
+    let Ok((cam, cam_xf)) = cams.single() else {
+        return;
+    };
     let shown = *mode == OrderMode::Move && order.lifted();
-    let at = if shown { cam.world_to_viewport(cam_xf, order.target()).ok() } else { None };
+    let at = if shown {
+        cam.world_to_viewport(cam_xf, order.target()).ok()
+    } else {
+        None
+    };
     match at {
         Some(p) => {
             node.display = Display::Flex;

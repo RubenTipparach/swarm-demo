@@ -109,7 +109,12 @@ pub(crate) fn launch_fighters(
     // One mesh per surface, made once, shared by every fighter.
     let parts: Vec<(Handle<Mesh>, Handle<StandardMaterial>)> = (0..SURF_COUNT)
         .filter(|&surf| sm.skin.get(surf).map(|x| x.quads()).unwrap_or(0) > 0)
-        .map(|surf| (meshes.add(to_mesh_where(&sm, |i| i == surf)), mats[surf].clone()))
+        .map(|surf| {
+            (
+                meshes.add(to_mesh_where(&sm, |i| i == surf)),
+                mats[surf].clone(),
+            )
+        })
         .collect();
 
     for n in out..(out + want).min(scene.fighters) {
@@ -122,15 +127,28 @@ pub(crate) fn launch_fighters(
             .spawn((
                 Transform::from_translation(at).with_scale(Vec3::splat(scale)),
                 Visibility::default(),
-                Fighter { slot: n, hp: 1.0, vel: Vec3::ZERO, goal: at },
+                Fighter {
+                    slot: n,
+                    hp: 1.0,
+                    vel: Vec3::ZERO,
+                    goal: at,
+                },
             ))
             .id();
         for (mesh, mat) in &parts {
-            commands.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::IDENTITY, ChildOf(f)));
+            commands.spawn((
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(mat.clone()),
+                Transform::IDENTITY,
+                ChildOf(f),
+            ));
         }
     }
     if out == 0 {
-        info!("squadron up: {} of {} on {}", want, scene.fighters, FIGHTERS_HULL);
+        info!(
+            "squadron up: {} of {} on {}",
+            want, scene.fighters, FIGHTERS_HULL
+        );
     }
 }
 
@@ -161,7 +179,9 @@ pub(crate) fn fly_fighters(
             // and the tick rather than rolled, so a re-watch flies the same
             // circuit. Spread round the ship rather than randomly placed, or
             // twelve fighters converge on one patch and leave the rest open.
-            let h = |k: u32| swarm_core::rng::hash_cell(f.slot * 7919 + tick.tick + k) as f32 / u32::MAX as f32;
+            let h = |k: u32| {
+                swarm_core::rng::hash_cell(f.slot * 7919 + tick.tick + k) as f32 / u32::MAX as f32
+            };
             let a = (f.slot as f32 * 2.399_963_2) + h(1) * 2.2;
             let y = h(2) * 1.6 - 0.8;
             let r = (1.0 - y * y).max(0.05).sqrt();
@@ -170,7 +190,11 @@ pub(crate) fn fly_fighters(
         let want = (f.goal - xf.translation).normalize_or(Vec3::Z) * radius * FIGHTER_SPEED;
         let dv = want - f.vel;
         let step = radius * FIGHTER_SPEED * 1.4 * dt;
-        f.vel += if dv.length() > step { dv.normalize() * step } else { dv };
+        f.vel += if dv.length() > step {
+            dv.normalize() * step
+        } else {
+            dv
+        };
         xf.translation += f.vel * dt;
         if f.vel.length() > 1e-3 {
             // Negated for the reason every hull here is negated: Bevy's
@@ -224,7 +248,13 @@ pub(crate) fn wear_fighters(
         // Gone, and it goes the way everything else here goes: its own burst,
         // in the colours of the side it was on.
         let mut out: Vec<Spark> = Vec::new();
-        blast_sparks(f.slot.wrapping_mul(7919) ^ tick.tick, xf.translation.to_array(), 0.9, 40, &mut out);
+        blast_sparks(
+            f.slot.wrapping_mul(7919) ^ tick.tick,
+            xf.translation.to_array(),
+            0.9,
+            40,
+            &mut out,
+        );
         sparks.extend(out);
         commands.entity(e).despawn();
     }
@@ -258,9 +288,19 @@ pub(crate) fn fighters_fire(
         let nose = xf.rotation * Vec3::Z;
         let at = xf.translation + nose * radius * 0.3;
         let burst = radius * FIGHTER_BURST;
-        fx.blasts.push(Blast { at: at.to_array(), radius: burst, born: tick.tick });
+        fx.blasts.push(Blast {
+            at: at.to_array(),
+            radius: burst,
+            born: tick.tick,
+        });
         let mut out: Vec<Spark> = Vec::new();
-        muzzle_sparks(f.slot * 977 ^ tick.tick, at.to_array(), nose.to_array(), radius * 0.05, &mut out);
+        muzzle_sparks(
+            f.slot * 977 ^ tick.tick,
+            at.to_array(),
+            nose.to_array(),
+            radius * 0.05,
+            &mut out,
+        );
         sparks.extend(out);
     }
 }

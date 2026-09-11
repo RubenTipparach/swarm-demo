@@ -39,7 +39,11 @@ pub(crate) struct Hive {
 }
 
 /// Carriers drift across the line to the ship, and turn as they go.
-pub(crate) fn move_hives(time: Res<Time>, scene: Res<SceneSpec>, mut hives: Query<(&Hive, &mut Transform)>) {
+pub(crate) fn move_hives(
+    time: Res<Time>,
+    scene: Res<SceneSpec>,
+    mut hives: Query<(&Hive, &mut Transform)>,
+) {
     let dt = scene.step(&time);
     for (h, mut xf) in &mut hives {
         xf.translation += h.vel * dt;
@@ -47,7 +51,10 @@ pub(crate) fn move_hives(time: Res<Time>, scene: Res<SceneSpec>, mut hives: Quer
     }
 }
 
-pub(crate) fn publish_hives(hives: Query<(&Hive, &Transform, &Hull)>, mut cfg: ResMut<SwarmConfig>) {
+pub(crate) fn publish_hives(
+    hives: Query<(&Hive, &Transform, &Hull)>,
+    mut cfg: ResMut<SwarmConfig>,
+) {
     cfg.hives.clear();
     for (h, xf, hull) in &hives {
         // A wreck launches nothing. `go_critical` takes a carrier the same way
@@ -100,7 +107,14 @@ pub(crate) fn bleed_hives(
             let seed = h.seed as u32 ^ tick.tick.wrapping_mul(2654435761) ^ k;
             let d = |q: u32| swarm_core::rng::hash_cell(seed + q) as f32 / u32::MAX as f32 - 0.5;
             let off = Vec3::new(d(1), d(7), d(19)).normalize_or(Vec3::Y) * h.radius * 0.92;
-            breach_sparks(seed, tick.tick, (xf.translation + off).to_array(), off.normalize_or(Vec3::Y).to_array(), h.radius * 0.10, &mut out);
+            breach_sparks(
+                seed,
+                tick.tick,
+                (xf.translation + off).to_array(),
+                off.normalize_or(Vec3::Y).to_array(),
+                h.radius * 0.10,
+                &mut out,
+            );
         }
         for sp in &mut out {
             sp.colour = [sp.colour[0] * 1.5, sp.colour[1] * 0.28, sp.colour[2] * 2.0];

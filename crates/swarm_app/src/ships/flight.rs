@@ -46,8 +46,11 @@ pub(crate) fn fly_hull(
         // either: both scale with the drives it has left, so losing them reads
         // as a ship going lame rather than as a paint job.
         let thrust = hull.thrust();
-        let (speed, accel, arrive) =
-            (radius * HULL_SPEED * thrust, radius * HULL_ACCEL * thrust, radius * ARRIVE);
+        let (speed, accel, arrive) = (
+            radius * HULL_SPEED * thrust,
+            radius * HULL_ACCEL * thrust,
+            radius * ARRIVE,
+        );
         let mut hurry = 1.0;
         let want = match escort {
             // An escort has no order of its own: its goal is a place in the
@@ -110,8 +113,16 @@ pub(crate) fn fly_hull(
         let dv = want - hull.vel;
         let step = accel * hurry * dt;
         let was = hull.vel;
-        hull.vel += if dv.length() > step { dv.normalize() * step } else { dv };
-        hull.accel = if dt > 0.0 { (hull.vel - was) / dt } else { Vec3::ZERO };
+        hull.vel += if dv.length() > step {
+            dv.normalize() * step
+        } else {
+            dv
+        };
+        hull.accel = if dt > 0.0 {
+            (hull.vel - was) / dt
+        } else {
+            Vec3::ZERO
+        };
         xf.translation += hull.vel * dt;
 
         // And never INSIDE a rock. Steering can be beaten: an order given
@@ -141,7 +152,9 @@ pub(crate) fn fly_hull(
         // leading, which read as a retro firing at full throttle while
         // accelerating and was what made the flames look wrong.
         if hull.vel.length() > radius * 0.05 {
-            let want = Transform::from_translation(xf.translation).looking_to(-hull.vel.normalize(), Vec3::Y).rotation;
+            let want = Transform::from_translation(xf.translation)
+                .looking_to(-hull.vel.normalize(), Vec3::Y)
+                .rotation;
             xf.rotation = xf.rotation.slerp(want, (dt * HULL_TURN).min(1.0));
         }
     }

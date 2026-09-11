@@ -66,7 +66,10 @@ pub(crate) fn headless_capture(
     let mut missing = 0;
     let mut check = |name: String, handle: &Handle<Image>| {
         let state = assets.get_load_state(handle.id());
-        let pixels = images.get(handle).and_then(|i| i.data.as_ref()).map_or(0, |d| d.len());
+        let pixels = images
+            .get(handle)
+            .and_then(|i| i.data.as_ref())
+            .map_or(0, |d| d.len());
         let ok = pixels > 0 && !matches!(state, Some(LoadState::Failed(_)));
         if !ok {
             missing += 1;
@@ -85,7 +88,11 @@ pub(crate) fn headless_capture(
         check("alien_chitin_n".into(), c);
     }
     let total = tex.finishes.len() + tex.windows.len() * 3 + 1;
-    println!("textures: {} of {} loaded with pixels", total - missing, total);
+    println!(
+        "textures: {} of {} loaded with pixels",
+        total - missing,
+        total
+    );
     let out = h.out.clone();
     let textures_ok = missing == 0;
     commands

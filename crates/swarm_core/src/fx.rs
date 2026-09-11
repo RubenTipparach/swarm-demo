@@ -188,13 +188,19 @@ const ATLAS_PAD: f32 = 0.5 / (64.0 * ATLAS as f32);
 /// The corner of the tile a cell shows, bit for bit `tileUV` in `wound.ts`.
 pub fn ember_tile(cell: u32) -> [f32; 2] {
     let t = hash_cell(cell) % (ATLAS * ATLAS);
-    [(t % ATLAS) as f32 * ATLAS_STEP, (t / ATLAS) as f32 * ATLAS_STEP]
+    [
+        (t % ATLAS) as f32 * ATLAS_STEP,
+        (t / ATLAS) as f32 * ATLAS_STEP,
+    ]
 }
 
 /// A corner of that tile, `c` in the mesher's own corner order.
 pub fn ember_uv(tile: [f32; 2], c: [f32; 2]) -> [f32; 2] {
     let span = ATLAS_STEP - 2.0 * ATLAS_PAD;
-    [tile[0] + ATLAS_PAD + c[0] * span, tile[1] + ATLAS_PAD + c[1] * span]
+    [
+        tile[0] + ATLAS_PAD + c[0] * span,
+        tile[1] + ATLAS_PAD + c[1] * span,
+    ]
 }
 
 // ---------------------------------------------------------------- sparks --
@@ -243,7 +249,14 @@ pub struct Spark {
 /// Hashed from the cell and the tick rather than rolled, so two screens
 /// watching one wound throw the same sparks, and so a scrub back and forward
 /// puts the same ones in the air.
-pub fn breach_sparks(cell: u32, tick: u32, at: [f32; 3], outward: [f32; 3], scale: f32, out: &mut Vec<Spark>) {
+pub fn breach_sparks(
+    cell: u32,
+    tick: u32,
+    at: [f32; 3],
+    outward: [f32; 3],
+    scale: f32,
+    out: &mut Vec<Spark>,
+) {
     const N: u32 = 7;
     for i in 0..N {
         let d = drift_of(cell, tick.wrapping_add(i.wrapping_mul(0x9E37)));
@@ -275,8 +288,16 @@ pub fn muzzle_sparks(seed: u32, at: [f32; 3], dir: [f32; 3], scale: f32, out: &m
     for i in 0..N {
         let d = drift_of(seed, i);
         out.push(Spark {
-            pos: [at[0] + dir[0] * scale * 0.6, at[1] + dir[1] * scale * 0.6, at[2] + dir[2] * scale * 0.6],
-            vel: [dir[0] * scale * 4.0 + d[0], dir[1] * scale * 4.0 + d[1], dir[2] * scale * 4.0 + d[2]],
+            pos: [
+                at[0] + dir[0] * scale * 0.6,
+                at[1] + dir[1] * scale * 0.6,
+                at[2] + dir[2] * scale * 0.6,
+            ],
+            vel: [
+                dir[0] * scale * 4.0 + d[0],
+                dir[1] * scale * 4.0 + d[1],
+                dir[2] * scale * 4.0 + d[2],
+            ],
             colour: [7.0, 4.4, 1.9],
             size: scale * (1.4 + 0.8 * (d[0] * 0.5 + 0.5)),
             life: 0.10 + 0.08 * (d[1] * 0.5 + 0.5),
@@ -293,7 +314,11 @@ pub fn blast_sparks(seed: u32, at: [f32; 3], radius: f32, count: u32, out: &mut 
         // transcendental and is uniform enough for a fireball.
         let mut dir = [0.0f32; 3];
         for _ in 0..8 {
-            let c = [rng.range(-1.0, 1.0), rng.range(-1.0, 1.0), rng.range(-1.0, 1.0)];
+            let c = [
+                rng.range(-1.0, 1.0),
+                rng.range(-1.0, 1.0),
+                rng.range(-1.0, 1.0),
+            ];
             let l2 = c[0] * c[0] + c[1] * c[1] + c[2] * c[2];
             if (0.05..=1.0).contains(&l2) {
                 let l = l2.sqrt();
@@ -339,7 +364,13 @@ pub struct Gun {
 /// rather than two copies of it. `aft` is what separates them: a gun looks
 /// out from the hull's own axis, and a drive looks backwards along it,
 /// because that is what a drive is.
-fn clusters_of(m: &VoxelModel, surf: u8, purp: Option<u8>, least: usize, aft: bool) -> Vec<(Gun, [f32; 3], Vec<usize>)> {
+fn clusters_of(
+    m: &VoxelModel,
+    surf: u8,
+    purp: Option<u8>,
+    least: usize,
+    aft: bool,
+) -> Vec<(Gun, [f32; 3], Vec<usize>)> {
     let n = m.len();
     let is = |c: usize| {
         m.grid[c] != mat::EMPTY && m.surf[c] == surf && purp.is_none_or(|p| m.purp[c] == p)
@@ -392,7 +423,11 @@ fn clusters_of(m: &VoxelModel, surf: u8, purp: Option<u8>, least: usize, aft: bo
         let mut best = (f32::MIN, cells[0], along);
         for &c in &cells {
             let p = m.centre_of(c);
-            let dir = if aft { along } else { normalise([p[0], p[1], p[2] * 0.35]) };
+            let dir = if aft {
+                along
+            } else {
+                normalise([p[0], p[1], p[2] * 0.35])
+            };
             let reach = dot(sub(p, mid), dir);
             if reach > best.0 {
                 best = (reach, c, dir);
@@ -414,7 +449,15 @@ fn clusters_of(m: &VoxelModel, surf: u8, purp: Option<u8>, least: usize, aft: bo
             mid[1] + best.2[1] * reach,
             mid[2] + best.2[2] * reach,
         ];
-        out.push((Gun { at, out: best.2, cell: best.1 as u32 }, mid, cells));
+        out.push((
+            Gun {
+                at,
+                out: best.2,
+                cell: best.1 as u32,
+            },
+            mid,
+            cells,
+        ));
     }
     // In cell order, so two runs give the same placements in the same order.
     out.sort_by_key(|(g, _, _)| g.cell);
@@ -473,7 +516,12 @@ mod tests {
 
     #[test]
     fn a_beam_is_a_capsule_and_not_a_line() {
-        let b = Beam { from: [0.0, 0.0, 0.0], to: [10.0, 0.0, 0.0], radius: 1.0, born: 0 };
+        let b = Beam {
+            from: [0.0, 0.0, 0.0],
+            to: [10.0, 0.0, 0.0],
+            radius: 1.0,
+            born: 0,
+        };
         assert!(b.kills([5.0, 0.0, 0.0]));
         assert!(b.kills([5.0, 0.9, 0.0]));
         assert!(!b.kills([5.0, 1.1, 0.0]));
@@ -510,9 +558,24 @@ mod tests {
             best
         };
         let beams = [
-            Beam { from: [0.0, 0.0, 0.0], to: [10.0, 0.0, 0.0], radius: 1.0, born: 0 },
-            Beam { from: [-3.0, 2.0, 1.0], to: [4.0, -5.0, 6.0], radius: 2.0, born: 0 },
-            Beam { from: [1.0, 1.0, 1.0], to: [1.0, 1.0, 1.0], radius: 1.5, born: 0 },
+            Beam {
+                from: [0.0, 0.0, 0.0],
+                to: [10.0, 0.0, 0.0],
+                radius: 1.0,
+                born: 0,
+            },
+            Beam {
+                from: [-3.0, 2.0, 1.0],
+                to: [4.0, -5.0, 6.0],
+                radius: 2.0,
+                born: 0,
+            },
+            Beam {
+                from: [1.0, 1.0, 1.0],
+                to: [1.0, 1.0, 1.0],
+                radius: 1.5,
+                born: 0,
+            },
         ];
         let mut checked = 0;
         let mut inside = 0;
@@ -538,18 +601,29 @@ mod tests {
                 }
             }
         }
-        assert!(checked > 6000 && inside > 100, "{checked} points, {inside} inside");
+        assert!(
+            checked > 6000 && inside > 100,
+            "{checked} points, {inside} inside"
+        );
     }
 
     #[test]
     fn a_beam_is_cut_at_what_it_reached() {
-        let b = Beam { from: [0.0, 0.0, 0.0], to: [10.0, 0.0, 0.0], radius: 0.5, born: 0 };
+        let b = Beam {
+            from: [0.0, 0.0, 0.0],
+            to: [10.0, 0.0, 0.0],
+            radius: 0.5,
+            born: 0,
+        };
         // A sphere of radius 2 at x = 6: reached, six tenths along.
         let t = b.reaches([6.0, 0.0, 0.0], 2.0).expect("reached");
         assert!((t - 0.6).abs() < 1e-5, "{t}");
         // Off to one side by more than both radii: not reached.
         assert!(b.reaches([6.0, 3.0, 0.0], 2.0).is_none());
-        assert!(b.reaches([6.0, 2.4, 0.0], 2.0).is_some(), "the two radii add");
+        assert!(
+            b.reaches([6.0, 2.4, 0.0], 2.0).is_some(),
+            "the two radii add"
+        );
         // Cut: the direction is kept, the length is not, and nothing else moves.
         let c = b.cut(t);
         assert_eq!(c.from, b.from);
@@ -567,14 +641,23 @@ mod tests {
 
     #[test]
     fn a_zero_length_beam_is_a_sphere_and_does_not_divide_by_nought() {
-        let b = Beam { from: [1.0, 2.0, 3.0], to: [1.0, 2.0, 3.0], radius: 2.0, born: 0 };
+        let b = Beam {
+            from: [1.0, 2.0, 3.0],
+            to: [1.0, 2.0, 3.0],
+            radius: 2.0,
+            born: 0,
+        };
         assert!(b.kills([1.0, 2.0, 4.5]));
         assert!(!b.kills([1.0, 2.0, 6.0]));
     }
 
     #[test]
     fn a_blast_opens_fast_and_stops() {
-        let b = Blast { at: [0.0; 3], radius: 10.0, born: 100 };
+        let b = Blast {
+            at: [0.0; 3],
+            radius: 10.0,
+            born: 100,
+        };
         assert_eq!(b.radius_at(100), 0.0);
         // Half the ticks is 71% of the radius, which is what sqrt is for.
         let half = b.radius_at(100 + BLAST_TICKS / 2);
@@ -594,7 +677,7 @@ mod tests {
         for c in 0..4000u32 {
             let t = ember_tile(c);
             assert!(t[0] >= 0.0 && t[0] < 1.0 && t[1] >= 0.0 && t[1] < 1.0);
-            seen.insert((( t[0] * 4.0).round() as i32, (t[1] * 4.0).round() as i32));
+            seen.insert(((t[0] * 4.0).round() as i32, (t[1] * 4.0).round() as i32));
             for corner in [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]] {
                 let uv = ember_uv(t, corner);
                 assert!(uv[0] > t[0] - 1e-6 && uv[0] < t[0] + 0.25);
@@ -616,8 +699,14 @@ mod tests {
         for s in &a {
             assert!(s.life > 0.0 && s.life < 2.0);
             assert!(s.size > 0.0);
-            assert!(s.colour[0] >= s.colour[1] && s.colour[1] >= s.colour[2], "a burn is red hot before it is white");
-            assert!(s.colour[0] > 1.0, "a spark has to clear the bloom threshold");
+            assert!(
+                s.colour[0] >= s.colour[1] && s.colour[1] >= s.colour[2],
+                "a burn is red hot before it is white"
+            );
+            assert!(
+                s.colour[0] > 1.0,
+                "a spark has to clear the bloom threshold"
+            );
         }
         // Thrown OUTWARD: the mean velocity goes the way the face looked.
         let mean: f32 = a.iter().map(|s| s.vel[1]).sum::<f32>() / a.len() as f32;
@@ -651,18 +740,31 @@ mod tests {
 
     #[test]
     fn the_terran_frigate_has_guns_and_every_one_looks_out() {
-        let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/hulls/terran_frigate.ftvx")).unwrap();
+        let bytes = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/hulls/terran_frigate.ftvx"
+        ))
+        .unwrap();
         let m = VoxelModel::from_ftvx(&bytes).unwrap();
         let guns = guns_of(&m);
         assert!(!guns.is_empty(), "a frigate has weapons");
-        assert!(guns.len() <= 12, "{} guns is a cluster pass that has come apart", guns.len());
+        assert!(
+            guns.len() <= 12,
+            "{} guns is a cluster pass that has come apart",
+            guns.len()
+        );
         for g in &guns {
             assert!((length(g.out) - 1.0).abs() < 1e-4);
             assert_eq!(m.surf[g.cell as usize], SURF_WEAPON);
             // A muzzle looks AWAY from the hull's own axis, never into it.
             let radial = normalise([g.at[0], g.at[1], 0.0]);
             if length([g.at[0], g.at[1], 0.0]) > 0.05 {
-                assert!(dot(g.out, radial) > 0.0, "gun at {:?} looks in at {:?}", g.at, g.out);
+                assert!(
+                    dot(g.out, radial) > 0.0,
+                    "gun at {:?} looks in at {:?}",
+                    g.at,
+                    g.out
+                );
             }
         }
         assert_eq!(guns_of(&m), guns, "the same hull gives the same guns");
@@ -682,12 +784,28 @@ mod tests {
             assert_eq!(e.out[0], 0.0);
             assert_eq!(e.out[1], 0.0);
             assert_eq!(e.out[2].abs(), 1.0);
-            assert_eq!(e.out[2] < 0.0, e.at[2] < 0.0, "engine at z {} plumes {}", e.at[2], e.out[2]);
+            assert_eq!(
+                e.out[2] < 0.0,
+                e.at[2] < 0.0,
+                "engine at z {} plumes {}",
+                e.at[2],
+                e.out[2]
+            );
         }
-        assert!(engines.iter().any(|e| e.at[2] < 0.0), "a ship has a main drive at the stern");
-        let thrusters = (0..m.len()).filter(|&n| m.purp[n] == purpose::ATTITUDE).count();
+        assert!(
+            engines.iter().any(|e| e.at[2] < 0.0),
+            "a ship has a main drive at the stern"
+        );
+        let thrusters = (0..m.len())
+            .filter(|&n| m.purp[n] == purpose::ATTITUDE)
+            .count();
         assert!(thrusters > 0, "and it has thrusters, which are not engines");
-        eprintln!("terran_frigate: {} guns, {} engines, {} thruster cells", guns.len(), engines.len(), thrusters);
+        eprintln!(
+            "terran_frigate: {} guns, {} engines, {} thruster cells",
+            guns.len(),
+            engines.len(),
+            thrusters
+        );
     }
 }
 
@@ -734,7 +852,11 @@ mod muzzle_tests {
             mid[1] - m.cell * 0.5
         );
         // And it points aft, because the block is aft of the middle.
-        assert!(g.out[2] < -0.5, "a drive aft of the middle plumes forward: {:?}", g.out);
+        assert!(
+            g.out[2] < -0.5,
+            "a drive aft of the middle plumes forward: {:?}",
+            g.out
+        );
     }
 }
 
@@ -792,7 +914,8 @@ pub fn reactor_of(m: &VoxelModel) -> Vec<usize> {
         for k in 0..m.nz {
             for j in 0..m.ny {
                 for i in 0..m.nx {
-                    if i == 0 || j == 0 || k == 0 || i == m.nx - 1 || j == m.ny - 1 || k == m.nz - 1 {
+                    if i == 0 || j == 0 || k == 0 || i == m.nx - 1 || j == m.ny - 1 || k == m.nz - 1
+                    {
                         let q = m.index(i, j, k);
                         depth[q] = 0;
                         queue.push(q);
@@ -809,8 +932,14 @@ pub fn reactor_of(m: &VoxelModel) -> Vec<usize> {
         let j = (c / m.nx) % m.ny;
         let k = c / (m.nx * m.ny);
         let d = depth[c] + 1;
-        const STEPS: [(i32, i32, i32); 6] =
-            [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)];
+        const STEPS: [(i32, i32, i32); 6] = [
+            (1, 0, 0),
+            (-1, 0, 0),
+            (0, 1, 0),
+            (0, -1, 0),
+            (0, 0, 1),
+            (0, 0, -1),
+        ];
         for (dx, dy, dz) in STEPS {
             let (a, b, e) = (i as i32 + dx, j as i32 + dy, k as i32 + dz);
             if a < 0 || b < 0 || e < 0 || a >= m.nx as i32 || b >= m.ny as i32 || e >= m.nz as i32 {
@@ -859,7 +988,13 @@ pub fn reactor_of(m: &VoxelModel) -> Vec<usize> {
         for dj in -reach..=reach {
             for di in -reach..=reach {
                 let (a, b, e) = (si as i32 + di, sj as i32 + dj, sk as i32 + dk);
-                if a < 0 || b < 0 || e < 0 || a >= m.nx as i32 || b >= m.ny as i32 || e >= m.nz as i32 {
+                if a < 0
+                    || b < 0
+                    || e < 0
+                    || a >= m.nx as i32
+                    || b >= m.ny as i32
+                    || e >= m.nz as i32
+                {
                     continue;
                 }
                 if (di * di + dj * dj + dk * dk) as f32 > r * r {
@@ -906,16 +1041,31 @@ mod reactor_tests {
         assert!(!core.is_empty(), "no reactor at all");
         for &c in &core {
             let (i, j, k) = (c % m.nx, (c / m.nx) % m.ny, c / (m.nx * m.ny));
-            const STEPS: [(i32, i32, i32); 6] =
-                [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)];
+            const STEPS: [(i32, i32, i32); 6] = [
+                (1, 0, 0),
+                (-1, 0, 0),
+                (0, 1, 0),
+                (0, -1, 0),
+                (0, 0, 1),
+                (0, 0, -1),
+            ];
             for (dx, dy, dz) in STEPS {
                 let (a, b, e) = (i as i32 + dx, j as i32 + dy, k as i32 + dz);
                 assert!(
-                    a >= 0 && b >= 0 && e >= 0 && a < m.nx as i32 && b < m.ny as i32 && e < m.nz as i32,
+                    a >= 0
+                        && b >= 0
+                        && e >= 0
+                        && a < m.nx as i32
+                        && b < m.ny as i32
+                        && e < m.nz as i32,
                     "a reactor cell sits on the lattice wall"
                 );
                 let q = m.index(a as usize, b as usize, e as usize);
-                assert_ne!(m.grid[q], mat::EMPTY, "a reactor cell has a face open to space");
+                assert_ne!(
+                    m.grid[q],
+                    mat::EMPTY,
+                    "a reactor cell has a face open to space"
+                );
             }
         }
     }
@@ -931,8 +1081,14 @@ mod reactor_tests {
             assert_ne!(m.grid[c], mat::EMPTY, "a reactor cell is not solid");
         }
         let share = core.len() as f32 / cells as f32;
-        assert!(share > 0.002, "the reactor is {share} of the hull, which is nothing");
-        assert!(share < 0.25, "the reactor is {share} of the hull, which is most of it");
+        assert!(
+            share > 0.002,
+            "the reactor is {share} of the hull, which is nothing"
+        );
+        assert!(
+            share < 0.25,
+            "the reactor is {share} of the hull, which is most of it"
+        );
     }
 
     /// And it sits in the middle, which is what "deep inside" means on a
@@ -953,7 +1109,12 @@ mod reactor_tests {
         }
         let want = [m.nx as f32 * 0.5, m.ny as f32 * 0.5, m.nz as f32 * 0.5];
         for a in 0..3 {
-            assert!((mean[a] - want[a]).abs() < 2.0, "axis {a}: reactor at {} of {}", mean[a], want[a]);
+            assert!(
+                (mean[a] - want[a]).abs() < 2.0,
+                "axis {a}: reactor at {} of {}",
+                mean[a],
+                want[a]
+            );
         }
     }
 
@@ -979,7 +1140,14 @@ pub struct Shatter {
 }
 
 /// The six face neighbours: two cells meeting at an edge are not one piece.
-const SIX: [(i32, i32, i32); 6] = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)];
+const SIX: [(i32, i32, i32); 6] = [
+    (1, 0, 0),
+    (-1, 0, 0),
+    (0, 1, 0),
+    (0, -1, 0),
+    (0, 0, 1),
+    (0, 0, -1),
+];
 
 /// Break what is left of a hull into wreck pieces.
 ///
@@ -993,7 +1161,13 @@ const SIX: [(i32, i32, i32); 6] = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0),
 /// so each of those breaks port from starboard, or deck from keel. Two
 /// planes rather than three, because eight pieces of a frigate are not
 /// giant, and giant is the point. Anything under `min_piece` cells is dust.
-pub fn shatter(m: &VoxelModel, d: &DamageGrid, centre: [f32; 3], seed: u32, min_piece: usize) -> Shatter {
+pub fn shatter(
+    m: &VoxelModel,
+    d: &DamageGrid,
+    centre: [f32; 3],
+    seed: u32,
+    min_piece: usize,
+) -> Shatter {
     let n = m.len();
     let live = |c: usize| m.grid[c] != mat::EMPTY && !d.is_dead(c);
     let mut rng = Rng::new(seed as u64 ^ 0x5EED_C0DE);
@@ -1101,22 +1275,40 @@ mod shatter_tests {
         let m = block(12, 12, 28);
         let mut d = DamageGrid::new(&m);
         // The reactor takes the ball around it first.
-        let hole = Blast { at: [0.0; 3], radius: m.cell * 4.5, born: 7 };
+        let hole = Blast {
+            at: [0.0; 3],
+            radius: m.cell * 4.5,
+            born: 7,
+        };
         let taken = d.blast_cells(&m, &hole, 7).len();
         assert!(taken > 200, "the hole took {taken} cells");
-        let live: Vec<bool> = (0..m.len()).map(|c| m.grid[c] != mat::EMPTY && !d.is_dead(c)).collect();
+        let live: Vec<bool> = (0..m.len())
+            .map(|c| m.grid[c] != mat::EMPTY && !d.is_dead(c))
+            .collect();
         let alive = live.iter().filter(|&&l| l).count();
 
         let sh = shatter(&m, &d, [0.0; 3], 3, 30);
-        assert!((3..=8).contains(&sh.pieces.len()), "{} pieces", sh.pieces.len());
+        assert!(
+            (3..=8).contains(&sh.pieces.len()),
+            "{} pieces",
+            sh.pieces.len()
+        );
         for p in &sh.pieces {
             assert!(p.len() >= 30, "a piece of {} cells is dust", p.len());
             assert_eq!(runs(&m, p), 1, "a piece must be one piece");
         }
-        assert!(sh.pieces[0].len() * 8 >= alive, "the biggest piece is {} of {alive} live cells", sh.pieces[0].len());
+        assert!(
+            sh.pieces[0].len() * 8 >= alive,
+            "the biggest piece is {} of {alive} live cells",
+            sh.pieces[0].len()
+        );
         // Sorted biggest first, and the biggest is not the whole hull.
         assert!(sh.pieces.windows(2).all(|w| w[0].len() >= w[1].len()));
-        assert!(sh.pieces[0].len() * 2 < alive, "one piece of {} took the whole {alive}", sh.pieces[0].len());
+        assert!(
+            sh.pieces[0].len() * 2 < alive,
+            "one piece of {} took the whole {alive}",
+            sh.pieces[0].len()
+        );
 
         let mut count = vec![0u8; m.len()];
         for p in &sh.pieces {
@@ -1128,7 +1320,11 @@ mod shatter_tests {
             count[c] += 1;
         }
         for c in 0..m.len() {
-            assert_eq!(count[c], u8::from(live[c]), "cell {c}: dead cells are nobody's and live cells are exactly one's");
+            assert_eq!(
+                count[c],
+                u8::from(live[c]),
+                "cell {c}: dead cells are nobody's and live cells are exactly one's"
+            );
         }
         // A function of its inputs.
         assert_eq!(shatter(&m, &d, [0.0; 3], 3, 30), sh);

@@ -68,7 +68,11 @@ pub fn ramp(heat: f32) -> [f32; 3] {
         let lo = HEAT[i];
         if heat > lo[0] || i == HEAT.len() - 1 {
             let span = hi[0] - lo[0];
-            let t = if span > 0.0 { ((heat - lo[0]) / span).clamp(0.0, 1.0) } else { 0.0 };
+            let t = if span > 0.0 {
+                ((heat - lo[0]) / span).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
             return [
                 lo[1] + (hi[1] - lo[1]) * t,
                 lo[2] + (hi[2] - lo[2]) * t,
@@ -159,7 +163,11 @@ impl DamageGrid {
         let n = m.len();
         let armour = armour.max(0.0);
         let max_hp: Vec<f32> = m.grid.iter().map(|&x| hp_for(x) * armour).collect();
-        let bricks = [m.nx.div_ceil(BRICK), m.ny.div_ceil(BRICK), m.nz.div_ceil(BRICK)];
+        let bricks = [
+            m.nx.div_ceil(BRICK),
+            m.ny.div_ceil(BRICK),
+            m.nz.div_ceil(BRICK),
+        ];
         DamageGrid {
             nx: m.nx,
             ny: m.ny,
@@ -227,7 +235,11 @@ impl DamageGrid {
 
     #[inline]
     fn at(&self, n: usize) -> (usize, usize, usize) {
-        (n % self.nx, (n / self.nx) % self.ny, n / (self.nx * self.ny))
+        (
+            n % self.nx,
+            (n / self.nx) % self.ny,
+            n / (self.nx * self.ny),
+        )
     }
 
     pub fn brick_count(&self) -> usize {
@@ -284,13 +296,23 @@ impl DamageGrid {
         let (i, j, k) = self.at(n);
         for (di, dj, dk) in NEIGHBOURS {
             let (ni, nj, nk) = (i as i32 + di, j as i32 + dj, k as i32 + dk);
-            if ni < 0 || nj < 0 || nk < 0 || ni as usize >= self.nx || nj as usize >= self.ny || nk as usize >= self.nz {
+            if ni < 0
+                || nj < 0
+                || nk < 0
+                || ni as usize >= self.nx
+                || nj as usize >= self.ny
+                || nk as usize >= self.nz
+            {
                 continue;
             }
             let b = self.brick_of(self.index(ni as usize, nj as usize, nk as usize));
             self.dirty[b] = true;
         }
-        Some(Breach { cell: n as u32, tick, outward })
+        Some(Breach {
+            cell: n as u32,
+            tick,
+            outward,
+        })
     }
 
     /// Kill a cell outright, whatever its hit points. What a reactor does to
@@ -305,7 +327,12 @@ impl DamageGrid {
     /// chews the surface it is standing on, and the surface is whatever is
     /// exposed now, plate at first and the machinery behind it once the plate
     /// is gone.
-    pub fn nearest_exposed(&self, m: &VoxelModel, p: [f32; 3], reach: i32) -> Option<(usize, [f32; 3])> {
+    pub fn nearest_exposed(
+        &self,
+        m: &VoxelModel,
+        p: [f32; 3],
+        reach: i32,
+    ) -> Option<(usize, [f32; 3])> {
         let ci = (p[0] / m.cell + m.nx as f32 / 2.0).floor() as i32;
         let cj = (p[1] / m.cell + m.ny as f32 / 2.0).floor() as i32;
         let ck = (p[2] / m.cell + m.nz as f32 / 2.0).floor() as i32;
@@ -408,7 +435,11 @@ impl DamageGrid {
                 let p = m.centre_of(n);
                 let h = m.cell * 0.5;
                 out.push(Vent {
-                    at: [p[0] + a as f32 * h, p[1] + b as f32 * h, p[2] + c as f32 * h],
+                    at: [
+                        p[0] + a as f32 * h,
+                        p[1] + b as f32 * h,
+                        p[2] + c as f32 * h,
+                    ],
                     outward: [-(a as f32), -(b as f32), -(c as f32)],
                     cell: n as u32,
                 });
@@ -482,7 +513,17 @@ mod tests {
         for k in 2..14 {
             for j in 6..10 {
                 for i in 2..14 {
-                    m.set(i, j, k, if j == 6 || j == 9 { mat::PLATE } else { mat::MACHINE }, 0x0095E9);
+                    m.set(
+                        i,
+                        j,
+                        k,
+                        if j == 6 || j == 9 {
+                            mat::PLATE
+                        } else {
+                            mat::MACHINE
+                        },
+                        0x0095E9,
+                    );
                 }
             }
         }
@@ -495,10 +536,17 @@ mod tests {
         assert!((heat_of(100, 100 + COOL_TICKS / 2) - 0.5).abs() < 1e-6);
         assert_eq!(heat_of(100, 100 + COOL_TICKS), 0.0);
         assert_eq!(heat_of(100, 100 + COOL_TICKS * 3), 0.0);
-        assert_eq!(heat_of(500, 100), 1.0, "a cell that has not died yet is not cold");
+        assert_eq!(
+            heat_of(500, 100),
+            1.0,
+            "a cell that has not died yet is not cold"
+        );
         assert_eq!(ramp(1.0), [1.0, 1.0, 1.0]);
         let cold = ramp(0.0);
-        assert!(cold[0] > 0.0 && cold[0] < 0.2, "char is nearly black, not black");
+        assert!(
+            cold[0] > 0.0 && cold[0] < 0.2,
+            "char is nearly black, not black"
+        );
         let mut last = 3.0;
         for s in (0..=32).rev() {
             let c = ramp(s as f32 / 32.0);
@@ -518,8 +566,13 @@ mod tests {
         let n = m.index(7, 9, 7);
         assert_eq!(d.chip(n, 40.0, 1, [0.0, 1.0, 0.0]), None);
         assert!((d.health(n) - 0.6).abs() < 1e-6);
-        assert!(d.take_dirty().is_empty(), "pitting is a repaint, not a re-mesh");
-        let b = d.chip(n, 70.0, 5, [0.0, 1.0, 0.0]).expect("the killing bite");
+        assert!(
+            d.take_dirty().is_empty(),
+            "pitting is a repaint, not a re-mesh"
+        );
+        let b = d
+            .chip(n, 70.0, 5, [0.0, 1.0, 0.0])
+            .expect("the killing bite");
         assert_eq!(b.cell, n as u32);
         assert_eq!(b.tick, 5);
         assert!(d.is_dead(n));
@@ -549,8 +602,15 @@ mod tests {
         // The dead plate cell had one face out. Its five live neighbours now
         // each show one face into the hole, and those are wound faces.
         assert_eq!(after.wound.quads(), 5);
-        assert_eq!(after.wound.colours[0], [1.0, 1.0, 1.0, 1.0], "fresh is white hot");
-        assert_eq!(after.skin_all().quad_cells.len() + after.wound.quad_cells.len(), exposed_faces(&m, Some(&d)));
+        assert_eq!(
+            after.wound.colours[0],
+            [1.0, 1.0, 1.0, 1.0],
+            "fresh is white hot"
+        );
+        assert_eq!(
+            after.skin_all().quad_cells.len() + after.wound.quad_cells.len(),
+            exposed_faces(&m, Some(&d))
+        );
         let cooled = greedy_mesh(&m, Some((&d, 10 + COOL_TICKS)));
         assert_eq!(cooled.wound.quads(), 5);
         assert!(cooled.wound.colours[0][0] < 0.2, "char after COOL_TICKS");
@@ -575,7 +635,12 @@ mod tests {
             d.chip(m.index(i, j, k), 1000.0, tick, [0.0, 1.0, 0.0]);
         }
         let dirty = d.take_dirty();
-        assert!(dirty.len() < total_bricks, "a hit dirtied {} of {}", dirty.len(), total_bricks);
+        assert!(
+            dirty.len() < total_bricks,
+            "a hit dirtied {} of {}",
+            dirty.len(),
+            total_bricks
+        );
         for &b in &dirty {
             let (lo, hi) = d.brick_bounds(b);
             bricks[b] = mesh_region(&m, Some((&d, tick)), lo, hi);
@@ -596,21 +661,39 @@ mod tests {
     fn soot_rings_a_hole_and_never_lands_in_it() {
         let m = slab();
         let mut d = DamageGrid::new(&m);
-        assert!((0..m.len()).all(|n| d.scorch_at(&m, n).is_none()), "an unhit hull is clean");
+        assert!(
+            (0..m.len()).all(|n| d.scorch_at(&m, n).is_none()),
+            "an unhit hull is clean"
+        );
         let n = m.index(7, 9, 7);
         d.chip(n, 1000.0, 1, [0.0, 1.0, 0.0]);
-        assert_eq!(d.scorch_at(&m, n), None, "a dead cell is a hole, not a stain");
+        assert_eq!(
+            d.scorch_at(&m, n),
+            None,
+            "a dead cell is a hole, not a stain"
+        );
         // Its five solid neighbours are the near ring.
         for (a, b, c) in [(6, 9, 7), (8, 9, 7), (7, 8, 7), (7, 9, 6), (7, 9, 8)] {
-            assert_eq!(d.scorch_at(&m, m.index(a, b, c)), Some(SCORCH_RINGS[0]), "({a},{b},{c})");
+            assert_eq!(
+                d.scorch_at(&m, m.index(a, b, c)),
+                Some(SCORCH_RINGS[0]),
+                "({a},{b},{c})"
+            );
         }
         // Two steps out is the smudge, three is clean.
         assert_eq!(d.scorch_at(&m, m.index(5, 9, 7)), Some(SCORCH_RINGS[1]));
         assert_eq!(d.scorch_at(&m, m.index(4, 9, 7)), None);
         // Distance is measured along SOLID cells, so soot does not jump a gap:
         // the slab is four cells deep and nothing below it is scorched.
-        assert_eq!(d.scorch_at(&m, m.index(7, 5, 7)), None, "below the slab is empty");
-        assert!(CHAR.iter().all(|&c| c > 0.0 && c < 0.2), "char is nearly black, not black");
+        assert_eq!(
+            d.scorch_at(&m, m.index(7, 5, 7)),
+            None,
+            "below the slab is empty"
+        );
+        assert!(
+            CHAR.iter().all(|&c| c > 0.0 && c < 0.2),
+            "char is nearly black, not black"
+        );
     }
 
     #[test]
@@ -628,7 +711,11 @@ mod tests {
         for x in &v {
             assert_eq!(x.cell, n as u32);
             // Each sits half a cell off the dead cell's centre, on one axis.
-            let off = [x.at[0] - centre[0], x.at[1] - centre[1], x.at[2] - centre[2]];
+            let off = [
+                x.at[0] - centre[0],
+                x.at[1] - centre[1],
+                x.at[2] - centre[2],
+            ];
             let far = off.iter().map(|o| o.abs()).fold(0.0f32, f32::max);
             assert!((far - m.cell * 0.5).abs() < 1e-6, "{off:?}");
             // And it looks back INTO the hole, away from the live cell.
@@ -643,7 +730,11 @@ mod tests {
         let m = slab();
         let mut d = DamageGrid::new(&m);
         let at = m.centre_of(m.index(7, 8, 7));
-        let b = crate::fx::Blast { at, radius: m.cell * 2.5, born: 4 };
+        let b = crate::fx::Blast {
+            at,
+            radius: m.cell * 2.5,
+            born: 4,
+        };
         let breaches = d.blast_cells(&m, &b, 4);
         assert!(!breaches.is_empty());
         // Every cell within the radius is gone, and nothing outside it is.
@@ -652,7 +743,8 @@ mod tests {
                 continue;
             }
             let p = m.centre_of(n);
-            let dist = ((p[0] - at[0]).powi(2) + (p[1] - at[1]).powi(2) + (p[2] - at[2]).powi(2)).sqrt();
+            let dist =
+                ((p[0] - at[0]).powi(2) + (p[1] - at[1]).powi(2) + (p[2] - at[2]).powi(2)).sqrt();
             assert_eq!(d.is_dead(n), dist <= b.radius, "cell {n} at {dist}");
         }
         assert_eq!(d.dead_count(), breaches.len());
@@ -689,16 +781,28 @@ mod tests {
         // points: nine plate cells and one of machinery.
         assert_eq!(breaches.len(), 10, "{breaches:?}");
         assert_eq!(breaches[0].cell as usize, m.index(7, 9, 7));
-        let plate_dead = breaches.iter().filter(|b| m.grid[b.cell as usize] == mat::PLATE).count();
-        let machine_dead = breaches.iter().filter(|b| m.grid[b.cell as usize] == mat::MACHINE).count();
+        let plate_dead = breaches
+            .iter()
+            .filter(|b| m.grid[b.cell as usize] == mat::PLATE)
+            .count();
+        let machine_dead = breaches
+            .iter()
+            .filter(|b| m.grid[b.cell as usize] == mat::MACHINE)
+            .count();
         assert_eq!((plate_dead, machine_dead), (9, 1), "{breaches:?}");
-        assert_eq!(breaches[9].cell as usize, m.index(7, 8, 7), "the machinery goes last, under the first cell");
+        assert_eq!(
+            breaches[9].cell as usize,
+            m.index(7, 8, 7),
+            "the machinery goes last, under the first cell"
+        );
         // Every dead cell is within reach of the bite point, and the crater is
         // one connected hole.
         let mut hole = VoxelModel::new(16, 16, 16, m.cell);
         for b in &breaches {
             let (i, j, k) = m.at(b.cell as usize);
-            assert!((i as i32 - 7).abs() <= 2 && (j as i32 - 9).abs() <= 3 && (k as i32 - 7).abs() <= 2);
+            assert!(
+                (i as i32 - 7).abs() <= 2 && (j as i32 - 9).abs() <= 3 && (k as i32 - 7).abs() <= 2
+            );
             hole.set(i, j, k, mat::PLATE, 1);
         }
         assert_eq!(hole.components(), 1);
@@ -709,6 +813,10 @@ mod tests {
         let c = chunk_for(&m, &breaches[0]);
         assert_eq!(c.colour, 0x0095E9);
         assert!(c.velocity[1] > 0.0, "thrown outward");
-        assert_eq!(c, chunk_for(&m, &breaches[0]), "a chunk is a function of its breach");
+        assert_eq!(
+            c,
+            chunk_for(&m, &breaches[0]),
+            "a chunk is a function of its breach"
+        );
     }
 }

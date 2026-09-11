@@ -87,7 +87,12 @@ pub(crate) const BEAM_SWEEP: f32 = 0.55;
 /// The blast's radius is grown HERE rather than in the shader, which is what
 /// lets a beam and a blast be one shape on the other side: the shader tests a
 /// capsule and never learns there are two kinds.
-pub(crate) fn age_fx(tick: Res<Tick>, mut fx: ResMut<LiveFx>, mut shots: ResMut<Shots>, sparks: Res<SparkQueue>) {
+pub(crate) fn age_fx(
+    tick: Res<Tick>,
+    mut fx: ResMut<LiveFx>,
+    mut shots: ResMut<Shots>,
+    sparks: Res<SparkQueue>,
+) {
     fx.sparked += sparks.0.len();
     fx.beams.retain(|b| b.live(tick.tick));
     fx.blasts.retain(|b| b.live(tick.tick));
@@ -114,10 +119,18 @@ pub(crate) fn age_fx(tick: Res<Tick>, mut fx: ResMut<LiveFx>, mut shots: ResMut<
             let step = Quat::from_axis_angle(ax, BEAM_SWEEP / swarm_core::fx::BEAM_TICKS as f32);
             b.to = (from + step * (dir * len)).to_array();
         }
-        shots.0.push(Capsule { from, to: Vec3::from(b.to), radius: b.radius });
+        shots.0.push(Capsule {
+            from,
+            to: Vec3::from(b.to),
+            radius: b.radius,
+        });
     }
     for b in &fx.blasts {
         let at = Vec3::from(b.at);
-        shots.0.push(Capsule { from: at, to: at, radius: b.radius_at(tick.tick) });
+        shots.0.push(Capsule {
+            from: at,
+            to: at,
+            radius: b.radius_at(tick.tick),
+        });
     }
 }

@@ -17,49 +17,59 @@ mod fighters;
 mod fx;
 mod hives;
 mod ships;
+mod swarm;
 mod ui;
 mod weapons;
 mod world;
-mod swarm;
 
+use app::*;
 use bevy::{
     app::{AppExit, ScheduleRunnerPlugin},
     asset::{LoadState, RenderAssetUsages},
     camera::RenderTarget,
-    image::{ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler, ImageSamplerDescriptor},
+    image::{
+        ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler,
+        ImageSamplerDescriptor,
+    },
     input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
     render::{
-        render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor, TextureViewDimension},
+        render_resource::{
+            Extent3d, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor,
+            TextureViewDimension,
+        },
         view::screenshot::{save_to_disk, Screenshot, ScreenshotCaptured},
     },
     window::{ExitCondition, WindowPlugin},
     winit::WinitPlugin,
 };
-use std::{
-    collections::HashMap,
-    time::{Duration, Instant},
-};
-use swarm_core::{
-    alien::{generate, Archetype},
-    damage::{chunk_for, Chunk, DamageGrid, Vent},
-    fx::{blast_sparks, breach_sparks, engine_clusters, gun_clusters, muzzle_sparks, reactor_of, shatter, Beam, Blast, Gun, Spark, SparkKind},
-    mesh::{greedy_mesh, mesh_region, srgb_to_linear, MeshData, Surfaces},
-    rng::{drift_of, Rng},
-    sky::{bake_cubemap, starfield, to_half, SkyPreset},
-    VoxelModel, SURF_COUNT,
-};
-use swarm_core::voxel::{mat, SURF_DRIVE};
-use swarm::{
-    spawn_mote_mesh, spawn_spark_mesh, Capsule, FxTextures, Shots, SparkQueue, SwarmClock, SwarmConfig, SwarmPlugin, GRID,
-};
-use app::*;
 use controllers::*;
 use fighters::*;
 use fx::*;
 use hives::*;
 use ships::*;
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
+use swarm::{
+    spawn_mote_mesh, spawn_spark_mesh, Capsule, FxTextures, Shots, SparkQueue, SwarmClock,
+    SwarmConfig, SwarmPlugin, GRID,
+};
+use swarm_core::voxel::{mat, SURF_DRIVE};
+use swarm_core::{
+    alien::{generate, Archetype},
+    damage::{chunk_for, Chunk, DamageGrid, Vent},
+    fx::{
+        blast_sparks, breach_sparks, engine_clusters, gun_clusters, muzzle_sparks, reactor_of,
+        shatter, Beam, Blast, Gun, Spark, SparkKind,
+    },
+    mesh::{greedy_mesh, mesh_region, srgb_to_linear, MeshData, Surfaces},
+    rng::{drift_of, Rng},
+    sky::{bake_cubemap, starfield, to_half, SkyPreset},
+    VoxelModel, SURF_COUNT,
+};
 use ui::*;
 use weapons::*;
 use world::*;
@@ -185,14 +195,32 @@ fn parse_args() -> Args {
         let next = || argv.get(i + 1).cloned().unwrap_or_default();
         match argv[i].as_str() {
             "--headless" => a.headless = true,
-            "--motes" => { a.motes = next().parse().expect("--motes N"); i += 1; }
-            "--hull" => { a.hull = next(); i += 1; }
-            "--out" => { a.out = next(); i += 1; }
-            "--frames" => { a.frames = next().parse().expect("--frames N"); i += 1; }
-            "--zoom" => { a.zoom = next().parse().expect("--zoom R"); i += 1; }
+            "--motes" => {
+                a.motes = next().parse().expect("--motes N");
+                i += 1;
+            }
+            "--hull" => {
+                a.hull = next();
+                i += 1;
+            }
+            "--out" => {
+                a.out = next();
+                i += 1;
+            }
+            "--frames" => {
+                a.frames = next().parse().expect("--frames N");
+                i += 1;
+            }
+            "--zoom" => {
+                a.zoom = next().parse().expect("--zoom R");
+                i += 1;
+            }
             "--target" => {
                 let s = next();
-                let v: Vec<f32> = s.split(',').map(|x| x.parse().expect("--target x,y,z")).collect();
+                let v: Vec<f32> = s
+                    .split(',')
+                    .map(|x| x.parse().expect("--target x,y,z"))
+                    .collect();
                 a.target = Vec3::new(v[0], v[1], v[2]);
                 i += 1;
             }
@@ -203,32 +231,78 @@ fn parse_args() -> Args {
                 a.height = h.parse().unwrap();
                 i += 1;
             }
-            "--chewers" => { a.chewers = next().parse().expect("--chewers N"); i += 1; }
-            "--explode" => { a.explode = next().parse().expect("--explode TICK"); i += 1; }
-            "--cadence" => { a.cadence = next().parse().expect("--cadence TICKS"); i += 1; }
+            "--chewers" => {
+                a.chewers = next().parse().expect("--chewers N");
+                i += 1;
+            }
+            "--explode" => {
+                a.explode = next().parse().expect("--explode TICK");
+                i += 1;
+            }
+            "--cadence" => {
+                a.cadence = next().parse().expect("--cadence TICKS");
+                i += 1;
+            }
             "--fixed-dt" => a.fixed_dt = true,
-            "--hives" => { a.hives = next().parse().expect("--hives N"); i += 1; }
+            "--hives" => {
+                a.hives = next().parse().expect("--hives N");
+                i += 1;
+            }
             "--move" => {
-                let v: Vec<f32> = next().split(',').map(|x| x.parse().expect("--move x,y,z")).collect();
+                let v: Vec<f32> = next()
+                    .split(',')
+                    .map(|x| x.parse().expect("--move x,y,z"))
+                    .collect();
                 a.order = Some(Vec3::new(v[0], v[1], v[2]));
                 i += 1;
             }
             "--aim" => {
-                let v: Vec<f32> = next().split(',').map(|x| x.parse().expect("--aim x,y,z")).collect();
+                let v: Vec<f32> = next()
+                    .split(',')
+                    .map(|x| x.parse().expect("--aim x,y,z"))
+                    .collect();
                 a.aim = Some(Vec3::new(v[0], v[1], v[2]));
                 i += 1;
             }
             "--showcase" => a.showcase = true,
             "--hud" => a.hud = true,
-            "--yaw" => { a.yaw = next().parse().expect("--yaw RADIANS"); i += 1; }
-            "--pitch" => { a.pitch = next().parse().expect("--pitch RADIANS"); i += 1; }
-            "--paused" => { a.hud = true; a.paused = true; }
-            "--reinforce" => { a.reinforce = next().parse().expect("--reinforce N"); i += 1; }
-            "--rocks" => { a.rocks = next().parse().expect("--rocks N"); i += 1; }
-            "--launch-delay" => { a.launch_delay = next().parse().expect("--launch-delay SECONDS"); a.delay_set = true; i += 1; }
-            "--fighters" => { a.fighters = next().parse().expect("--fighters N"); i += 1; }
-            "--fps" => { a.fps = next().parse().expect("--fps N, or 0 for no cap"); i += 1; }
-            "--thickness" => { a.thickness = next().parse().expect("--thickness R"); i += 1; }
+            "--yaw" => {
+                a.yaw = next().parse().expect("--yaw RADIANS");
+                i += 1;
+            }
+            "--pitch" => {
+                a.pitch = next().parse().expect("--pitch RADIANS");
+                i += 1;
+            }
+            "--paused" => {
+                a.hud = true;
+                a.paused = true;
+            }
+            "--reinforce" => {
+                a.reinforce = next().parse().expect("--reinforce N");
+                i += 1;
+            }
+            "--rocks" => {
+                a.rocks = next().parse().expect("--rocks N");
+                i += 1;
+            }
+            "--launch-delay" => {
+                a.launch_delay = next().parse().expect("--launch-delay SECONDS");
+                a.delay_set = true;
+                i += 1;
+            }
+            "--fighters" => {
+                a.fighters = next().parse().expect("--fighters N");
+                i += 1;
+            }
+            "--fps" => {
+                a.fps = next().parse().expect("--fps N, or 0 for no cap");
+                i += 1;
+            }
+            "--thickness" => {
+                a.thickness = next().parse().expect("--thickness R");
+                i += 1;
+            }
             other => panic!("unknown argument {other}"),
         }
         i += 1;
@@ -245,16 +319,29 @@ fn main() {
     }
     let args = args;
     let mut app = App::new();
-    let assets = AssetPlugin { file_path: ASSETS.into(), ..default() };
+    let assets = AssetPlugin {
+        file_path: ASSETS.into(),
+        ..default()
+    };
     if args.headless {
         app.add_plugins(
             DefaultPlugins
                 .set(assets)
-                .set(WindowPlugin { primary_window: None, exit_condition: ExitCondition::DontExit, ..default() })
+                .set(WindowPlugin {
+                    primary_window: None,
+                    exit_condition: ExitCondition::DontExit,
+                    ..default()
+                })
                 .disable::<WinitPlugin>(),
         )
         .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::from_millis(1)))
-        .insert_resource(Headless { frames: args.frames, out: args.out.clone(), width: args.width, height: args.height, shot: false })
+        .insert_resource(Headless {
+            frames: args.frames,
+            out: args.out.clone(),
+            width: args.width,
+            height: args.height,
+            shot: false,
+        })
         .add_systems(Update, headless_capture);
     } else {
         app.add_plugins(DefaultPlugins.set(assets).set(WindowPlugin {
@@ -283,25 +370,29 @@ fn main() {
         // one before left. `nav_input` is in the main chain below because it
         // runs headless too; the `before` is what keeps a left press from
         // being a confirm AND the start of a box in the same frame.
-        app.add_systems(Startup, build_hud)
-            .add_systems(
-                Update,
-                (
-                    (toggle_pause, select_input).chain().before(nav_input),
-                    hud_feedback,
-                    tick_fps,
-                    hud_orders.after(nav_input),
-                    draw_marquee,
-                    draw_bars,
-                    pick_hull,
-                ),
-            );
+        app.add_systems(Startup, build_hud).add_systems(
+            Update,
+            (
+                (toggle_pause, select_input).chain().before(nav_input),
+                hud_feedback,
+                tick_fps,
+                hud_orders.after(nav_input),
+                draw_marquee,
+                draw_bars,
+                pick_hull,
+            ),
+        );
     }
     if args.fps > 0 {
-        app.insert_resource(FrameLimit::new(args.fps)).add_systems(Last, limit_frames);
+        app.insert_resource(FrameLimit::new(args.fps))
+            .add_systems(Last, limit_frames);
     }
     app.insert_resource(ClearColor(Color::BLACK))
-        .insert_resource(SwarmConfig { count: args.motes, fixed_dt: args.fixed_dt, ..default() })
+        .insert_resource(SwarmConfig {
+            count: args.motes,
+            fixed_dt: args.fixed_dt,
+            ..default()
+        })
         .insert_resource(SceneSpec {
             hull: args.hull.clone(),
             chewers: args.chewers,
@@ -336,7 +427,10 @@ fn main() {
         .init_resource::<Lead>()
         .init_resource::<Marquee>()
         .init_resource::<BarPool>()
-        .insert_resource(Hud { paused: args.paused, ..default() })
+        .insert_resource(Hud {
+            paused: args.paused,
+            ..default()
+        })
         .add_systems(Startup, (load_textures, setup).chain())
         .add_systems(
             Update,

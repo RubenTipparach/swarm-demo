@@ -130,17 +130,37 @@ pub(crate) fn draw_flames(
     // Two flames per engine: a short white hot core inside a longer coloured
     // one. One alone is a flat cutout of colour; nested, the core reads as
     // the part that is actually burning and the body as what it throws.
-    let mut cone = |at: Vec3, dir: Vec3, size: f32, throttle: f32, hot: Vec3, cool: Vec3, seed: u32| {
-        // A flicker, hashed off the engine and the tick rather than rolled,
-        // so both seats and a re-watch see the same flame.
-        let flick = 0.88 + 0.24 * (swarm_core::rng::hash_cell(seed ^ (tick.tick / 3)) & 0xFF) as f32 / 255.0;
-        // Long and narrow rather than short and wide: a jet, not a bell of
-        // flame. The first cut was as broad as it was long and read as a
-        // paper cone stuck on the back of the ship.
-        let len = size * (0.9 + 6.5 * throttle) * flick;
-        add_flame(&mut pos, &mut col, &mut idx, at, dir, size * 0.92, len, cool);
-        add_flame(&mut pos, &mut col, &mut idx, at, dir, size * 0.52, len * 0.40, hot);
-    };
+    let mut cone =
+        |at: Vec3, dir: Vec3, size: f32, throttle: f32, hot: Vec3, cool: Vec3, seed: u32| {
+            // A flicker, hashed off the engine and the tick rather than rolled,
+            // so both seats and a re-watch see the same flame.
+            let flick = 0.88
+                + 0.24 * (swarm_core::rng::hash_cell(seed ^ (tick.tick / 3)) & 0xFF) as f32 / 255.0;
+            // Long and narrow rather than short and wide: a jet, not a bell of
+            // flame. The first cut was as broad as it was long and read as a
+            // paper cone stuck on the back of the ship.
+            let len = size * (0.9 + 6.5 * throttle) * flick;
+            add_flame(
+                &mut pos,
+                &mut col,
+                &mut idx,
+                at,
+                dir,
+                size * 0.92,
+                len,
+                cool,
+            );
+            add_flame(
+                &mut pos,
+                &mut col,
+                &mut idx,
+                at,
+                dir,
+                size * 0.52,
+                len * 0.40,
+                hot,
+            );
+        };
 
     for (hull, xf) in &hulls {
         if hull.dead_hull {
@@ -204,7 +224,10 @@ pub(crate) fn draw_flames(
         }
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     if pos.is_empty() {
         mesh = empty_mesh();
     } else {
@@ -244,12 +267,17 @@ pub(crate) fn throttle_of(hull: &Hull, forward: Vec3, out_z: f32) -> f32 {
 
 /// The drive cells themselves brighten with the throttle, so the mouth of an
 /// engine is hot before any flame comes out of it.
-pub(crate) fn glow_engines(hulls: Query<(&Hull, &Transform)>, mut materials: ResMut<Assets<StandardMaterial>>) {
+pub(crate) fn glow_engines(
+    hulls: Query<(&Hull, &Transform)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
     for (hull, xf) in &hulls {
         // The main drive's own throttle: the surface is shared by every bell
         // on the ship and cannot be lit two ways at once.
         let t = throttle_of(hull, xf.rotation * Vec3::Z, -1.0);
-        let Some(mat) = hull.surface_mats.get(SURF_DRIVE as usize) else { continue };
+        let Some(mat) = hull.surface_mats.get(SURF_DRIVE as usize) else {
+            continue;
+        };
         if let Some(m) = materials.get_mut(mat) {
             m.emissive = LinearRgba::rgb(3.4 * t, 1.5 * t * t, 0.35 * t * t);
         }

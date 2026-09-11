@@ -26,7 +26,10 @@ pub(crate) struct FrameLimit {
 
 impl FrameLimit {
     pub(crate) fn new(fps: u32) -> Self {
-        FrameLimit { budget: Duration::from_secs_f64(1.0 / fps as f64), next: Instant::now() }
+        FrameLimit {
+            budget: Duration::from_secs_f64(1.0 / fps as f64),
+            next: Instant::now(),
+        }
     }
 }
 
@@ -122,7 +125,18 @@ pub(crate) fn setup(
 
     // A wave already on its way in, so a headless run can photograph one.
     for n in 0..scene.reinforce {
-        call_one(&mut commands, &mut meshes, &mut materials, &tex, &scene.hull, radius, Vec3::ZERO, Quat::IDENTITY, (scene.chewers / 3) as u32, n);
+        call_one(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            &tex,
+            &scene.hull,
+            radius,
+            Vec3::ZERO,
+            Quat::IDENTITY,
+            (scene.chewers / 3) as u32,
+            n,
+        );
     }
 
     // ---- the showcase: one of each archetype, big, in chitin ----
@@ -151,7 +165,8 @@ pub(crate) fn setup(
                 Mesh3d(meshes.add(to_mesh_where(&s, |i| i != SURF_DRIVE as usize))),
                 MeshMaterial3d(alien_mat.clone()),
                 children![(Mesh3d(lit), MeshMaterial3d(lit_mat), Transform::IDENTITY)],
-                Transform::from_xyz(-4.5 + n as f32 * 3.0, -radius * 0.75, radius * 1.15).with_scale(Vec3::splat(scale)),
+                Transform::from_xyz(-4.5 + n as f32 * 3.0, -radius * 0.75, radius * 1.15)
+                    .with_scale(Vec3::splat(scale)),
                 Showcase,
             ));
         }
@@ -205,7 +220,10 @@ pub(crate) fn setup(
             unlit: true,
             ..default()
         });
-        let engines: Vec<Drive> = engine_clusters(&m).into_iter().map(|(gun, _, cells)| Drive { gun, cells }).collect();
+        let engines: Vec<Drive> = engine_clusters(&m)
+            .into_iter()
+            .map(|(gun, _, cells)| Drive { gun, cells })
+            .collect();
         let at_xf = Transform::from_translation(at).with_scale(Vec3::splat(scale));
         // No armour multiplier: the hundred is what makes the PLAYER's ship a
         // siege, and putting it on the carriers too would mean neither side
@@ -236,7 +254,13 @@ pub(crate) fn setup(
             seed: 900 + n as u64,
         });
     }
-    info!("{} motherships at {:.1} to {:.1} units, radius {:.2} each", scene.hives, radius * HIVE_NEAR, radius * HIVE_FAR, want);
+    info!(
+        "{} motherships at {:.1} to {:.1} units, radius {:.2} each",
+        scene.hives,
+        radius * HIVE_NEAR,
+        radius * HIVE_FAR,
+        want
+    );
 
     // ---- the asteroid field ----
     //
@@ -256,7 +280,11 @@ pub(crate) fn setup(
         let t = (n as f32 + 0.5) / scene.rocks.max(1) as f32;
         let a = n as f32 * 2.399_963_2;
         let out = radius * (ROCK_NEAR + (ROCK_FAR - ROCK_NEAR) * t);
-        let at = Vec3::new(a.cos() * out, (rng.range(-1.0, 1.0)) * radius * 2.6, a.sin() * out);
+        let at = Vec3::new(
+            a.cos() * out,
+            (rng.range(-1.0, 1.0)) * radius * 2.6,
+            a.sin() * out,
+        );
         let sm = greedy_mesh(&m, None);
         // One child per surface, through the hull's own material builder, so
         // the ore keeps its own finish instead of wearing the stone's. A
@@ -317,10 +345,17 @@ pub(crate) fn setup(
     // motes in a cell of the density field into an optical depth. A disc the
     // size of the drone's own silhouette, halved, because a drone is limbs and
     // the gaps between them rather than a ball.
-    let area = std::f32::consts::PI * drone.radius() * drone.radius() * 0.5 * scene.thickness.max(0.0);
+    let area =
+        std::f32::consts::PI * drone.radius() * drone.radius() * 0.5 * scene.thickness.max(0.0);
     cfg.sun = SUN.normalize().extend(area);
-    info!("a mote covers {:.3} square units of the light, thickness {:.2}", area, scene.thickness);
-    spawn_mote_mesh(&mut commands, meshes.add(to_mote_mesh(&greedy_mesh(&drone, None))));
+    info!(
+        "a mote covers {:.3} square units of the light, thickness {:.2}",
+        area, scene.thickness
+    );
+    spawn_mote_mesh(
+        &mut commands,
+        meshes.add(to_mote_mesh(&greedy_mesh(&drone, None))),
+    );
 
     // And one unit quad, drawn once per spark off the other half of it. The
     // quad is turned to face the eye in the shader; this is only its corners.
@@ -407,7 +442,10 @@ pub(crate) fn setup(
         // Say what was baked, in numbers: a sky that comes out one colour is
         // a bake with no structure or a display that lifts its floor, and the
         // picture cannot tell those apart.
-        let lum: Vec<f32> = texels.iter().map(|c| 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]).collect();
+        let lum: Vec<f32> = texels
+            .iter()
+            .map(|c| 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2])
+            .collect();
         let (mut lo, mut hi, mut sum) = (f32::MAX, f32::MIN, 0.0f32);
         for &l in &lum {
             lo = lo.min(l);
@@ -429,27 +467,62 @@ pub(crate) fn setup(
         }
     }
     let mut sky = Image::new(
-        Extent3d { width: SKY_SIZE as u32, height: SKY_SIZE as u32, depth_or_array_layers: 6 },
+        Extent3d {
+            width: SKY_SIZE as u32,
+            height: SKY_SIZE as u32,
+            depth_or_array_layers: 6,
+        },
         TextureDimension::D2,
         data,
         TextureFormat::Rgba16Float,
         RenderAssetUsages::RENDER_WORLD,
     );
-    sky.texture_view_descriptor = Some(TextureViewDescriptor { dimension: Some(TextureViewDimension::Cube), ..default() });
+    sky.texture_view_descriptor = Some(TextureViewDescriptor {
+        dimension: Some(TextureViewDimension::Cube),
+        ..default()
+    });
     let sky = images.add(sky);
-    info!("sky: {} faces of {}x{} baked in {:.0} ms", 6, SKY_SIZE, SKY_SIZE, t0.elapsed().as_secs_f32() * 1000.0);
+    info!(
+        "sky: {} faces of {}x{} baked in {:.0} ms",
+        6,
+        SKY_SIZE,
+        SKY_SIZE,
+        t0.elapsed().as_secs_f32() * 1000.0
+    );
 
     // The stars, as points on a shell that rides the eye.
     let stars = starfield(&preset);
     let mut star_mesh = Mesh::new(PrimitiveTopology::PointList, RenderAssetUsages::default());
-    star_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, stars.iter().map(|s| [s.dir[0] * STAR_RADIUS, s.dir[1] * STAR_RADIUS, s.dir[2] * STAR_RADIUS]).collect::<Vec<_>>());
+    star_mesh.insert_attribute(
+        Mesh::ATTRIBUTE_POSITION,
+        stars
+            .iter()
+            .map(|s| {
+                [
+                    s.dir[0] * STAR_RADIUS,
+                    s.dir[1] * STAR_RADIUS,
+                    s.dir[2] * STAR_RADIUS,
+                ]
+            })
+            .collect::<Vec<_>>(),
+    );
     star_mesh.insert_attribute(
         Mesh::ATTRIBUTE_COLOR,
-        stars.iter().map(|s| { let b = 0.6 + s.size * 0.5; [s.tint[0] * b, s.tint[1] * b, s.tint[2] * b, 1.0] }).collect::<Vec<_>>(),
+        stars
+            .iter()
+            .map(|s| {
+                let b = 0.6 + s.size * 0.5;
+                [s.tint[0] * b, s.tint[1] * b, s.tint[2] * b, 1.0]
+            })
+            .collect::<Vec<_>>(),
     );
     commands.spawn((
         Mesh3d(meshes.add(star_mesh)),
-        MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::WHITE, unlit: true, ..default() })),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::WHITE,
+            unlit: true,
+            ..default()
+        })),
         Transform::IDENTITY,
         bevy::camera::visibility::NoFrustumCulling,
         AtInfinity,
@@ -466,7 +539,12 @@ pub(crate) fn setup(
     let sun = SUN.normalize();
     let sun_colour = Color::srgb_u8(0xff, 0xf0, 0xd2);
     commands.spawn((
-        DirectionalLight { illuminance: 9000.0, color: sun_colour, shadows_enabled: false, ..default() },
+        DirectionalLight {
+            illuminance: 9000.0,
+            color: sun_colour,
+            shadows_enabled: false,
+            ..default()
+        },
         Transform::from_rotation(Quat::from_rotation_arc(Vec3::NEG_Z, -sun)),
     ));
     commands.spawn((
@@ -502,12 +580,27 @@ pub(crate) fn setup(
     // ---- the camera: framed on the hull from ahead and above, OUTSIDE the
     // swarm, whose standoff reaches about two radii ----
     let dist = radius * scene.zoom;
-    let orbit = Orbit { yaw: scene.yaw, pitch: scene.pitch, dist, target: scene.target, follow: false };
-    let eye = scene.target + Vec3::new(orbit.yaw.sin() * orbit.pitch.cos(), orbit.pitch.sin(), orbit.yaw.cos() * orbit.pitch.cos()) * dist;
+    let orbit = Orbit {
+        yaw: scene.yaw,
+        pitch: scene.pitch,
+        dist,
+        target: scene.target,
+        follow: false,
+    };
+    let eye = scene.target
+        + Vec3::new(
+            orbit.yaw.sin() * orbit.pitch.cos(),
+            orbit.pitch.sin(),
+            orbit.yaw.cos() * orbit.pitch.cos(),
+        ) * dist;
     let mut cam = commands.spawn((
         Camera3d::default(),
         bevy::render::view::Hdr,
-        Projection::from(PerspectiveProjection { far: FAR_PLANE, near: 0.05, ..default() }),
+        Projection::from(PerspectiveProjection {
+            far: FAR_PLANE,
+            near: 0.05,
+            ..default()
+        }),
         bevy::post_process::bloom::Bloom::NATURAL,
         // Brightness is what texel 1.0 maps to in cd/m^2, and the default
         // exposure puts about a thousand of those at white. The archive's sky
@@ -517,7 +610,11 @@ pub(crate) fn setup(
         // the fight, and a backdrop that competes with the things in front of
         // it is not a backdrop. The bake is unchanged and still logs what it
         // made: this is the display, not the texture.
-        bevy::core_pipeline::Skybox { image: sky.clone(), brightness: 260.0, ..default() },
+        bevy::core_pipeline::Skybox {
+            image: sky.clone(),
+            brightness: 260.0,
+            ..default()
+        },
         // The same cubemap lights the hulls. Kept well under the sky's own
         // brightness: at the sky's level it washed a purple chitin grey.
         //
@@ -531,7 +628,11 @@ pub(crate) fn setup(
         // to almost nothing. That is what aerial perspective IS, arrived at
         // from the other direction, and it is exactly the thing space does
         // not have: there is no medium between the camera and the rock.
-        bevy::light::GeneratedEnvironmentMapLight { environment_map: sky, intensity: 90.0, ..default() },
+        bevy::light::GeneratedEnvironmentMapLight {
+            environment_map: sky,
+            intensity: 90.0,
+            ..default()
+        },
         // Nought, which is the honest number for vacuum. An ambient term is a
         // stand in for light bounced off the air and the ground, and there is
         // neither out here: what lights a shadowed flank is the sky, which is
@@ -551,13 +652,18 @@ pub(crate) fn setup(
         // shader took the same cut to its floor (`mote.wgsl`), because a
         // cloud lit softer than the ships it is attacking reads as a
         // different picture laid over the first.
-        AmbientLight { color: Color::srgb(0.55, 0.62, 0.80), brightness: 2.4, ..default() },
+        AmbientLight {
+            color: Color::srgb(0.55, 0.62, 0.80),
+            brightness: 2.4,
+            ..default()
+        },
         Transform::from_translation(eye).looking_at(scene.target, Vec3::Y),
         orbit,
         bevy::render::view::NoIndirectDrawing,
     ));
     if let Some(h) = headless {
-        let mut img = Image::new_target_texture(h.width, h.height, TextureFormat::Rgba8UnormSrgb, None);
+        let mut img =
+            Image::new_target_texture(h.width, h.height, TextureFormat::Rgba8UnormSrgb, None);
         img.texture_descriptor.usage |= TextureUsages::COPY_SRC | TextureUsages::TEXTURE_BINDING;
         let handle = images.add(img);
         // And it is the UI's camera too. Bevy hands UI to whichever camera
@@ -565,7 +671,11 @@ pub(crate) fn setup(
         // window, so every node was laid out and drawn to nothing: `--hud`
         // produced a screenshot with no HUD in it, which is the one outcome a
         // flag for proving the HUD must not have.
-        cam.insert((RenderTarget::Image(handle.clone().into()), Msaa::Off, IsDefaultUiCamera));
+        cam.insert((
+            RenderTarget::Image(handle.clone().into()),
+            Msaa::Off,
+            IsDefaultUiCamera,
+        ));
         commands.insert_resource(HeadlessTarget(handle));
     }
 }

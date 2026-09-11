@@ -43,7 +43,9 @@ pub(crate) fn toggle_pause(
     // sees the mode the key was pressed in and not the `Idle` they leave
     // behind, or one escape would cancel the order AND open the menu.
     // Space is the plain pause, which is the key an RTS puts it on.
-    if keys.just_pressed(KeyCode::Space) || (keys.just_pressed(KeyCode::Escape) && *mode == OrderMode::Idle) {
+    if keys.just_pressed(KeyCode::Space)
+        || (keys.just_pressed(KeyCode::Escape) && *mode == OrderMode::Idle)
+    {
         hud.paused = !hud.paused;
     } else if clicked {
         hud.paused = false;
@@ -52,6 +54,10 @@ pub(crate) fn toggle_pause(
     }
     cfg.paused = hud.paused;
     for mut n in &mut menu {
-        n.display = if hud.paused { Display::Flex } else { Display::None };
+        n.display = if hud.paused {
+            Display::Flex
+        } else {
+            Display::None
+        };
     }
 }

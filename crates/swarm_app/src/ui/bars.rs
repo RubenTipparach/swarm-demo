@@ -21,7 +21,12 @@ pub(crate) struct HealthBar;
 #[derive(Resource, Default)]
 pub(crate) struct BarPool(pub(crate) Vec<Entity>);
 
-pub(crate) fn draw_marquee(mode: Res<OrderMode>, marquee: Res<Marquee>, windows: Query<&Window>, mut q: Query<&mut Node, With<MarqueeBox>>) {
+pub(crate) fn draw_marquee(
+    mode: Res<OrderMode>,
+    marquee: Res<Marquee>,
+    windows: Query<&Window>,
+    mut q: Query<&mut Node, With<MarqueeBox>>,
+) {
     let Ok(mut n) = q.single_mut() else { return };
     if *mode != OrderMode::Box {
         n.display = Display::None;
@@ -63,13 +68,19 @@ pub(crate) fn draw_bars(
     cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     ships: Query<
         (&Transform, Option<&Hull>, Option<&Fighter>),
-        (Or<(With<Hull>, With<Fighter>)>, Without<Hive>, With<Selected>),
+        (
+            Or<(With<Hull>, With<Fighter>)>,
+            Without<Hive>,
+            With<Selected>,
+        ),
     >,
     mut pool: ResMut<BarPool>,
     mut bars: Query<(&mut Node, &Children), With<HealthBar>>,
     mut fills: Query<(&mut Node, &mut BackgroundColor), Without<HealthBar>>,
 ) {
-    let Ok((cam, cam_xf)) = cams.single() else { return };
+    let Ok((cam, cam_xf)) = cams.single() else {
+        return;
+    };
     let mut want: Vec<(Vec2, f32)> = Vec::new();
     for (xf, hull, fighter) in &ships {
         let (share, radius): (f32, f32) = match (hull, fighter) {
@@ -83,19 +94,28 @@ pub(crate) fn draw_bars(
                 // how much plating is left. Plating comes off and the ship
                 // keeps flying; the reactor is the only thing that kills it,
                 // so it is the only honest thing to put on a bar.
-                (1.0 - (gone as f32 / core as f32) / REACTOR_LOSS, h.model.radius())
+                (
+                    1.0 - (gone as f32 / core as f32) / REACTOR_LOSS,
+                    h.model.radius(),
+                )
             }
             (_, Some(f)) => (f.hp, FIGHTER_RADIUS),
             _ => continue,
         };
-        let Ok(p) = cam.world_to_viewport(cam_xf, xf.translation + Vec3::Y * radius * 0.9) else { continue };
+        let Ok(p) = cam.world_to_viewport(cam_xf, xf.translation + Vec3::Y * radius * 0.9) else {
+            continue;
+        };
         want.push((p, share.clamp(0.0, 1.0)));
     }
 
     while pool.0.len() < want.len() {
         let fill = commands
             .spawn((
-                Node { width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() },
+                Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    ..default()
+                },
                 BackgroundColor(Color::srgb(0.3, 0.95, 0.4)),
                 Pickable::IGNORE,
             ))
@@ -122,7 +142,9 @@ pub(crate) fn draw_bars(
     }
 
     for (n, &bar) in pool.0.iter().enumerate() {
-        let Ok((mut node, kids)) = bars.get_mut(bar) else { continue };
+        let Ok((mut node, kids)) = bars.get_mut(bar) else {
+            continue;
+        };
         match want.get(n) {
             Some(&(p, share)) if hud.show_bars => {
                 node.display = Display::Flex;

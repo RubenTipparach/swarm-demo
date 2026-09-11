@@ -136,7 +136,16 @@ pub(crate) fn nav_input(
     mut pings: ResMut<Pings>,
     mut ack: ResMut<Ack>,
     mut commands: Commands,
-    mut hulls: Query<(Entity, &mut Hull, &Transform, Option<&Selected>, Option<&Escort>), Without<Hive>>,
+    mut hulls: Query<
+        (
+            Entity,
+            &mut Hull,
+            &Transform,
+            Option<&Selected>,
+            Option<&Escort>,
+        ),
+        Without<Hive>,
+    >,
     mut aimed: Local<bool>,
 ) {
     // The acknowledgements age on the REAL clock: a ping plays out whether or
@@ -160,7 +169,11 @@ pub(crate) fn nav_input(
             radius = radius.max(hull.model.radius());
         }
     }
-    let centre = if chosen.is_empty() { Vec3::ZERO } else { chosen.iter().copied().sum::<Vec3>() / chosen.len() as f32 };
+    let centre = if chosen.is_empty() {
+        Vec3::ZERO
+    } else {
+        chosen.iter().copied().sum::<Vec3>() / chosen.len() as f32
+    };
 
     // `--aim x,y,z` opens the disc on the first frame, aimed at that point, so
     // a headless run can photograph an order being given: the disc, the
@@ -169,7 +182,13 @@ pub(crate) fn nav_input(
         *aimed = true;
         if let (Some(aim), false) = (scene.aim, chosen.is_empty()) {
             *mode = OrderMode::Move;
-            *order = NavOrder { anchor: centre, on_plane: centre, lift: 0.0, lifting: false, radius: radius.max(1e-3) };
+            *order = NavOrder {
+                anchor: centre,
+                on_plane: centre,
+                lift: 0.0,
+                lifting: false,
+                radius: radius.max(1e-3),
+            };
             order.aim_on_plane(Vec3::new(aim.x, centre.y, aim.z));
             order.lift = aim.y - centre.y;
             order.lifting = order.lift.abs() > 1e-3;
@@ -186,7 +205,9 @@ pub(crate) fn nav_input(
     }
 
     let Ok(window) = windows.single() else { return };
-    let Ok((cam, cam_xf)) = cams.single() else { return };
+    let Ok((cam, cam_xf)) = cams.single() else {
+        return;
+    };
     // The pointer over a button belongs to the button.
     if over_ui.iter().any(|i| *i != Interaction::None) {
         return;
@@ -207,7 +228,13 @@ pub(crate) fn nav_input(
                 return;
             }
             *mode = OrderMode::Move;
-            *order = NavOrder { anchor: centre, on_plane: centre, lift: 0.0, lifting: false, radius };
+            *order = NavOrder {
+                anchor: centre,
+                on_plane: centre,
+                lift: 0.0,
+                lifting: false,
+                radius,
+            };
             // And aim it straight away, below, so the disc opens under the
             // cursor rather than a frame later.
         }
@@ -237,7 +264,10 @@ pub(crate) fn nav_input(
                 ack.text = format!("{n} {} under way", if n == 1 { "ship" } else { "ships" });
                 ack.left = ACK_LIFE;
                 *mode = OrderMode::Idle;
-                info!("move order: {n} ships to ({:.1}, {:.1}, {:.1})", to.x, to.y, to.z);
+                info!(
+                    "move order: {n} ships to ({:.1}, {:.1}, {:.1})",
+                    to.x, to.y, to.z
+                );
                 return;
             }
             // The right button inside an open order does nothing. It was
@@ -248,14 +278,21 @@ pub(crate) fn nav_input(
 
     // Aim, with what the cursor says right now. Off the window there is
     // nothing to say and the last aim stands.
-    let Some(cursor) = window.cursor_position() else { return };
-    let Ok(ray) = cam.viewport_to_world(cam_xf, cursor) else { return };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
+    let Ok(ray) = cam.viewport_to_world(cam_xf, cursor) else {
+        return;
+    };
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
     if shift {
         // The plane point holds still and the cursor names a height on the
         // vertical through it: the two cannot both own the mouse.
         order.aim_lift(ray);
-    } else if let Some(d) = ray.intersect_plane(Vec3::new(0.0, order.anchor.y, 0.0), InfinitePlane3d::new(Vec3::Y)) {
+    } else if let Some(d) = ray.intersect_plane(
+        Vec3::new(0.0, order.anchor.y, 0.0),
+        InfinitePlane3d::new(Vec3::Y),
+    ) {
         order.aim_on_plane(ray.get_point(d));
     }
 }

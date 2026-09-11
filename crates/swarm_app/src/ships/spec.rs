@@ -26,7 +26,21 @@ pub(crate) fn spawn_hull(
     let model = load_hull(which);
     let surf = surface_materials(&model, tex, materials);
     let win = window_materials(&model, tex, materials);
-    spawn_ship(commands, meshes, materials, tex, model, surf, win, at, chewers, seed, station, ARMOUR, Some(which))
+    spawn_ship(
+        commands,
+        meshes,
+        materials,
+        tex,
+        model,
+        surf,
+        win,
+        at,
+        chewers,
+        seed,
+        station,
+        ARMOUR,
+        Some(which),
+    )
 }
 
 /// One ship of any kind: a hull off the shelf, or a mothership, or anything
@@ -88,7 +102,10 @@ pub(crate) fn spawn_ship(
         None => {}
     }
     let guns: Vec<Gun> = turrets.iter().map(|(g, _, _)| *g).collect();
-    let engines: Vec<Drive> = engine_clusters(&model).into_iter().map(|(gun, _, cells)| Drive { gun, cells }).collect();
+    let engines: Vec<Drive> = engine_clusters(&model)
+        .into_iter()
+        .map(|(gun, _, cells)| Drive { gun, cells })
+        .collect();
     let cells = model.solid_count();
     let mut hull = Hull {
         surface_mats,
@@ -134,7 +151,9 @@ pub(crate) fn spawn_ship(
             depth_bias: 12.0,
             ..default()
         }),
-        bricks: (0..damage.brick_count()).map(|_| Brick::default()).collect(),
+        bricks: (0..damage.brick_count())
+            .map(|_| Brick::default())
+            .collect(),
         chewers: Vec::new(),
         guns,
         engines,
@@ -164,7 +183,8 @@ pub(crate) fn spawn_ship(
     // pivot. The mesh is in the PIVOT's frame, so rotating the child rotates
     // the turret about its base instead of about the middle of the ship.
     for (slot, (gun, mid, cells)) in turrets.iter().enumerate() {
-        let mut only = VoxelModel::new(hull.model.nx, hull.model.ny, hull.model.nz, hull.model.cell);
+        let mut only =
+            VoxelModel::new(hull.model.nx, hull.model.ny, hull.model.nz, hull.model.cell);
         only.surfaces = hull.model.surfaces.clone();
         for &c in cells {
             only.grid[c] = mat::MACHINE;
@@ -184,7 +204,10 @@ pub(crate) fn spawn_ship(
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(hull.surface_mats[surf].clone()),
                 Transform::from_translation(pivot),
-                Turret { slot, rest: Vec3::from(gun.out).normalize_or(Vec3::Z) },
+                Turret {
+                    slot,
+                    rest: Vec3::from(gun.out).normalize_or(Vec3::Z),
+                },
                 ChildOf(hull_entity),
             ));
         }
@@ -201,15 +224,31 @@ pub(crate) fn spawn_ship(
                 let nrm = whole.normals[q * 4];
                 let c = hull.model.centre_of(cell);
                 let cs = hull.model.cell;
-                Chewer { at: Vec3::new(c[0] + nrm[0] * cs, c[1] + nrm[1] * cs, c[2] + nrm[2] * cs), next: (n * 7) % 40 }
+                Chewer {
+                    at: Vec3::new(c[0] + nrm[0] * cs, c[1] + nrm[1] * cs, c[2] + nrm[2] * cs),
+                    next: (n * 7) % 40,
+                }
             })
             .collect();
     }
 
     if let Some(which) = log {
         let used: Vec<String> = (0..SURF_COUNT)
-            .filter(|&s| hull.bricks.iter().any(|b| b.skin.get(s).and_then(|p| p.entity).is_some()))
-            .map(|s| format!("{s}:{}", hull.model.surfaces.get(s).map(|x| x.finish.as_str()).unwrap_or("?")))
+            .filter(|&s| {
+                hull.bricks
+                    .iter()
+                    .any(|b| b.skin.get(s).and_then(|p| p.entity).is_some())
+            })
+            .map(|s| {
+                format!(
+                    "{s}:{}",
+                    hull.model
+                        .surfaces
+                        .get(s)
+                        .map(|x| x.finish.as_str())
+                        .unwrap_or("?")
+                )
+            })
             .collect();
         info!(
             "hull {}: {} cells, {} quads over {} bricks, {} window faces of {} kinds, {} guns, {} engines, surfaces [{}], radius {:.2}",

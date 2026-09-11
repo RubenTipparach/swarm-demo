@@ -26,9 +26,19 @@ pub(crate) fn fly_tracers(tick: Res<Tick>, mut fx: ResMut<LiveFx>, mut sparks: R
     }
     fx.tracers.retain(|t| t.t < 1.0);
     for t in landed {
-        fx.blasts.push(Blast { at: t.to.to_array(), radius: t.burst, born: tick.tick });
+        fx.blasts.push(Blast {
+            at: t.to.to_array(),
+            radius: t.burst,
+            born: tick.tick,
+        });
         let mut list = Vec::new();
-        blast_sparks(tick.tick.wrapping_add(t.to.x.to_bits()), t.to.to_array(), t.burst, 26, &mut list);
+        blast_sparks(
+            tick.tick.wrapping_add(t.to.x.to_bits()),
+            t.to.to_array(),
+            t.burst,
+            26,
+            &mut list,
+        );
         for s in &mut list {
             s.life *= 0.34;
             s.size *= 0.9;
@@ -104,14 +114,26 @@ pub(crate) fn fire_flak(
             // a capital ship's point defence going off ought to light the
             // plating round it.
             let mut list = Vec::new();
-            blast_sparks(tick.tick.wrapping_add(g.cell), at.to_array(), radius * 0.20, 14, &mut list);
+            blast_sparks(
+                tick.tick.wrapping_add(g.cell),
+                at.to_array(),
+                radius * 0.20,
+                14,
+                &mut list,
+            );
             for s in &mut list {
                 s.life *= 0.22;
                 s.size *= 0.7;
             }
             sparks.extend(list);
             let mut flash = Vec::new();
-            muzzle_sparks(g.cell ^ hull.seed ^ tick.tick, at.to_array(), dir.to_array(), hull.model.cell * 0.7, &mut flash);
+            muzzle_sparks(
+                g.cell ^ hull.seed ^ tick.tick,
+                at.to_array(),
+                dir.to_array(),
+                hull.model.cell * 0.7,
+                &mut flash,
+            );
             sparks.extend(flash);
         }
     }

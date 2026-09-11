@@ -24,7 +24,9 @@ pub(crate) fn add_line(
     if dir == Vec3::ZERO {
         return;
     }
-    let across = dir.cross(eye - (a + b) * 0.5).normalize_or(Vec3::Y.cross(dir).normalize_or(Vec3::X));
+    let across = dir
+        .cross(eye - (a + b) * 0.5)
+        .normalize_or(Vec3::Y.cross(dir).normalize_or(Vec3::X));
     let base = pos.len() as u32;
     for s in [-1.0f32, 1.0] {
         pos.push((a + across * w * s).to_array());
@@ -77,7 +79,16 @@ pub(crate) fn add_ring(
 }
 
 /// A filled disc in the horizontal plane, as a fan.
-pub(crate) fn add_disc(pos: &mut Vec<[f32; 3]>, col: &mut Vec<[f32; 4]>, idx: &mut Vec<u32>, centre: Vec3, r: f32, c: [f32; 3], alpha: f32, segments: usize) {
+pub(crate) fn add_disc(
+    pos: &mut Vec<[f32; 3]>,
+    col: &mut Vec<[f32; 4]>,
+    idx: &mut Vec<u32>,
+    centre: Vec3,
+    r: f32,
+    c: [f32; 3],
+    alpha: f32,
+    segments: usize,
+) {
     let base = pos.len() as u32;
     pos.push(centre.to_array());
     col.push([c[0], c[1], c[2], alpha]);
@@ -128,16 +139,56 @@ pub(crate) fn draw_nav(
         }
         let r = hull.model.radius();
         if sel.is_some() {
-            add_ring(&mut pos, &mut col, &mut idx, xf.translation, r * 1.25, r * 0.03, CYAN, 0.85, 48);
+            add_ring(
+                &mut pos,
+                &mut col,
+                &mut idx,
+                xf.translation,
+                r * 1.25,
+                r * 0.03,
+                CYAN,
+                0.85,
+                48,
+            );
         }
         if let Some(t) = hull.order {
-            add_line(&mut pos, &mut col, &mut idx, eye, xf.translation, t, r * 0.02, ORANGE, 0.85);
-            add_ring(&mut pos, &mut col, &mut idx, t, r * 0.9, r * 0.03, ORANGE, 0.9, 48);
+            add_line(
+                &mut pos,
+                &mut col,
+                &mut idx,
+                eye,
+                xf.translation,
+                t,
+                r * 0.02,
+                ORANGE,
+                0.85,
+            );
+            add_ring(
+                &mut pos,
+                &mut col,
+                &mut idx,
+                t,
+                r * 0.9,
+                r * 0.03,
+                ORANGE,
+                0.9,
+                48,
+            );
         }
     }
     for xf in &fighters {
         let r = FIGHTER_RADIUS;
-        add_ring(&mut pos, &mut col, &mut idx, xf.translation, r * 1.25, r * 0.06, CYAN, 0.85, 24);
+        add_ring(
+            &mut pos,
+            &mut col,
+            &mut idx,
+            xf.translation,
+            r * 1.25,
+            r * 0.06,
+            CYAN,
+            0.85,
+            24,
+        );
     }
 
     // ---- the move disc ----
@@ -159,31 +210,117 @@ pub(crate) fn draw_nav(
         // of alpha blended sRGB is about 0.03 here: at 0.13 the whole field
         // went teal and the ships inside it read as under water.
         add_disc(&mut pos, &mut col, &mut idx, at, reach, CYAN, 0.03, 96);
-        add_ring(&mut pos, &mut col, &mut idx, at, reach, r * 0.045, CYAN, 0.95, 96);
+        add_ring(
+            &mut pos,
+            &mut col,
+            &mut idx,
+            at,
+            reach,
+            r * 0.045,
+            CYAN,
+            0.95,
+            96,
+        );
         // The X: two diameters at forty five and a hundred and thirty five
         // degrees, so neither lies along the line to the target.
-        for a in [std::f32::consts::FRAC_PI_4, 3.0 * std::f32::consts::FRAC_PI_4] {
+        for a in [
+            std::f32::consts::FRAC_PI_4,
+            3.0 * std::f32::consts::FRAC_PI_4,
+        ] {
             let d = Vec3::new(a.cos(), 0.0, a.sin()) * reach;
-            add_line(&mut pos, &mut col, &mut idx, eye, at - d, at + d, r * 0.03, CYAN, 0.75);
+            add_line(
+                &mut pos,
+                &mut col,
+                &mut idx,
+                eye,
+                at - d,
+                at + d,
+                r * 0.03,
+                CYAN,
+                0.75,
+            );
         }
         // Where it lands on the plane, and the line out to it.
-        add_ring(&mut pos, &mut col, &mut idx, order.on_plane, r * 0.85, r * 0.035, GOLD, 0.95, 64);
-        add_line(&mut pos, &mut col, &mut idx, eye, at, order.on_plane, r * 0.03, GOLD, 0.95);
+        add_ring(
+            &mut pos,
+            &mut col,
+            &mut idx,
+            order.on_plane,
+            r * 0.85,
+            r * 0.035,
+            GOLD,
+            0.95,
+            64,
+        );
+        add_line(
+            &mut pos,
+            &mut col,
+            &mut idx,
+            eye,
+            at,
+            order.on_plane,
+            r * 0.03,
+            GOLD,
+            0.95,
+        );
         if order.lifted() {
             let to = order.target();
-            add_line(&mut pos, &mut col, &mut idx, eye, order.on_plane, to, r * 0.03, GOLD, 0.95);
-            add_line(&mut pos, &mut col, &mut idx, eye, at, to, r * 0.03, GOLD, 0.95);
-            add_ring(&mut pos, &mut col, &mut idx, to, r * 0.67, r * 0.035, RED, 0.95, 64);
+            add_line(
+                &mut pos,
+                &mut col,
+                &mut idx,
+                eye,
+                order.on_plane,
+                to,
+                r * 0.03,
+                GOLD,
+                0.95,
+            );
+            add_line(
+                &mut pos,
+                &mut col,
+                &mut idx,
+                eye,
+                at,
+                to,
+                r * 0.03,
+                GOLD,
+                0.95,
+            );
+            add_ring(
+                &mut pos,
+                &mut col,
+                &mut idx,
+                to,
+                r * 0.67,
+                r * 0.035,
+                RED,
+                0.95,
+                64,
+            );
         }
     }
 
     // ---- the pings: open on a square root and fade ----
     for &(at, age, r) in &pings.0 {
         let t = (age / PING_LIFE).clamp(0.0, 1.0);
-        add_ring(&mut pos, &mut col, &mut idx, at, r * (0.9 + 4.2 * t.sqrt()), r * 0.05, GOLD, 1.0 - t, 64);
+        add_ring(
+            &mut pos,
+            &mut col,
+            &mut idx,
+            at,
+            r * (0.9 + 4.2 * t.sqrt()),
+            r * 0.05,
+            GOLD,
+            1.0 - t,
+            64,
+        );
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     if pos.is_empty() {
         mesh = empty_mesh();
     } else {

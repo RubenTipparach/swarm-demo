@@ -25,8 +25,8 @@ use bevy::{
     },
     mesh::{MeshVertexBufferLayoutRef, VertexBufferLayout},
     pbr::{
-        MeshPipeline, MeshPipelineKey, RenderMeshInstances, SetMeshBindGroup,
-        SetMeshViewBindGroup, SetMeshViewBindingArrayBindGroup,
+        MeshPipeline, MeshPipelineKey, RenderMeshInstances, SetMeshBindGroup, SetMeshViewBindGroup,
+        SetMeshViewBindingArrayBindGroup,
     },
     prelude::*,
     render::{
@@ -40,7 +40,9 @@ use bevy::{
             RenderCommandResult, SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
         },
         render_resource::{
-            binding_types::{sampler, storage_buffer, storage_buffer_sized, texture_2d, uniform_buffer},
+            binding_types::{
+                sampler, storage_buffer, storage_buffer_sized, texture_2d, uniform_buffer,
+            },
             *,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
@@ -284,7 +286,10 @@ impl GpuSpark {
 }
 
 fn spark_seed(s: &Spark) -> f32 {
-    let bits = s.pos[0].to_bits() ^ s.pos[1].to_bits().rotate_left(11) ^ s.pos[2].to_bits().rotate_left(21) ^ s.kind.code();
+    let bits = s.pos[0].to_bits()
+        ^ s.pos[1].to_bits().rotate_left(11)
+        ^ s.pos[2].to_bits().rotate_left(21)
+        ^ s.kind.code();
     (swarm_core::rng::hash_cell(bits) >> 8) as f32 / 16_777_216.0
 }
 
@@ -373,12 +378,16 @@ impl Plugin for SwarmPlugin {
             .add_render_command::<Transparent3d, DrawSparks>()
             .init_resource::<SpecializedMeshPipelines<MotePipeline>>()
             .init_resource::<SpecializedMeshPipelines<SparkPipeline>>()
-            .add_systems(RenderStartup, (init_tick_pipeline, init_mote_pipeline, init_spark_pipeline))
+            .add_systems(
+                RenderStartup,
+                (init_tick_pipeline, init_mote_pipeline, init_spark_pipeline),
+            )
             .add_systems(
                 Render,
                 (
                     prepare_swarm_buffers.in_set(RenderSystems::PrepareResources),
-                    (prepare_tick_bind_group, prepare_fx_bind_group).in_set(RenderSystems::PrepareBindGroups),
+                    (prepare_tick_bind_group, prepare_fx_bind_group)
+                        .in_set(RenderSystems::PrepareBindGroups),
                     (queue_motes, queue_sparks).in_set(RenderSystems::QueueMeshes),
                 ),
             );
@@ -501,7 +510,11 @@ fn prepare_swarm_buffers(
         // The ring may wrap, and a wrap is two writes rather than one that
         // runs off the end of the region and into the swarm's half.
         let head = (CPU_SPARKS - *cursor).min(gpu.len() as u32) as usize;
-        render_queue.write_buffer(buffer, *cursor as u64 * stride, bytemuck::cast_slice(&gpu[..head]));
+        render_queue.write_buffer(
+            buffer,
+            *cursor as u64 * stride,
+            bytemuck::cast_slice(&gpu[..head]),
+        );
         if head < gpu.len() {
             render_queue.write_buffer(buffer, 0, bytemuck::cast_slice(&gpu[head..]));
         }
@@ -543,7 +556,12 @@ fn prepare_swarm_buffers(
                 // The delay first, then spread over about eight seconds, and
                 // never exactly nought, which the shader reads as "already
                 // out".
-                state: Vec4::new(cfg.launch_delay + 0.02 + rng.range(0.0, 8.0), scale, hive, 0.0),
+                state: Vec4::new(
+                    cfg.launch_delay + 0.02 + rng.range(0.0, 8.0),
+                    scale,
+                    hive,
+                    0.0,
+                ),
                 // Whole, in transit, and its own place round the ring.
                 extra: Vec4::new(1.0, 0.0, 0.0, rng.range(0.0, std::f32::consts::TAU)),
                 // Nothing in the way until the field has been counted once.
@@ -643,7 +661,10 @@ fn init_tick_pipeline(mut commands: Commands, assets: Res<AssetServer>, cache: R
         "particle tick",
         &BindGroupLayoutEntries::sequential(
             ShaderStages::COMPUTE,
-            (storage_buffer::<Vec<GpuSpark>>(false), uniform_buffer::<Params>(false)),
+            (
+                storage_buffer::<Vec<GpuSpark>>(false),
+                uniform_buffer::<Params>(false),
+            ),
         ),
     );
     let swarm = cache.queue_compute_pipeline(ComputePipelineDescriptor {
@@ -666,7 +687,13 @@ fn init_tick_pipeline(mut commands: Commands, assets: Res<AssetServer>, cache: R
             ..default()
         })
     });
-    commands.insert_resource(TickPipeline { swarm_layout, particle_layout, swarm, particles, field });
+    commands.insert_resource(TickPipeline {
+        swarm_layout,
+        particle_layout,
+        swarm,
+        particles,
+        field,
+    });
 }
 
 #[derive(Resource)]
@@ -744,21 +771,34 @@ impl render_graph::Node for SwarmTickNode {
         if !self.ready {
             return Ok(());
         }
-        let (Some(bgs), Some(buffers)) = (world.get_resource::<TickBindGroups>(), world.get_resource::<SwarmBuffers>()) else {
+        let (Some(bgs), Some(buffers)) = (
+            world.get_resource::<TickBindGroups>(),
+            world.get_resource::<SwarmBuffers>(),
+        ) else {
             return Ok(());
         };
         let cache = world.resource::<PipelineCache>();
         let pipeline = world.resource::<TickPipeline>();
-        let (Some(swarm), Some(particles)) =
-            (cache.get_compute_pipeline(pipeline.swarm), cache.get_compute_pipeline(pipeline.particles))
-        else {
+        let (Some(swarm), Some(particles)) = (
+            cache.get_compute_pipeline(pipeline.swarm),
+            cache.get_compute_pipeline(pipeline.particles),
+        ) else {
             return Ok(());
         };
-        let field: Vec<_> = pipeline.field.iter().filter_map(|id| cache.get_compute_pipeline(*id)).collect();
+        let field: Vec<_> = pipeline
+            .field
+            .iter()
+            .filter_map(|id| cache.get_compute_pipeline(*id))
+            .collect();
         if field.len() != 3 {
             return Ok(());
         }
-        let mut pass = ctx.command_encoder().begin_compute_pass(&ComputePassDescriptor { label: Some("swarm tick"), ..default() });
+        let mut pass = ctx
+            .command_encoder()
+            .begin_compute_pass(&ComputePassDescriptor {
+                label: Some("swarm tick"),
+                ..default()
+            });
         pass.set_bind_group(0, &bgs.swarm, &[]);
         // The field first, and in this order, because each pass reads what the
         // one before it wrote: empty the grid, count every mote into it, then
@@ -831,7 +871,12 @@ fn prepare_fx_bind_group(
     let bg = device.create_bind_group(
         Some("fx textures"),
         &cache.get_bind_group_layout(&fx_layout()),
-        &BindGroupEntries::sequential((&chitin.texture_view, &chitin.sampler, &ember.texture_view, &ember.sampler)),
+        &BindGroupEntries::sequential((
+            &chitin.texture_view,
+            &chitin.sampler,
+            &ember.texture_view,
+            &ember.sampler,
+        )),
     );
     commands.insert_resource(FxBindGroup(bg));
 }
@@ -851,7 +896,9 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetFxBindGroup<I> {
         fx: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        let Some(fx) = fx else { return RenderCommandResult::Skip };
+        let Some(fx) = fx else {
+            return RenderCommandResult::Skip;
+        };
         pass.set_bind_group(I, &fx.into_inner().0, &[]);
         RenderCommandResult::Success
     }
@@ -885,8 +932,16 @@ macro_rules! instanced_pipeline {
                 // once, which is fine for a cube and collides the moment the
                 // mesh carries any.
                 let mut attributes = vec![
-                    VertexAttribute { format: VertexFormat::Float32x4, offset: 0, shader_location: 8 },
-                    VertexAttribute { format: VertexFormat::Float32x4, offset: 16, shader_location: 9 },
+                    VertexAttribute {
+                        format: VertexFormat::Float32x4,
+                        offset: 0,
+                        shader_location: 8,
+                    },
+                    VertexAttribute {
+                        format: VertexFormat::Float32x4,
+                        offset: 16,
+                        shader_location: 9,
+                    },
                 ];
                 attributes.extend($extra_attr);
                 d.vertex.buffers.push(VertexBufferLayout {
@@ -904,7 +959,9 @@ macro_rules! instanced_pipeline {
                     // wrong for a spark: an alpha blended spark DARKENS what is
                     // behind it wherever its own colour is dimmer, so a burst
                     // over a bright hull came out as a swarm of grey specks.
-                    if let Some(Some(target)) = d.fragment.as_mut().and_then(|f| f.targets.first_mut()) {
+                    if let Some(Some(target)) =
+                        d.fragment.as_mut().and_then(|f| f.targets.first_mut())
+                    {
                         target.blend = Some(BlendState {
                             color: BlendComponent {
                                 src_factor: BlendFactor::One,
@@ -942,8 +999,16 @@ instanced_pipeline!(
     // draw it hurt, and 48 is where `extra` sits in the struct. Location 11 is
     // what the cloud does to the light on it, at 64.
     vec![
-        VertexAttribute { format: VertexFormat::Float32x4, offset: 48, shader_location: 10 },
-        VertexAttribute { format: VertexFormat::Float32x4, offset: 64, shader_location: 11 },
+        VertexAttribute {
+            format: VertexFormat::Float32x4,
+            offset: 48,
+            shader_location: 10
+        },
+        VertexAttribute {
+            format: VertexFormat::Float32x4,
+            offset: 64,
+            shader_location: 11
+        },
     ],
     true,
     false
@@ -954,12 +1019,20 @@ instanced_pipeline!(
     SparkPipeline,
     SPARK_SHADER,
     GpuSpark,
-    vec![VertexAttribute { format: VertexFormat::Float32x4, offset: 32, shader_location: 10 }],
+    vec![VertexAttribute {
+        format: VertexFormat::Float32x4,
+        offset: 32,
+        shader_location: 10
+    }],
     false,
     true
 );
 
-fn init_mote_pipeline(mut commands: Commands, assets: Res<AssetServer>, mesh_pipeline: Res<MeshPipeline>) {
+fn init_mote_pipeline(
+    mut commands: Commands,
+    assets: Res<AssetServer>,
+    mesh_pipeline: Res<MeshPipeline>,
+) {
     commands.insert_resource(MotePipeline {
         shader: assets.load(MOTE_SHADER),
         mesh_pipeline: mesh_pipeline.clone(),
@@ -967,7 +1040,11 @@ fn init_mote_pipeline(mut commands: Commands, assets: Res<AssetServer>, mesh_pip
     });
 }
 
-fn init_spark_pipeline(mut commands: Commands, assets: Res<AssetServer>, mesh_pipeline: Res<MeshPipeline>) {
+fn init_spark_pipeline(
+    mut commands: Commands,
+    assets: Res<AssetServer>,
+    mesh_pipeline: Res<MeshPipeline>,
+) {
     commands.insert_resource(SparkPipeline {
         shader: assets.load(SPARK_SHADER),
         mesh_pipeline: mesh_pipeline.clone(),
@@ -991,13 +1068,21 @@ fn queue_instanced<P: SpecializedMeshPipeline<Key = MeshPipelineKey> + Resource,
     draw: bevy::render::render_phase::DrawFunctionId,
 ) {
     for (view, msaa) in views {
-        let Some(phase) = phases.get_mut(&view.retained_view_entity) else { continue };
-        let view_key = MeshPipelineKey::from_msaa_samples(msaa.samples()) | MeshPipelineKey::from_hdr(view.hdr);
+        let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
+            continue;
+        };
+        let view_key = MeshPipelineKey::from_msaa_samples(msaa.samples())
+            | MeshPipelineKey::from_hdr(view.hdr);
         let rangefinder = view.rangefinder3d();
         for (entity, main_entity) in query {
-            let Some(inst) = instances.render_mesh_queue_data(*main_entity) else { continue };
-            let Some(mesh) = meshes.get(inst.mesh_asset_id) else { continue };
-            let key = view_key | MeshPipelineKey::from_primitive_topology(mesh.primitive_topology());
+            let Some(inst) = instances.render_mesh_queue_data(*main_entity) else {
+                continue;
+            };
+            let Some(mesh) = meshes.get(inst.mesh_asset_id) else {
+                continue;
+            };
+            let key =
+                view_key | MeshPipelineKey::from_primitive_topology(mesh.primitive_topology());
             let pipeline_id = match pipelines.specialize(cache, pipeline, key, &mesh.layout) {
                 Ok(p) => p,
                 Err(e) => {
@@ -1031,7 +1116,16 @@ fn queue_motes(
 ) {
     let draw = draw_functions.read().id::<DrawMotes>();
     queue_instanced(
-        "mote", &*pipeline, &mut pipelines, &cache, &meshes, &instances, &query, &mut phases, &views, draw,
+        "mote",
+        &*pipeline,
+        &mut pipelines,
+        &cache,
+        &meshes,
+        &instances,
+        &query,
+        &mut phases,
+        &views,
+        draw,
     );
 }
 
@@ -1048,7 +1142,16 @@ fn queue_sparks(
 ) {
     let draw = draw_functions.read().id::<DrawSparks>();
     queue_instanced(
-        "spark", &*pipeline, &mut pipelines, &cache, &meshes, &instances, &query, &mut phases, &views, draw,
+        "spark",
+        &*pipeline,
+        &mut pipelines,
+        &cache,
+        &meshes,
+        &instances,
+        &query,
+        &mut phases,
+        &views,
+        draw,
     );
 }
 
@@ -1093,20 +1196,41 @@ impl<P: PhaseItem, const WHICH: usize> RenderCommand<P> for DrawInstanced<WHICH>
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
         let allocator = allocator.into_inner();
-        let Some(buffers) = buffers else { return RenderCommandResult::Skip };
+        let Some(buffers) = buffers else {
+            return RenderCommandResult::Skip;
+        };
         let buffers = buffers.into_inner();
-        let (buffer, count) = if WHICH == 0 { (&buffers.motes, buffers.count) } else { (&buffers.sparks, SPARKS) };
-        let Some(inst) = instances.render_mesh_queue_data(item.main_entity()) else { return RenderCommandResult::Skip };
-        let Some(gpu_mesh) = meshes.into_inner().get(inst.mesh_asset_id) else { return RenderCommandResult::Skip };
-        let Some(vslice) = allocator.mesh_vertex_slice(&inst.mesh_asset_id) else { return RenderCommandResult::Skip };
+        let (buffer, count) = if WHICH == 0 {
+            (&buffers.motes, buffers.count)
+        } else {
+            (&buffers.sparks, SPARKS)
+        };
+        let Some(inst) = instances.render_mesh_queue_data(item.main_entity()) else {
+            return RenderCommandResult::Skip;
+        };
+        let Some(gpu_mesh) = meshes.into_inner().get(inst.mesh_asset_id) else {
+            return RenderCommandResult::Skip;
+        };
+        let Some(vslice) = allocator.mesh_vertex_slice(&inst.mesh_asset_id) else {
+            return RenderCommandResult::Skip;
+        };
 
         pass.set_vertex_buffer(0, vslice.buffer.slice(..));
         pass.set_vertex_buffer(1, buffer.slice(..));
         match &gpu_mesh.buffer_info {
-            RenderMeshBufferInfo::Indexed { index_format, count: icount } => {
-                let Some(islice) = allocator.mesh_index_slice(&inst.mesh_asset_id) else { return RenderCommandResult::Skip };
+            RenderMeshBufferInfo::Indexed {
+                index_format,
+                count: icount,
+            } => {
+                let Some(islice) = allocator.mesh_index_slice(&inst.mesh_asset_id) else {
+                    return RenderCommandResult::Skip;
+                };
                 pass.set_index_buffer(islice.buffer.slice(..), *index_format);
-                pass.draw_indexed(islice.range.start..(islice.range.start + icount), vslice.range.start as i32, 0..count);
+                pass.draw_indexed(
+                    islice.range.start..(islice.range.start + icount),
+                    vslice.range.start as i32,
+                    0..count,
+                );
             }
             RenderMeshBufferInfo::NonIndexed => {
                 pass.draw(vslice.range, 0..count);
@@ -1120,9 +1244,19 @@ impl<P: PhaseItem, const WHICH: usize> RenderCommand<P> for DrawInstanced<WHICH>
 /// because the instances are wherever the buffer says and the buffer is not a
 /// transform the culler can see.
 pub fn spawn_mote_mesh(commands: &mut Commands, mesh: Handle<Mesh>) {
-    commands.spawn((Mesh3d(mesh), Transform::IDENTITY, MoteMesh, NoFrustumCulling));
+    commands.spawn((
+        Mesh3d(mesh),
+        Transform::IDENTITY,
+        MoteMesh,
+        NoFrustumCulling,
+    ));
 }
 
 pub fn spawn_spark_mesh(commands: &mut Commands, mesh: Handle<Mesh>) {
-    commands.spawn((Mesh3d(mesh), Transform::IDENTITY, SparkMesh, NoFrustumCulling));
+    commands.spawn((
+        Mesh3d(mesh),
+        Transform::IDENTITY,
+        SparkMesh,
+        NoFrustumCulling,
+    ));
 }

@@ -81,9 +81,20 @@ pub(crate) fn call_one(
     // It ARRIVES: dropped well outside the formation, on the far side of its
     // own station, so a wave flies in past the camera rather than appearing
     // in the middle of the fight.
-    let at = lead_pos + lead_rot * (station + Vec3::new(side * radius * 4.0, radius * 1.5, -radius * 9.0));
+    let at = lead_pos
+        + lead_rot * (station + Vec3::new(side * radius * 4.0, radius * 1.5, -radius * 9.0));
     let xf = Transform::from_translation(at).looking_to(lead_rot * Vec3::NEG_Z, Vec3::Y);
-    spawn_hull(commands, meshes, materials, tex, which, xf, chewers, 0x9E37 + n * 0x4F1B, Some(station));
+    spawn_hull(
+        commands,
+        meshes,
+        materials,
+        tex,
+        which,
+        xf,
+        chewers,
+        0x9E37 + n * 0x4F1B,
+        Some(station),
+    );
 }
 
 /// Where the density field stands this frame.
@@ -102,7 +113,12 @@ pub(crate) fn publish_field(mut cfg: ResMut<SwarmConfig>, mut said: Local<bool>)
     // Never smaller than the ship and the traffic round it, or a swarm that
     // has killed every carrier would shrink its own field to a point.
     let mut half = cfg.hull_radius * 8.0;
-    for x in cfg.hives.iter().chain(cfg.rocks.iter()).chain(cfg.targets.iter()) {
+    for x in cfg
+        .hives
+        .iter()
+        .chain(cfg.rocks.iter())
+        .chain(cfg.targets.iter())
+    {
         half = half.max((x.truncate() - centre).abs().max_element() + x.w);
     }
     half *= 1.15;
@@ -110,7 +126,10 @@ pub(crate) fn publish_field(mut cfg: ResMut<SwarmConfig>, mut said: Local<bool>)
     cfg.field = (centre - Vec3::splat(half)).extend(cell);
     if !*said {
         *said = true;
-        info!("density field: {GRID}^3 cells of {cell:.2} units over a box {:.0} across", 2.0 * half);
+        info!(
+            "density field: {GRID}^3 cells of {cell:.2} units over a box {:.0} across",
+            2.0 * half
+        );
     }
 }
 
@@ -145,7 +164,10 @@ pub(crate) fn publish_hull(
         cfg.targets.push(xf.translation.extend(hull.model.radius()));
     }
     if *last_n != cfg.targets.len() {
-        info!("the swarm has {} ships to divide between", cfg.targets.len());
+        info!(
+            "the swarm has {} ships to divide between",
+            cfg.targets.len()
+        );
         *last_n = cfg.targets.len();
     }
 
@@ -163,7 +185,9 @@ pub(crate) fn publish_hull(
         }
         return;
     }
-    let Ok((e, hull, xf)) = lead_q.single() else { return };
+    let Ok((e, hull, xf)) = lead_q.single() else {
+        return;
+    };
     if *was != Some(e) {
         info!("the flagship is {e}");
         *was = Some(e);
@@ -213,7 +237,21 @@ pub(crate) fn call_reinforcements(
     }
     let call = WING_WAVE.min(WING_MAX - out);
     for n in out..out + call {
-        call_one(&mut commands, &mut meshes, &mut materials, &tex, &scene.hull, radius, lead.pos, lead.rot, (scene.chewers / 3) as u32, n);
+        call_one(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            &tex,
+            &scene.hull,
+            radius,
+            lead.pos,
+            lead.rot,
+            (scene.chewers / 3) as u32,
+            n,
+        );
     }
-    info!("{call} reinforcements inbound, {} in the wing (escorts, not flagships)", out + call);
+    info!(
+        "{call} reinforcements inbound, {} in the wing (escorts, not flagships)",
+        out + call
+    );
 }

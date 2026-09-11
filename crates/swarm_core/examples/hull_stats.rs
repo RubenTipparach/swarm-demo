@@ -33,12 +33,19 @@ fn depth(m: &VoxelModel) -> Vec<u32> {
         let (i, j, k) = m.at(c);
         for (di, dj, dk) in NEIGHBOURS {
             let (ni, nj, nk) = (i as i32 + di, j as i32 + dj, k as i32 + dk);
-            if !m.inside(ni, nj, nk) { continue; }
+            if !m.inside(ni, nj, nk) {
+                continue;
+            }
             let nb = m.index(ni as usize, nj as usize, nk as usize);
-            if d[nb] != u32::MAX { continue; }
+            if d[nb] != u32::MAX {
+                continue;
+            }
             if m.grid[nb] == mat::EMPTY {
                 // through outside space for free, but never through a void inside the hull
-                if d[c] == 0 { d[nb] = 0; q.push_back(nb); }
+                if d[c] == 0 {
+                    d[nb] = 0;
+                    q.push_back(nb);
+                }
             } else {
                 d[nb] = d[c] + 1;
                 q.push_back(nb);
@@ -50,9 +57,34 @@ fn depth(m: &VoxelModel) -> Vec<u32> {
 
 fn main() {
     let dir = std::env::args().nth(1).unwrap_or("assets/hulls".into());
-    println!("{:<20} {:>6} {:>6} {:>6} {:>8} {:>5} {:>4} {:>4} {:>7} {:>5} {:>7} {:>7}",
-        "hull", "cells", "plate", "mach", "hp", "guns", "eng", "att", "reactor", "depth", "radius", "volrad");
-    for key in ["terran_corvette","terran_frigate","terran_destroyer","terran_cruiser","karisen_corvette","karisen_frigate","karisen_destroyer","karisen_cruiser","rogue_destroyer","benefactor_cruiser","civil_hauler"] {
+    println!(
+        "{:<20} {:>6} {:>6} {:>6} {:>8} {:>5} {:>4} {:>4} {:>7} {:>5} {:>7} {:>7}",
+        "hull",
+        "cells",
+        "plate",
+        "mach",
+        "hp",
+        "guns",
+        "eng",
+        "att",
+        "reactor",
+        "depth",
+        "radius",
+        "volrad"
+    );
+    for key in [
+        "terran_corvette",
+        "terran_frigate",
+        "terran_destroyer",
+        "terran_cruiser",
+        "karisen_corvette",
+        "karisen_frigate",
+        "karisen_destroyer",
+        "karisen_cruiser",
+        "rogue_destroyer",
+        "benefactor_cruiser",
+        "civil_hauler",
+    ] {
         let bytes = std::fs::read(format!("{dir}/{key}.ftvx")).unwrap();
         let m = VoxelModel::from_ftvx(&bytes).unwrap();
         let cells = m.solid_count();
@@ -61,11 +93,34 @@ fn main() {
         let hp: f32 = m.grid.iter().map(|&x| hp_for(x)).sum();
         let guns = guns_of(&m).len();
         let eng = engines_of(&m).len();
-        let att = m.purp.iter().zip(&m.grid).filter(|(&p, &g)| g != mat::EMPTY && p == purpose::ATTITUDE).count();
+        let att = m
+            .purp
+            .iter()
+            .zip(&m.grid)
+            .filter(|(&p, &g)| g != mat::EMPTY && p == purpose::ATTITUDE)
+            .count();
         let reactor = reactor_of(&m);
         let d = depth(&m);
-        let rdepth = reactor.iter().map(|&c| d[c]).filter(|&x| x != u32::MAX).min().unwrap_or(0);
-        println!("{:<20} {:>6} {:>6} {:>6} {:>8.0} {:>5} {:>4} {:>4} {:>7} {:>5} {:>7.2} {:>7.2}",
-            key, cells, plate, mach, hp, guns, eng, att, reactor.len(), rdepth, m.radius(), m.volume_radius());
+        let rdepth = reactor
+            .iter()
+            .map(|&c| d[c])
+            .filter(|&x| x != u32::MAX)
+            .min()
+            .unwrap_or(0);
+        println!(
+            "{:<20} {:>6} {:>6} {:>6} {:>8.0} {:>5} {:>4} {:>4} {:>7} {:>5} {:>7.2} {:>7.2}",
+            key,
+            cells,
+            plate,
+            mach,
+            hp,
+            guns,
+            eng,
+            att,
+            reactor.len(),
+            rdepth,
+            m.radius(),
+            m.volume_radius()
+        );
     }
 }

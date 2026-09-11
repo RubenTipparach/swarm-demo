@@ -122,8 +122,16 @@ pub(crate) fn go_critical(
         // else and keep flying, which is what makes a wreck that is still
         // fighting possible at all.
         let core = hull.reactor.len();
-        let gone = hull.reactor.iter().filter(|&&c| hull.damage.is_dead(c)).count();
-        let share = if core == 0 { 0.0 } else { gone as f32 / core as f32 };
+        let gone = hull
+            .reactor
+            .iter()
+            .filter(|&&c| hull.damage.is_dead(c))
+            .count();
+        let share = if core == 0 {
+            0.0
+        } else {
+            gone as f32 / core as f32
+        };
         let forced = scene.explode > 0 && tick.tick >= scene.explode;
         if !forced && share < REACTOR_LOSS {
             continue;
@@ -132,11 +140,19 @@ pub(crate) fn go_critical(
 
         let radius = hull.model.radius();
         let centre = xf.translation;
-        let blast = Blast { at: centre.to_array(), radius: radius * 1.8, born: tick.tick };
+        let blast = Blast {
+            at: centre.to_array(),
+            radius: radius * 1.8,
+            born: tick.tick,
+        };
         // What it does to the HULL is a much smaller sphere than what it does
         // to the swarm: a reactor takes the ball around it, and the pressure
         // wave goes a long way further than the hole does.
-        let hull_blast = Blast { at: [0.0; 3], radius: radius * HULL_HOLE, born: tick.tick };
+        let hull_blast = Blast {
+            at: [0.0; 3],
+            radius: radius * HULL_HOLE,
+            born: tick.tick,
+        };
         info!(
             "hull went critical at tick {} ({:.0}% of its {} reactor cells gone{}): blast radius {:.2}",
             tick.tick,
@@ -160,7 +176,13 @@ pub(crate) fn go_critical(
         // come off whole, because a turret is a piece too.
         let started = Instant::now();
         let mut breaches = hull.damage.blast_cells(&hull.model, &hull_blast, tick.tick);
-        let broken = shatter(&hull.model, &hull.damage, [0.0; 3], hull.seed ^ tick.tick, WRECK_MIN);
+        let broken = shatter(
+            &hull.model,
+            &hull.damage,
+            [0.0; 3],
+            hull.seed ^ tick.tick,
+            WRECK_MIN,
+        );
         // Whatever is too small to be a piece is dust, and dust is thrown.
         for &c in &broken.dust {
             if let Some(b) = hull.damage.kill(c, tick.tick) {
@@ -181,7 +203,11 @@ pub(crate) fn go_critical(
                 .entry(ch.colour)
                 .or_insert_with(|| {
                     let [r, g, bl, _] = swarm_core::mesh::rgb_of(ch.colour);
-                    materials.add(StandardMaterial { base_color: Color::srgb(r, g, bl), perceptual_roughness: 0.8, ..default() })
+                    materials.add(StandardMaterial {
+                        base_color: Color::srgb(r, g, bl),
+                        perceptual_roughness: 0.8,
+                        ..default()
+                    })
                 })
                 .clone();
             let origin = xf.transform_point(Vec3::from(ch.origin));
@@ -190,7 +216,10 @@ pub(crate) fn go_critical(
                 Mesh3d(cube.clone()),
                 MeshMaterial3d(mat),
                 Transform::from_translation(origin),
-                Debris { vel: Vec3::from(ch.velocity) + away * radius * 1.6, born: ch.born },
+                Debris {
+                    vel: Vec3::from(ch.velocity) + away * radius * 1.6,
+                    born: ch.born,
+                },
             ));
         }
 
@@ -214,10 +243,16 @@ pub(crate) fn go_critical(
                 }
             }
             damage.take_dirty();
-            let centroid = piece.iter().map(|&c| Vec3::from(hull.model.centre_of(c))).sum::<Vec3>() / piece.len() as f32;
+            let centroid = piece
+                .iter()
+                .map(|&c| Vec3::from(hull.model.centre_of(c)))
+                .sum::<Vec3>()
+                / piece.len() as f32;
             let mut wreck = Hull {
                 model: hull.model.clone(),
-                bricks: (0..damage.brick_count()).map(|_| Brick::default()).collect(),
+                bricks: (0..damage.brick_count())
+                    .map(|_| Brick::default())
+                    .collect(),
                 damage,
                 surface_mats: hull.surface_mats.clone(),
                 window_mats: hull.window_mats.clone(),
@@ -252,9 +287,19 @@ pub(crate) fn go_critical(
             }
             let pivot = xf.transform_point(centroid);
             let away = (pivot - centre).normalize_or(Vec3::Y);
-            let mut rng = Rng::new(((hull.seed as u64) << 16) ^ (i as u64) ^ ((tick.tick as u64) << 32));
-            let axis = Vec3::new(rng.range(-1.0, 1.0), rng.range(-1.0, 1.0), rng.range(-1.0, 1.0)).normalize_or(Vec3::X);
-            let jitter = Vec3::new(rng.range(-0.08, 0.08), rng.range(-0.08, 0.08), rng.range(-0.08, 0.08));
+            let mut rng =
+                Rng::new(((hull.seed as u64) << 16) ^ (i as u64) ^ ((tick.tick as u64) << 32));
+            let axis = Vec3::new(
+                rng.range(-1.0, 1.0),
+                rng.range(-1.0, 1.0),
+                rng.range(-1.0, 1.0),
+            )
+            .normalize_or(Vec3::X);
+            let jitter = Vec3::new(
+                rng.range(-0.08, 0.08),
+                rng.range(-0.08, 0.08),
+                rng.range(-0.08, 0.08),
+            );
             sizes.push(piece.len());
             commands.entity(wreck_e).insert((
                 wreck,
@@ -278,18 +323,33 @@ pub(crate) fn go_critical(
             }
             let (scale, rotation, translation) = gxf.to_scale_rotation_translation();
             let away = (translation - centre).normalize_or(Vec3::Y);
-            let mut rng = Rng::new(((hull.seed as u64) << 16) ^ (0x77 + guns as u64) ^ ((tick.tick as u64) << 32));
-            let axis = Vec3::new(rng.range(-1.0, 1.0), rng.range(-1.0, 1.0), rng.range(-1.0, 1.0)).normalize_or(Vec3::X);
-            commands.entity(t).remove::<ChildOf>().remove::<Turret>().insert((
-                Transform { translation, rotation, scale },
-                Wreck {
-                    pivot: translation,
-                    centroid: Vec3::ZERO,
-                    vel: hull.vel + away * radius * WRECK_SPEED * 1.6,
-                    spin: axis * rng.range(WRECK_SPIN.1, WRECK_SPIN.1 * 2.5),
-                    born: tick.tick,
-                },
-            ));
+            let mut rng = Rng::new(
+                ((hull.seed as u64) << 16) ^ (0x77 + guns as u64) ^ ((tick.tick as u64) << 32),
+            );
+            let axis = Vec3::new(
+                rng.range(-1.0, 1.0),
+                rng.range(-1.0, 1.0),
+                rng.range(-1.0, 1.0),
+            )
+            .normalize_or(Vec3::X);
+            commands
+                .entity(t)
+                .remove::<ChildOf>()
+                .remove::<Turret>()
+                .insert((
+                    Transform {
+                        translation,
+                        rotation,
+                        scale,
+                    },
+                    Wreck {
+                        pivot: translation,
+                        centroid: Vec3::ZERO,
+                        vel: hull.vel + away * radius * WRECK_SPEED * 1.6,
+                        spin: axis * rng.range(WRECK_SPIN.1, WRECK_SPIN.1 * 2.5),
+                        born: tick.tick,
+                    },
+                ));
             guns += 1;
         }
         info!(
@@ -320,7 +380,13 @@ pub(crate) fn go_critical(
         // the centre, which is what makes the first frame read as a flash
         // rather than as debris that was always there.
         let mut flash = Vec::new();
-        blast_sparks(tick.tick ^ 0xF1A5, centre.to_array(), blast.radius * 0.22, 26, &mut flash);
+        blast_sparks(
+            tick.tick ^ 0xF1A5,
+            centre.to_array(),
+            blast.radius * 0.22,
+            26,
+            &mut flash,
+        );
         for f in &mut flash {
             f.size *= 5.0;
             f.life = 0.10 + f.life * 0.06;

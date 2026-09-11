@@ -79,8 +79,10 @@ pub(crate) fn orbit_input(
     // which is what an RTS gives it; alt and left is the alias for a mouse
     // with no middle button.
     let alt = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
-    let dragging = buttons.pressed(MouseButton::Middle) || (alt && buttons.pressed(MouseButton::Left));
-    let started = buttons.just_pressed(MouseButton::Middle) || (alt && buttons.just_pressed(MouseButton::Left));
+    let dragging =
+        buttons.pressed(MouseButton::Middle) || (alt && buttons.pressed(MouseButton::Left));
+    let started = buttons.just_pressed(MouseButton::Middle)
+        || (alt && buttons.just_pressed(MouseButton::Left));
     if !dragging || started {
         motion.clear();
     } else {
@@ -159,7 +161,13 @@ pub(crate) fn orbit_input(
     // that.
     if !o.yaw.is_finite() || !o.pitch.is_finite() || !o.dist.is_finite() || !o.target.is_finite() {
         warn!("camera went non finite, reset");
-        *o = Orbit { yaw: 0.6, pitch: 0.38, dist: 40.0, target: Vec3::ZERO, follow: true };
+        *o = Orbit {
+            yaw: 0.6,
+            pitch: 0.38,
+            dist: 40.0,
+            target: Vec3::ZERO,
+            follow: true,
+        };
     }
 }
 
@@ -208,14 +216,22 @@ pub(crate) fn orbit_camera(
                 o.follow = false;
             }
         }
-        let eye = o.target + Vec3::new(o.yaw.sin() * o.pitch.cos(), o.pitch.sin(), o.yaw.cos() * o.pitch.cos()) * o.dist;
+        let eye = o.target
+            + Vec3::new(
+                o.yaw.sin() * o.pitch.cos(),
+                o.pitch.sin(),
+                o.yaw.cos() * o.pitch.cos(),
+            ) * o.dist;
         *xf = Transform::from_translation(eye).looking_at(o.target, Vec3::Y);
     }
 }
 
 /// Copy the eye onto everything at infinity, translation only: a star has a
 /// direction and no position, and must not turn with the camera either.
-pub(crate) fn ride_the_eye(cam: Query<&Transform, (With<Camera3d>, Without<AtInfinity>)>, mut far: Query<&mut Transform, With<AtInfinity>>) {
+pub(crate) fn ride_the_eye(
+    cam: Query<&Transform, (With<Camera3d>, Without<AtInfinity>)>,
+    mut far: Query<&mut Transform, With<AtInfinity>>,
+) {
     let Ok(c) = cam.single() else { return };
     for mut xf in &mut far {
         xf.translation = c.translation;

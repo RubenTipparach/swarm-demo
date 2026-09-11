@@ -29,7 +29,9 @@ pub(crate) fn resolve_beams(
             if hull.dead_hull {
                 continue;
             }
-            let Some(t) = b.reaches(xf.translation.to_array(), h.radius) else { continue };
+            let Some(t) = b.reaches(xf.translation.to_array(), h.radius) else {
+                continue;
+            };
             if hit.map_or(true, |(bt, _)| t < bt) {
                 hit = Some((t, e));
             }
@@ -41,7 +43,14 @@ pub(crate) fn resolve_beams(
         // The splash where it landed, thrown back along the beam.
         let back = (Vec3::from(b.from) - end).normalize_or(Vec3::Y);
         let mut list = Vec::new();
-        breach_sparks(tick.tick.wrapping_mul(2_654_435_761), tick.tick, end.to_array(), back.to_array(), 0.5, &mut list);
+        breach_sparks(
+            tick.tick.wrapping_mul(2_654_435_761),
+            tick.tick,
+            end.to_array(),
+            back.to_array(),
+            0.5,
+            &mut list,
+        );
         for sp in &mut list {
             // PURPLE. What a beam splashes off a carrier is the animal, and
             // the animal is chitin over violet: it used to throw the green its
@@ -63,13 +72,30 @@ pub(crate) fn resolve_beams(
             // beam opens a crater the size of a beam instead of taking a
             // single cell out of a mothership.
             for k in 0..BEAM_BITES {
-                let h = |q: u32| swarm_core::rng::hash_cell(tick.tick.wrapping_mul(2654435761) ^ (k * 977) ^ q) as f32 / u32::MAX as f32 - 0.5;
+                let h = |q: u32| {
+                    swarm_core::rng::hash_cell(tick.tick.wrapping_mul(2654435761) ^ (k * 977) ^ q)
+                        as f32
+                        / u32::MAX as f32
+                        - 0.5
+                };
                 let jit = Vec3::new(h(1), h(7), h(19)) * hull.model.cell * 2.4;
-                if let Some(br) = hull.damage.bite(&hull.model, (local + jit).to_array(), BEAM_DAMAGE, tick.tick) {
+                if let Some(br) = hull.damage.bite(
+                    &hull.model,
+                    (local + jit).to_array(),
+                    BEAM_DAMAGE,
+                    tick.tick,
+                ) {
                     let at = xf.transform_point(Vec3::from(hull.model.centre_of(br.cell as usize)));
                     let out = xf.rotation * Vec3::from(br.outward);
                     let mut spray = Vec::new();
-                    breach_sparks(br.cell, br.tick, at.to_array(), out.to_array(), hull.model.cell * hull.model.cell.max(0.02), &mut spray);
+                    breach_sparks(
+                        br.cell,
+                        br.tick,
+                        at.to_array(),
+                        out.to_array(),
+                        hull.model.cell * hull.model.cell.max(0.02),
+                        &mut spray,
+                    );
                     for sp in &mut spray {
                         sp.colour = [sp.colour[0] * 1.5, sp.colour[1] * 0.28, sp.colour[2] * 2.0];
                     }
@@ -156,7 +182,13 @@ pub(crate) fn fire_guns(
             });
             fx.fired += 1;
             let mut list = Vec::new();
-            muzzle_sparks(g.cell.wrapping_add(tick.tick), at.to_array(), dir.to_array(), hull.model.cell, &mut list);
+            muzzle_sparks(
+                g.cell.wrapping_add(tick.tick),
+                at.to_array(),
+                dir.to_array(),
+                hull.model.cell,
+                &mut list,
+            );
             sparks.extend(list);
         }
     }
@@ -189,7 +221,9 @@ pub(crate) fn draw_beams(
         let dir = (to - from).normalize_or_zero();
         let mid = (from + to) * 0.5;
         // Edge on to the eye, so the beam is the same width from anywhere.
-        let across = dir.cross(eye - mid).normalize_or(Vec3::Y.cross(dir).normalize_or(Vec3::X));
+        let across = dir
+            .cross(eye - mid)
+            .normalize_or(Vec3::Y.cross(dir).normalize_or(Vec3::X));
         // It fires bright and goes out; the tail thins as it does.
         let fade = 1.0 - b.age(tick.tick);
         let w = b.radius * (0.35 + 0.65 * fade);
@@ -224,11 +258,28 @@ pub(crate) fn draw_beams(
         // Clipped at the muzzle, so a bolt grows out of the gun instead of
         // starting in front of it.
         let tail = t.from + along * (t.t - TRACER_LEN).max(0.0);
-        let tail = if (at - tail).length() < len { tail } else { at - back };
-        add_line(&mut pos, &mut col, &mut idx, eye, tail, at, TRACER_WIDTH, t.colour, 1.0);
+        let tail = if (at - tail).length() < len {
+            tail
+        } else {
+            at - back
+        };
+        add_line(
+            &mut pos,
+            &mut col,
+            &mut idx,
+            eye,
+            tail,
+            at,
+            TRACER_WIDTH,
+            t.colour,
+            1.0,
+        );
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     quads.0 = idx.len() / 6;
     if pos.is_empty() {
         mesh = empty_mesh();

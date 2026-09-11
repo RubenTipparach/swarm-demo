@@ -146,7 +146,10 @@ pub(crate) struct Chewer {
 pub const ARMOUR: f32 = 1.0;
 
 pub(crate) fn to_mesh(md: &MeshData) -> Mesh {
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     if md.is_empty() {
         // A piece with nothing to draw still owns a handle, so give the
         // renderer one degenerate triangle rather than an empty buffer.
@@ -165,7 +168,14 @@ pub(crate) fn to_mesh(md: &MeshData) -> Mesh {
     let colours: Vec<[f32; 4]> = md
         .colours
         .iter()
-        .map(|c| [srgb_to_linear(c[0]), srgb_to_linear(c[1]), srgb_to_linear(c[2]), c[3]])
+        .map(|c| {
+            [
+                srgb_to_linear(c[0]),
+                srgb_to_linear(c[1]),
+                srgb_to_linear(c[2]),
+                c[3],
+            ]
+        })
         .collect();
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colours);
     mesh.insert_indices(Indices::U32(md.indices.clone()));
@@ -222,7 +232,12 @@ pub(crate) fn upsert(
         _ => {
             let h = meshes.add(mesh);
             let e = commands
-                .spawn((Mesh3d(h.clone()), MeshMaterial3d(material.clone()), Transform::IDENTITY, ChildOf(parent)))
+                .spawn((
+                    Mesh3d(h.clone()),
+                    MeshMaterial3d(material.clone()),
+                    Transform::IDENTITY,
+                    ChildOf(parent),
+                ))
                 .id();
             piece.entity = Some(e);
             piece.mesh = Some(h);
@@ -230,7 +245,14 @@ pub(crate) fn upsert(
     }
 }
 
-pub(crate) fn place_brick(commands: &mut Commands, meshes: &mut Assets<Mesh>, hull: &mut Hull, b: usize, s: &Surfaces, parent: Entity) {
+pub(crate) fn place_brick(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    hull: &mut Hull,
+    b: usize,
+    s: &Surfaces,
+    parent: Entity,
+) {
     let brick = &mut hull.bricks[b];
     if brick.skin.len() < SURF_COUNT {
         brick.skin.resize_with(SURF_COUNT, Piece::default);
@@ -239,19 +261,59 @@ pub(crate) fn place_brick(commands: &mut Commands, meshes: &mut Assets<Mesh>, hu
         brick.windows.resize_with(s.windows.len(), Piece::default);
     }
     for (i, md) in s.skin.iter().enumerate() {
-        upsert(commands, meshes, &mut brick.skin[i], md, &hull.surface_mats[i], parent);
+        upsert(
+            commands,
+            meshes,
+            &mut brick.skin[i],
+            md,
+            &hull.surface_mats[i],
+            parent,
+        );
     }
-    upsert(commands, meshes, &mut brick.inner, &s.inner, &hull.inner_mat, parent);
-    upsert(commands, meshes, &mut brick.wound, &s.wound, &hull.wound_mat, parent);
-    upsert(commands, meshes, &mut brick.scorch, &s.scorch, &hull.scorch_mat, parent);
+    upsert(
+        commands,
+        meshes,
+        &mut brick.inner,
+        &s.inner,
+        &hull.inner_mat,
+        parent,
+    );
+    upsert(
+        commands,
+        meshes,
+        &mut brick.wound,
+        &s.wound,
+        &hull.wound_mat,
+        parent,
+    );
+    upsert(
+        commands,
+        meshes,
+        &mut brick.scorch,
+        &s.scorch,
+        &hull.scorch_mat,
+        parent,
+    );
     for (k, md) in s.windows.iter().enumerate() {
-        upsert(commands, meshes, &mut brick.windows[k], md, &hull.window_mats[k], parent);
+        upsert(
+            commands,
+            meshes,
+            &mut brick.windows[k],
+            md,
+            &hull.window_mats[k],
+            parent,
+        );
     }
 }
 
 /// Re-mesh what the chewers reached this frame, and repaint the whole wound
 /// when its heat has moved a bucket.
-pub(crate) fn remesh_dirty(tick: Res<Tick>, mut hulls: Query<(Entity, &mut Hull)>, mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
+pub(crate) fn remesh_dirty(
+    tick: Res<Tick>,
+    mut hulls: Query<(Entity, &mut Hull)>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
     for (entity, mut hull) in &mut hulls {
         let hull = &mut *hull;
         let mut dirty = hull.damage.take_dirty();

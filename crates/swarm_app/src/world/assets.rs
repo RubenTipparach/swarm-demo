@@ -23,12 +23,28 @@ pub(crate) struct WindowMaps {
     pub(crate) normal: Handle<Image>,
 }
 
-pub(crate) const FINISHES: [&str; 9] = ["plate", "ribbed", "hex", "cracked", "tread", "greeble", "weave", "battered", "crate"];
+pub(crate) const FINISHES: [&str; 9] = [
+    "plate", "ribbed", "hex", "cracked", "tread", "greeble", "weave", "battered", "crate",
+];
 
-pub(crate) const WINDOW_KINDS: [&str; 9] = ["panes", "porthole", "strip", "bridge", "promenade", "beacons", "louvre", "cargo", "hangar"];
+pub(crate) const WINDOW_KINDS: [&str; 9] = [
+    "panes",
+    "porthole",
+    "strip",
+    "bridge",
+    "promenade",
+    "beacons",
+    "louvre",
+    "cargo",
+    "hangar",
+];
 
 pub(crate) fn sampler(repeat: bool) -> ImageSampler {
-    let mode = if repeat { ImageAddressMode::Repeat } else { ImageAddressMode::ClampToEdge };
+    let mode = if repeat {
+        ImageAddressMode::Repeat
+    } else {
+        ImageAddressMode::ClampToEdge
+    };
     ImageSampler::Descriptor(ImageSamplerDescriptor {
         address_mode_u: mode,
         address_mode_v: mode,
@@ -49,7 +65,10 @@ pub(crate) fn load_textures(mut commands: Commands, assets: Res<AssetServer>) {
     };
     let mut t = Textures::default();
     for f in FINISHES {
-        t.finishes.insert(f.into(), load(format!("textures/surf/armour_{f}_n.png"), false, true));
+        t.finishes.insert(
+            f.into(),
+            load(format!("textures/surf/armour_{f}_n.png"), false, true),
+        );
     }
     for k in WINDOW_KINDS {
         t.windows.insert(
@@ -66,7 +85,10 @@ pub(crate) fn load_textures(mut commands: Commands, assets: Res<AssetServer>) {
     // inside of a hole, the soot round it, and every spark in the air. One
     // fire, one picture of it.
     let ember = load("textures/ember.png".into(), true, false);
-    commands.insert_resource(FxTextures { chitin: chitin.clone(), ember: ember.clone() });
+    commands.insert_resource(FxTextures {
+        chitin: chitin.clone(),
+        ember: ember.clone(),
+    });
     t.chitin = Some(chitin);
     t.ember = Some(ember);
     commands.insert_resource(t);
@@ -104,7 +126,11 @@ pub(crate) fn load_hull(key: &str) -> VoxelModel {
 /// One material per surface, as `hullMaterials` in hull.ts builds them: the
 /// design's own finish, metalness and roughness for each, vertex colours
 /// carrying the livery. `smooth` is no normal map at all.
-pub(crate) fn surface_materials(model: &VoxelModel, tex: &Textures, materials: &mut Assets<StandardMaterial>) -> Vec<Handle<StandardMaterial>> {
+pub(crate) fn surface_materials(
+    model: &VoxelModel,
+    tex: &Textures,
+    materials: &mut Assets<StandardMaterial>,
+) -> Vec<Handle<StandardMaterial>> {
     (0..SURF_COUNT)
         .map(|s| {
             let (finish, metal, rough) = model
@@ -127,7 +153,11 @@ pub(crate) fn surface_materials(model: &VoxelModel, tex: &Textures, materials: &
 /// colour map multiplies the plating's paint down to glass, emission lights
 /// the panes that are on and is the only part that survives with no light on
 /// it, and the normal seats the frame into the plate.
-pub(crate) fn window_materials(model: &VoxelModel, tex: &Textures, materials: &mut Assets<StandardMaterial>) -> Vec<Handle<StandardMaterial>> {
+pub(crate) fn window_materials(
+    model: &VoxelModel,
+    tex: &Textures,
+    materials: &mut Assets<StandardMaterial>,
+) -> Vec<Handle<StandardMaterial>> {
     model
         .window_kinds
         .iter()
