@@ -149,6 +149,11 @@ pub const MAX_ROCKS: usize = 32;
 /// live hull is a target now and a mote picks one from its own seed.
 pub const MAX_TARGETS: usize = 16;
 
+/// How many mote deaths are remembered as obstacles at once. Mirrored in
+/// `swarm.wgsl`, which is the one number both sides have to agree on: a ring
+/// sized differently on the two sides is a read past the end of the buffer.
+pub const WAVES: usize = 64;
+
 /// The longest step anything in the game may take in one frame, in seconds.
 ///
 /// ONE number, read by the swarm's own clock and by every system on the CPU
@@ -377,6 +382,7 @@ pub struct SwarmBuffers {
     pub motes: Buffer,
     pub sparks: Buffer,
     pub counter: Buffer,
+    pub waves: Buffer,
     pub count: u32,
     /// Where the app's next spark goes, in its own half of the ring.
     cpu_cursor: u32,
@@ -500,11 +506,19 @@ fn prepare_swarm_buffers(
         contents: bytemuck::cast_slice(&[0u32; 4]),
         usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
     });
+    let waves = device.create_buffer_with_data(&BufferInitDescriptor {
+        label: Some("death shocks"),
+        // Four floats a slot: where it went off and when. Zeroed, and a zero
+        // time reads as "went off at the start of the run", which is behind
+        // every wave's life by the first frame anybody looks.
+        contents: bytemuck::cast_slice(&vec![0.0f32; WAVES * 4]),
+        usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+    });
     let mut params_buf = UniformBuffer::from(params);
     params_buf.write_buffer(&device, &render_queue);
     let mut cursor = 0;
     write_sparks(&sparks, &mut cursor);
-    commands.insert_resource(SwarmBuffers { motes, sparks, counter, count: cfg.count, cpu_cursor: cursor, params: params_buf });
+    commands.insert_resource(SwarmBuffers { motes, sparks, counter, waves, count: cfg.count, cpu_cursor: cursor, params: params_buf });
 }
 
 // ------------------------------------------------------------- compute --
@@ -527,6 +541,9 @@ fn init_tick_pipeline(mut commands: Commands, assets: Res<AssetServer>, cache: R
                 uniform_buffer::<Params>(false),
                 storage_buffer::<Vec<GpuSpark>>(false),
                 storage_buffer_sized(false, std::num::NonZeroU64::new(16)),
+                // The shock ring: where motes that came apart are, so the ones
+                // still flying can get out of the way.
+                storage_buffer_sized(false, std::num::NonZeroU64::new(WAVES as u64 * 16)),
             ),
         ),
     );
@@ -574,6 +591,7 @@ fn prepare_tick_bind_group(
             &b.params,
             b.sparks.as_entire_binding(),
             b.counter.as_entire_binding(),
+            b.waves.as_entire_binding(),
         )),
     );
     let particles = device.create_bind_group(

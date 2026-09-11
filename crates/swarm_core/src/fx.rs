@@ -391,7 +391,23 @@ fn clusters_of(m: &VoxelModel, surf: u8, purp: Option<u8>, least: usize, aft: bo
                 best = (reach, c, dir);
             }
         }
-        out.push(Gun { at: m.centre_of(best.1), out: best.2, cell: best.1 as u32 });
+        // The muzzle is the cluster's own MIDDLE carried out to its outer
+        // face, not the cell that happened to reach furthest.
+        //
+        // On a drive bell three cells square, a dozen cells tie at the same
+        // reach along the axis and the first one found wins, which is a
+        // CORNER. Every flame was therefore drawn off the corner of its own
+        // engine rather than out of the middle of it, and on a block of six
+        // bells that reads as the whole set being misaligned. Projecting the
+        // midpoint along the same axis puts it where the bell actually is.
+        let tip = m.centre_of(best.1);
+        let reach = dot(sub(tip, mid), best.2);
+        let at = [
+            mid[0] + best.2[0] * reach,
+            mid[1] + best.2[1] * reach,
+            mid[2] + best.2[2] * reach,
+        ];
+        out.push(Gun { at, out: best.2, cell: best.1 as u32 });
     }
     // In cell order, so two runs give the same placements in the same order.
     out.sort_by_key(|g| g.cell);
@@ -651,6 +667,53 @@ mod tests {
         let thrusters = (0..m.len()).filter(|&n| m.purp[n] == purpose::ATTITUDE).count();
         assert!(thrusters > 0, "and it has thrusters, which are not engines");
         eprintln!("terran_frigate: {} guns, {} engines, {} thruster cells", guns.len(), engines.len(), thrusters);
+    }
+}
+
+#[cfg(test)]
+mod muzzle_tests {
+    use super::*;
+    use crate::voxel::{mat, VoxelModel, SURF_DRIVE};
+
+    /// A drive's flame comes out of the MIDDLE of its bell.
+    ///
+    /// Built as one square block of drive cells, which is the shape that
+    /// exposed this: every cell on its outer face ties for "furthest along the
+    /// axis", so picking the winner picks a corner, and the flame was drawn
+    /// half a bell up and half a bell across from where the engine is.
+    #[test]
+    fn a_drive_plumes_from_the_centre_of_its_bell() {
+        let mut m = VoxelModel::new(16, 16, 16, 0.25);
+        // A 4x4x2 block of drive, centred on the lattice in x and y, aft in z.
+        for k in 2..4 {
+            for j in 6..10 {
+                for i in 6..10 {
+                    let n = m.index(i, j, k);
+                    m.grid[n] = mat::MACHINE;
+                    m.surf[n] = SURF_DRIVE;
+                    m.purp[n] = crate::voxel::purpose::PROPULSION;
+                }
+            }
+        }
+        let drives = engines_of(&m);
+        assert_eq!(drives.len(), 1, "one block is one drive");
+        let g = &drives[0];
+        // The lattice centre in x and y, which is where the block is centred.
+        let mid = m.centre_of(m.index(8, 8, 3));
+        assert!(
+            (g.at[0] - (mid[0] - m.cell * 0.5)).abs() < m.cell * 0.51,
+            "muzzle x {} is off the bell centre {}",
+            g.at[0],
+            mid[0] - m.cell * 0.5
+        );
+        assert!(
+            (g.at[1] - (mid[1] - m.cell * 0.5)).abs() < m.cell * 0.51,
+            "muzzle y {} is off the bell centre {}",
+            g.at[1],
+            mid[1] - m.cell * 0.5
+        );
+        // And it points aft, because the block is aft of the middle.
+        assert!(g.out[2] < -0.5, "a drive aft of the middle plumes forward: {:?}", g.out);
     }
 }
 

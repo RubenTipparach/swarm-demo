@@ -333,6 +333,75 @@ So what kills a mote is the shell reaching it, and a player can watch a burst
 travel into the cloud and see the hole appear at the end of its own flight,
 which is the whole reason for having a shell at all.
 
+## Linking is the slow step, and it looked like a hang
+
+A build that sits on `398/399: swarm_app(bin)` with no output is cargo waiting
+for the LINKER, not a stall. A Bevy binary is a very large link: 124 MB before
+anything is stripped, and a relink alone is about 27 seconds here with the
+default linker. On Windows under `link.exe`, with Defender inspecting every
+object file the linker opens, the same step runs into minutes.
+
+Three things, in the order they are worth doing:
+
+- **`strip = "true"` on the release profile.** 124 MB down to 83 MB, and a
+  relink from 27 seconds to 21. The symbols were being written for nobody.
+- **`rust-lld` on Windows**, in `.cargo/config.toml`. It ships with the Rust
+  toolchain, so there is nothing to install, and it is dramatically faster on a
+  link of this shape. The file says in place what to delete if it ever fails to
+  resolve, because a config that breaks a build is worse than a slow one.
+- **Exclude `target` from Defender.** Often the largest single difference on a
+  Windows machine and it costs nothing.
+
+Neither `lld` nor `mold` is configured for Linux or macOS on purpose: neither
+ships with the toolchain, and a config that fails on a machine without them is
+worse than a slower link on one that has neither.
+
+## Armour went back to one, and the reactor rule is why that is safe
+
+A hundred times the bare material made a ship that could not be hurt. What
+actually needed fixing was never the plating: it was that losing a tenth of
+your cells ANYWHERE blew the ship up, so the only way to survive was to not be
+touched. `REACTOR_LOSS` fixed that on its own, and it is the rule that lets the
+plating be soft again. A cell comes off in a few bites, the swarm visibly eats
+a hull, and the ship keeps flying, because a hole in the plating is not a hole
+in the reactor.
+
+## A drive plumes from the MIDDLE of its bell
+
+`clusters_of` put the muzzle at the single cell that reached furthest along the
+cluster's axis. On a drive bell three cells square, every cell on the outer
+face ties for that, so the first one found wins and it is a CORNER: every flame
+was drawn half a bell up and half a bell across from its own engine, and on a
+block of six bells that reads as the whole set being misaligned. The muzzle is
+the cluster's midpoint carried out to its outer face now, and
+`a_drive_plumes_from_the_centre_of_its_bell` builds exactly the shape that
+exposed it.
+
+## Ships steer round the rocks, beams sweep, and the dead are obstacles
+
+**A ship used to fly straight through an asteroid**, which is the field being
+scenery rather than terrain. Hulls steer on the same distance field the swarm
+does, at their own scale, and there is a hard clamp after the position is
+written: steering can be beaten, and an order given straight through a rock
+asks for exactly that.
+
+**A beam is SWEPT.** It used to be a fixed segment for its whole life, killing
+whatever was on that line at the tick it went off and nothing after. The far
+end walks across while the beam is alive, about an axis hashed off the beam
+itself so two guns firing together do not scythe in step, and it is much wider:
+a beam a couple of cells across cut a thread through the cloud and killed
+almost nothing anybody could see. What the swarm is handed each tick is a
+different segment, so the beam carves an arc and sets off a line of kills that
+travels.
+
+**And a mote that comes apart leaves a hole.** It writes its position and the
+time into a ring of sixty four shocks, and every mote reads all of them every
+tick: a sphere that opens on the same `sqrt` curve a blast uses and fades over
+its life. The swarm opens where one died instead of closing straight over it.
+Written by one thread and read by the others a tick later, which is the only
+order available, and one tick of lag on a wave lasting most of a second is not
+a thing anybody can see.
+
 ## The swarm has a LIFE, and it is divided between ships
 
 **One published centre was the wrong requirement, not a wrong implementation.**
@@ -880,7 +949,7 @@ the same failure as one that never loaded.
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 52, the core
+cargo test -p swarm_core                                   # 53, the core
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
 cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png

@@ -74,15 +74,27 @@ struct Spark {
 // the binding refused a sixteen byte buffer by name.
 struct Counter {
     gpu: atomic<u32>,
-    pad0: u32,
+    /// Where the next death wave goes in the ring below.
+    wave: atomic<u32>,
     pad1: u32,
     pad2: u32,
+};
+
+/// A shock from a mote coming apart: centre xyz, and the time it went off.
+///
+/// Written by whichever mote died and read by every mote on the NEXT tick,
+/// which is the only order available: nothing here can see what another thread
+/// is doing this tick. One tick of lag on a wave that lasts most of a second
+/// is not a thing anybody can see.
+struct Wave {
+    at: vec4<f32>,
 };
 
 @group(0) @binding(0) var<storage, read_write> motes: array<Mote>;
 @group(0) @binding(1) var<uniform> p: Params;
 @group(0) @binding(2) var<storage, read_write> sparks: array<Spark>;
 @group(0) @binding(3) var<storage, read_write> counter: Counter;
+@group(0) @binding(4) var<storage, read_write> waves: array<Wave>;
 
 const SPARKS_PER_MOTE: u32 = 5u;
 const RESPAWN: f32 = 0.9;
@@ -122,6 +134,18 @@ const RING_FLAT: f32 = 5.0;
 
 /// How many pieces a mote comes apart into, on top of its own spark burst.
 const DEBRIS: u32 = 4u;
+
+/// The shock a dying mote leaves behind: how many are remembered at once, how
+/// long one lasts, how wide it opens and how hard it shoves.
+///
+/// A ring rather than a list, overwritten oldest first, because a swarm loses
+/// dozens a second and nothing is going to tidy up after them. Every mote
+/// tests every slot every tick, so this is a budget: sixty four is about a
+/// microsecond of the tick at a million motes.
+const WAVES: u32 = 64u;
+const WAVE_LIFE: f32 = 0.7;
+const WAVE_R: f32 = 2.4;
+const WAVE_PUSH: f32 = 26.0;
 
 /// How far out from a rock a mote starts turning, as a share of its radius.
 const ROCK_MARGIN: f32 = 0.55;
@@ -263,6 +287,12 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
             sp.colour_seed = vec4<f32>(0.55 * d, 0.30 * d, 0.78 * d, hash(g + 13u));
             sparks[slot] = sp;
         }
+        // And it leaves a HOLE the others fly round. A mote coming apart is a
+        // thing in the way for a moment, so the swarm opens where one died
+        // instead of closing straight over it.
+        let w = atomicAdd(&counter.wave, 1u) % WAVES;
+        waves[w].at = vec4<f32>(me, p.time);
+
         m.state.y = max(m.pos_scale.w, m.state.y);
         m.state.x = RESPAWN;
         m.extra = vec4<f32>(1.0, PH_TRANSIT, 0.0, m.extra.w);
@@ -496,6 +526,28 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
             // A real push only once it is actually INSIDE, where there is
             // something to be pushed out of.
             if (sdf < 0.0) { acc = acc + nrm * (-sdf) * 40.0; }
+        }
+    }
+
+    // ---- the shocks ----
+    //
+    // Every mote that died recently is a sphere to get out of, opening over
+    // its life and fading as it goes. Same shape as the rock field and the
+    // same gradient steering, so a swarm flying through its own dead reads as
+    // one flowing round obstacles rather than as one ignoring them.
+    for (var w: u32 = 0u; w < WAVES; w = w + 1u) {
+        let wv = waves[w].at;
+        let age = p.time - wv.w;
+        if (age < 0.0 || age > WAVE_LIFE) { continue; }
+        let off = me - wv.xyz;
+        let dr = max(length(off), 1e-4);
+        // Opens fast and stops, which is what a shock does, and is the same
+        // `sqrt` curve a blast's radius already uses.
+        let grow = sqrt(age / WAVE_LIFE);
+        let r = WAVE_R * grow * m.pos_scale.w;
+        if (dr < r) {
+            let fade = 1.0 - age / WAVE_LIFE;
+            acc = acc + (off / dr) * (1.0 - dr / r) * WAVE_PUSH * fade;
         }
     }
 

@@ -648,6 +648,8 @@ const ROCK_FAR: f32 = 13.0;
 /// thin axes, and a cloud swerving round empty space is worse than one
 /// clipping a corner.
 const ROCK_HULL: f32 = 0.95;
+/// How far off a rock a SHIP holds, in its own radii, on top of the rock's.
+const ROCK_CLEAR: f32 = 1.6;
 
 /// How fast the camera pans, as a share of its own distance per second.
 const PAN_RATE: f32 = 0.9;
@@ -658,13 +660,14 @@ const MAX_DRAG: f32 = 120.0;
 
 /// What a warship's plating is worth, against the bare material.
 ///
-/// A hundred, because the swarm is a SIEGE and not a countdown: at one, a
-/// frigate under a real cloud lost its plating faster than a player could
-/// read what was happening to it, and the ship the whole game is about was
-/// gone before the first carrier had been reached. It multiplies hit points
-/// rather than dividing the bite, so the heat ramp and the crust still run
-/// off the same share of a cell's own maximum and a wound looks the same.
-pub const ARMOUR: f32 = 100.0;
+/// ONE, which is what it always was before a hundred was tried. The hundred
+/// made a ship that could not be hurt, and what actually needed fixing was
+/// never the plating: it was that losing a tenth of your cells anywhere at all
+/// blew the ship up. `REACTOR_LOSS` is what fixed that, and it does the job on
+/// its own. A cell comes off in a few bites again, so the swarm visibly eats a
+/// hull, and the ship still survives it, because a hole in the plating is not
+/// a hole in the reactor.
+pub const ARMOUR: f32 = 1.0;
 
 /// The ship's own strike craft: how many it puts up, how far out they work,
 /// how fast they fly and how often each one fires.
@@ -2512,7 +2515,10 @@ fn fire_guns(
             fx.beams.push(Beam {
                 from: at.to_array(),
                 to: (at + dir * reach).to_array(),
-                radius: hull.model.cell * 2.2,
+                // Wide. A beam a couple of cells across cut a thread through
+                // the cloud and killed almost nothing you could see; the point
+                // of firing into a swarm is the swath.
+                radius: hull.model.cell * BEAM_WIDTH,
                 born: tick.tick,
             });
             fx.fired += 1;
@@ -2522,6 +2528,16 @@ fn fire_guns(
         }
     }
 }
+
+/// How wide a beam bites, in hull cells, and how far its far end SWEEPS while
+/// it is alive, in radians.
+///
+/// A beam used to be a fixed segment for its whole life: it killed whatever
+/// was on that line at the tick it went off and nothing after. Sweeping it
+/// carves an ARC through the cloud over the nine ticks it lives, which is
+/// what sets off a line of kills a player can watch travel.
+const BEAM_WIDTH: f32 = 5.5;
+const BEAM_SWEEP: f32 = 0.30;
 
 /// How much of the REACTOR has to be gone before a ship goes up.
 ///
@@ -2692,8 +2708,29 @@ fn age_fx(tick: Res<Tick>, mut fx: ResMut<LiveFx>, mut shots: ResMut<Shots>, spa
     fx.beams.retain(|b| b.live(tick.tick));
     fx.blasts.retain(|b| b.live(tick.tick));
     shots.0.clear();
-    for b in &fx.beams {
-        shots.0.push(Capsule { from: Vec3::from(b.from), to: Vec3::from(b.to), radius: b.radius });
+    for b in fx.beams.iter_mut() {
+        // SWEPT. The far end walks across while the beam is alive, so what the
+        // swarm is handed each tick is a different segment and the beam carves
+        // an arc rather than cutting one thread. The mesh is rebuilt from the
+        // same endpoints, so what is drawn is what kills.
+        let from = Vec3::from(b.from);
+        let along = Vec3::from(b.to) - from;
+        let len = along.length();
+        if len > 1e-4 {
+            let dir = along / len;
+            // About an axis of its own, so two guns firing together sweep
+            // different ways instead of scything in step.
+            let seed = swarm_core::rng::hash_cell(b.born ^ (len.to_bits()));
+            let mut ax = Vec3::new(
+                (seed & 0xFF) as f32 / 255.0 - 0.5,
+                ((seed >> 8) & 0xFF) as f32 / 255.0 - 0.5,
+                ((seed >> 16) & 0xFF) as f32 / 255.0 - 0.5,
+            );
+            ax = (ax - dir * ax.dot(dir)).normalize_or(dir.any_orthonormal_vector());
+            let step = Quat::from_axis_angle(ax, BEAM_SWEEP / swarm_core::fx::BEAM_TICKS as f32);
+            b.to = (from + step * (dir * len)).to_array();
+        }
+        shots.0.push(Capsule { from, to: Vec3::from(b.to), radius: b.radius });
     }
     for b in &fx.blasts {
         let at = Vec3::from(b.at);
@@ -3122,6 +3159,7 @@ fn fly_hull(
     time: Res<Time>,
     scene: Res<Scene>,
     lead: Res<Lead>,
+    cfg: Res<SwarmConfig>,
     // WITHOUT a carrier. A mothership is a `Hull` now so that cells come off
     // it the way they come off a ship, and every system that takes hulls
     // therefore takes carriers too unless it says otherwise. This one would
@@ -3172,12 +3210,48 @@ fn fly_hull(
                 None => Vec3::ZERO,
             },
         };
+        let mut want = want;
+        // ---- round the rocks ----
+        //
+        // A ship used to fly straight through an asteroid, which is the field
+        // being scenery rather than terrain. It steers on the same distance
+        // field the swarm does, at the ship's own scale: a rock inside the
+        // keep-out radius pushes the ship out along the normal, harder the
+        // closer it is.
+        for r in &cfg.rocks {
+            let off = xf.translation - r.truncate();
+            let d = off.length();
+            let keep = r.w + radius * ROCK_CLEAR;
+            if d < keep && d > 1e-4 {
+                let n = off / d;
+                let bite = ((keep - d) / keep).clamp(0.0, 1.0);
+                want += n * speed * bite * 3.0;
+            }
+        }
+
         let dv = want - hull.vel;
         let step = accel * hurry * dt;
         let was = hull.vel;
         hull.vel += if dv.length() > step { dv.normalize() * step } else { dv };
         hull.accel = if dt > 0.0 { (hull.vel - was) / dt } else { Vec3::ZERO };
         xf.translation += hull.vel * dt;
+
+        // And never INSIDE a rock. Steering can be beaten: an order given
+        // straight through an asteroid asks for exactly that, and a capital
+        // ship has the momentum to win the argument. This is the guarantee,
+        // and it costs nothing in the normal case.
+        for r in &cfg.rocks {
+            let off = xf.translation - r.truncate();
+            let d = off.length();
+            let keep = r.w + radius * 0.9;
+            if d < keep && d > 1e-4 {
+                let n = off / d;
+                xf.translation = r.truncate() + n * keep;
+                // Slide along it rather than stopping dead on it.
+                let into = hull.vel.dot(n).min(0.0);
+                hull.vel -= n * into;
+            }
+        }
 
         // Face the way it is going, eased, and only while it is going
         // anywhere: a ship at rest keeps the heading it stopped on.

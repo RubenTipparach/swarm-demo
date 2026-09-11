@@ -45,6 +45,34 @@ names the package.
 .\run.ps1 --headless -- --motes 5000 --frames 60 --out shot.png
 ```
 
+### If the build seems to hang at the end
+
+It is not hanging, it is LINKING. A Bevy binary is a very large link, and the
+last thing cargo prints is the unit it is waiting on:
+
+```
+Building [=======================> ] 398/399: swarm_app(bin)
+```
+
+That line can sit there for minutes on Windows with no output at all. Task
+Manager will show `link.exe` (or `rust-lld.exe`) using a core: that is the
+proof it is working rather than stuck.
+
+Three things make it much faster, in the order they are worth doing:
+
+1. **`.cargo/config.toml` already points Windows at `rust-lld`**, the LLVM
+   linker that ships with the Rust toolchain. Nothing to install. If it ever
+   fails with "linker `rust-lld.exe` not found", delete those two lines and you
+   are back to the MSVC linker with everything else working.
+2. **Exclude the `target` directory from Windows Defender.** The linker opens
+   every object file in the build, and real time scanning inspects each one.
+   This is often the single biggest difference on a Windows machine and it
+   costs nothing. Settings, Virus and threat protection, Manage settings,
+   Exclusions, Add a folder, and pick `swarm-demo\target`.
+3. **Do not delete `target` to "start clean".** Every one of those 398 units is
+   a dependency that does not change; throwing them away buys nothing and costs
+   the whole build again.
+
 `--triple <target>` cross compiles and does not run. Everything after `--`
 goes to `swarm_app` itself, and on Windows, where PowerShell eats the `--`,
 the first flag the script does not recognise starts the passthrough anyway.
