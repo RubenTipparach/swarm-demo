@@ -27,9 +27,18 @@ struct Params {
     hives: u32,             // how many motherships are still flying
     rocks: u32,             // how many asteroids are in the field
     targets: u32,           // how many ships the swarm may attack
-    pad2: u32,
-    // Pairs: even = from.xyz + radius, odd = to.xyz + spare.
-    // Pairs, so sixty four capsules is a hundred and twenty eight vectors.
+    grid_n: u32,            // cells along one side of the density field
+    // The box the density field covers: min corner xyz, and how many world
+    // units one cell is in w. It rides with the flagship, because that is
+    // where the fight is.
+    grid: vec4<f32>,
+    // Which way the sun is (xyz, pointing AT it) and how much of a cell's
+    // face one mote covers (w). The app owns both: the same vector it aims
+    // the scene's key light along, so what the swarm shadows itself against
+    // is the light it is actually lit by.
+    sun: vec4<f32>,
+    // Pairs, so sixty four capsules is a hundred and twenty eight vectors:
+    // even = from.xyz + radius, odd = to.xyz + spare.
     shot: array<vec4<f32>, 128>,
     // Where each mothership is and how big it is. Compacted every frame to
     // the LIVE ones, so a hive that dies simply shortens the list and the
@@ -62,6 +71,13 @@ struct Mote {
                             // y = which leg of its life it is on, PH_*
                             // z = how long is left on that leg
                             // w = where it sits round its ship's ring
+    // What the LIGHT does to this mote, which is the picture's state and not
+    // the simulation's: x = how much of the sun reaches it through the cloud,
+    // y = how much of the sky does, and two spare. Written here and read by
+    // `mote.wgsl` as one more instance attribute, because the draw cannot
+    // afford to work it out: the mote buffer IS the instance buffer, so a
+    // field the tick fills is one the vertex shader already has.
+    shade: vec4<f32>,
 };
 
 struct Spark {
@@ -96,6 +112,11 @@ struct Wave {
 @group(0) @binding(2) var<storage, read_write> sparks: array<Spark>;
 @group(0) @binding(3) var<storage, read_write> counter: Counter;
 @group(0) @binding(4) var<storage, read_write> waves: array<Wave>;
+// How many motes stand in each cell of the field, counted fresh every tick.
+@group(0) @binding(5) var<storage, read_write> density: array<atomic<u32>>;
+// And what the light makes of that: x = how much of the sun reaches the cell
+// through the rest of the swarm, y = how much of the sky does.
+@group(0) @binding(6) var<storage, read_write> light: array<vec2<f32>>;
 
 const SPARKS_PER_MOTE: u32 = 5u;
 const RESPAWN: f32 = 0.9;
@@ -160,6 +181,28 @@ const VEIN_TO_SHIP: f32 = 0.34;
 const VEIN_RATE: f32 = 0.085;
 const VEIN_TUBE: f32 = 0.34;
 
+/// How many cells toward the sun a cell looks before it gives up.
+///
+/// One cell a step, so this is the reach of a shadow in cells: sixteen of them
+/// across a field that spans the carriers is about fifty units, which is wider
+/// than any clump the swarm actually makes. A longer march buys nothing a
+/// player could see and costs the whole grid.
+const SHADOW_STEPS: u32 = 16u;
+
+/// What is left of the sun in the very middle of the thickest cloud, and what
+/// is left of the sky.
+///
+/// Not nought, and that is the same rule the ambient term in the scene keeps:
+/// a mote lit by nothing at all is the colour of the gap between two stars,
+/// and a swarm whose middle is a hole is worse than one with no shading in it.
+const SHADOW_FLOOR: f32 = 0.09;
+const SKY_FLOOR: f32 = 0.20;
+
+/// How much more the cloud immediately round a mote shuts out the sky than it
+/// shuts out the sun. The sun comes from one direction and the sky from all of
+/// them, so the near neighbours count for more.
+const SKY_GAIN: f32 = 2.4;
+
 fn hash(n: u32) -> f32 {
     var x = n * 747796405u + 2891336453u;
     x = ((x >> ((x >> 28u) + 4u)) ^ x) * 277803737u;
@@ -176,6 +219,144 @@ fn capsule_hit(a: vec3<f32>, b: vec3<f32>, r: f32, pt: vec3<f32>) -> bool {
     if (len2 > 1e-12) { t = clamp(dot(pt - a, ab) / len2, 0.0, 1.0); }
     let d = pt - (a + ab * t);
     return dot(d, d) <= r * r;
+}
+
+// ------------------------------------------------------------- the field --
+//
+// The swarm is a field and this is the part of it that is literally one: how
+// many motes stand in each cell of a coarse grid, and what the sun makes of
+// that. It is what a mote is SHADED by, and the reason it is a grid rather
+// than something each mote works out for itself is the arithmetic the whole
+// design rests on.
+//
+// A mote cannot march toward the sun on its own account. A million of them at
+// sixteen steps each is sixteen million samples a tick against a budget of
+// sixteen nanoseconds a mote, which is the same sum that says a mote is not an
+// entity. The GRID marches instead: a quarter of a million cells whatever the
+// swarm costs, so a shadow is a property of the cloud rather than a per mote
+// expense, and a mote pays one trilinear read to find out how dark it stands.
+//
+// Nothing casts on anything else. A hull does not shadow the swarm and the
+// swarm does not shadow a hull: this is SELF shadowing, which is the whole of
+// what a cloud needs to stop reading as a flat sheet of lit specks.
+
+fn cells() -> u32 {
+    return p.grid_n * p.grid_n * p.grid_n;
+}
+
+/// World to grid, in cell units: cell (i, j, k) covers i..i+1 in x.
+fn to_grid(w: vec3<f32>) -> vec3<f32> {
+    return (w - p.grid.xyz) / p.grid.w;
+}
+
+fn cell_index(c: vec3<i32>) -> u32 {
+    let n = i32(p.grid_n);
+    return u32(c.x + c.y * n + c.z * n * n);
+}
+
+fn in_grid(c: vec3<i32>) -> bool {
+    let n = i32(p.grid_n);
+    return c.x >= 0 && c.y >= 0 && c.z >= 0 && c.x < n && c.y < n && c.z < n;
+}
+
+/// Outside the box is empty space, which is the honest answer: the field rides
+/// with the fight and everything beyond it is a mote on its own in the dark.
+fn motes_in(c: vec3<i32>) -> f32 {
+    if (!in_grid(c)) { return 0.0; }
+    return f32(atomicLoad(&density[cell_index(c)]));
+}
+
+fn light_in(c: vec3<i32>) -> vec2<f32> {
+    if (!in_grid(c)) { return vec2<f32>(1.0, 1.0); }
+    return light[cell_index(c)];
+}
+
+/// Trilinear, and it has to be.
+///
+/// A cell is a few units across and a mote is a fraction of one, so a nearest
+/// read would hand every mote in a cell exactly the same shade and the swarm
+/// would fly through visible cubes of it. Eight reads and seven mixes is the
+/// price of a field that changes smoothly across a cloud.
+fn light_at(w: vec3<f32>) -> vec2<f32> {
+    // Half a cell back, so the cell CENTRES land on the integers and a mote
+    // standing dead centre reads its own cell and nothing else.
+    let g = to_grid(w) - 0.5;
+    let b = floor(g);
+    let f = g - b;
+    let c = vec3<i32>(b);
+    var acc = vec2<f32>(0.0);
+    for (var k: i32 = 0; k < 8; k = k + 1) {
+        let o = vec3<i32>(k & 1, (k >> 1) & 1, (k >> 2) & 1);
+        let wx = mix(1.0 - f.x, f.x, f32(o.x));
+        let wy = mix(1.0 - f.y, f.y, f32(o.y));
+        let wz = mix(1.0 - f.z, f.z, f32(o.z));
+        acc = acc + light_in(c + o) * (wx * wy * wz);
+    }
+    return acc;
+}
+
+/// The optical depth one mote in a cell adds: how much of the cell's face it
+/// covers. A mote is about a third of a unit across and a cell is a few, so a
+/// handful of them in one cell is already something the sun has to get past
+/// and a few hundred is a wall.
+fn extinction() -> f32 {
+    return p.sun.w / (p.grid.w * p.grid.w);
+}
+
+/// Empty the field. One thread a cell.
+@compute @workgroup_size(256)
+fn clear_field(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= cells()) { return; }
+    atomicStore(&density[gid.x], 0u);
+}
+
+/// Count what is where. One thread a mote, one atomic each, and a mote still
+/// inside its carrier is not in the picture and does not shade anything.
+@compute @workgroup_size(256)
+fn splat_field(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= p.count) { return; }
+    let m = motes[i];
+    if (m.pos_scale.w <= 0.0) { return; }
+    let c = vec3<i32>(floor(to_grid(m.pos_scale.xyz)));
+    if (!in_grid(c)) { return; }
+    atomicAdd(&density[cell_index(c)], 1u);
+}
+
+/// What the light makes of it. One thread a cell, and the only pass in the
+/// whole tick whose cost does not move when the swarm does.
+@compute @workgroup_size(256)
+fn light_field(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= cells()) { return; }
+    let n = i32(p.grid_n);
+    let c = vec3<i32>(i32(i) % n, (i32(i) / n) % n, i32(i) / (n * n));
+    let sigma = extinction();
+
+    // Toward the sun, one cell a step, starting at the NEXT one: a mote does
+    // not stand in its own light, and one on its own out in the dark has to
+    // come out fully lit or the shading would read as a fog.
+    var at = vec3<f32>(c) + 0.5;
+    var tau = 0.0;
+    for (var s: u32 = 0u; s < SHADOW_STEPS; s = s + 1u) {
+        at = at + p.sun.xyz;
+        tau = tau + motes_in(vec3<i32>(floor(at))) * sigma;
+    }
+
+    // And how much sky it can see, which is the cloud immediately round it
+    // rather than the cloud between it and the sun. Its own cell and its six
+    // faces: an ambient term is light arriving from everywhere, so what shuts
+    // it out is everything nearby and not anything in one direction.
+    var near = motes_in(c);
+    near = near + motes_in(c + vec3<i32>(1, 0, 0)) + motes_in(c - vec3<i32>(1, 0, 0));
+    near = near + motes_in(c + vec3<i32>(0, 1, 0)) + motes_in(c - vec3<i32>(0, 1, 0));
+    near = near + motes_in(c + vec3<i32>(0, 0, 1)) + motes_in(c - vec3<i32>(0, 0, 1));
+
+    // Beer's law both times, which is the one thing a density grid is for.
+    light[i] = vec2<f32>(
+        SHADOW_FLOOR + (1.0 - SHADOW_FLOOR) * exp(-tau),
+        SKY_FLOOR + (1.0 - SKY_FLOOR) * exp(-near * sigma * SKY_GAIN)
+    );
 }
 
 /// Which way a mote leaves its mothership.
@@ -636,5 +817,14 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     m.vel_seed = vec4<f32>(v, seed);
     m.pos_scale = vec4<f32>(at, m.pos_scale.w);
+
+    // ---- what the light does to it ----
+    //
+    // Read where the mote IS rather than where it is going, because that is
+    // where the field was counted from this tick. It is a tick behind by
+    // construction and that is nothing: a mote crosses a fifth of a unit in a
+    // tick and a cell is several across.
+    let lf = light_at(me);
+    m.shade = vec4<f32>(lf.x, lf.y, 0.0, 0.0);
     motes[i] = m;
 }

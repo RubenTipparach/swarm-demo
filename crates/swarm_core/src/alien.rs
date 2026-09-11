@@ -61,7 +61,11 @@ pub mod palette {
     pub const CHITIN: u32 = 0x4A2A66;
     pub const CHITIN_LIT: u32 = 0x7A4DA8;
     pub const BONE: u32 = 0xD9C7A8;
-    pub const GLOW: u32 = 0x9BFF4A;
+    /// What is ALIVE about a mote is lit with this: eyes, and the lights down
+    /// a carrier's flank. Taken down from 0x9BFF4A, which at the emissive a
+    /// lit cell carries came out as a lamp rather than as an eye once the
+    /// bodies round it went dark.
+    pub const GLOW: u32 = 0x6FB835;
     pub const GLOW_HOT: u32 = 0xE8FFB0;
     pub const MAW: u32 = 0x1A0A22;
     /// What a drive burns. Cold blue against the green everything ALIVE about
@@ -263,9 +267,25 @@ fn drone(b: &mut Builder, rng: &mut Rng, c: f32) {
     b.eye(c as i32 + 1, hz, GLOW);
     // Mandibles hang under the head and reach forward.
     b.hang(c as i32 + 1, hz - 1, &[[0, -1, 0], [0, 0, 1], [0, 0, 1], [1, 0, 0]], mat::MACHINE, BONE);
-    // The drives, at the stern, either side of the centreline.
-    b.engine(c as i32, c as i32, DRIVE_HOT);
-    b.engine(c as i32 + 1, c as i32, DRIVE);
+    // The drive: ONE light, on the centreline, a row down from the middle.
+    //
+    // It was three calls and six cells, two of them the hot white, and against
+    // a swarm that shades itself that made every bug a bank of headlamps seen
+    // from behind: a stern that outshines the eyes is a bug flying backwards
+    // as far as the picture is concerned. The eyes read first now and this
+    // reads second.
+    //
+    // Down a row rather than on the middle line, which is what INSETS it: the
+    // body is an ellipsoid, so the row above and the columns either side stand
+    // further aft than this one does, and the light sits in the notch they
+    // leave with chitin over it and chitin down both sides. A light flush with
+    // the widest part of the stern is a lamp stuck on the back; one in a
+    // recess is an exhaust.
+    //
+    // Two cells wide and not one, and that is the mirror rather than a choice:
+    // the lattice is folded about the plane between the two centre columns, so
+    // anything on the centreline is a pair by construction. They are adjacent,
+    // so they read as one light.
     b.engine(c as i32, c as i32 - 1, DRIVE);
     // Legs: two or three pairs off the flank, out then down.
     let pairs = rng.int(2, 3);

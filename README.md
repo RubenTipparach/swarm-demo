@@ -34,6 +34,7 @@ cargo run --release -p swarm_app -- --fps 60      # frames are capped at 120 by 
 cargo run --release -p swarm_app -- --headless \
     --motes 5000 --frames 60 --out shot.png        # no window: render, screenshot, exit
 cargo run --release -p swarm_app -- --reinforce 4  # start with a wing already inbound
+cargo run --release -p swarm_app -- --thickness 0  # the swarm with its self shadowing off
 ```
 
 ## Building and running
@@ -102,7 +103,11 @@ What is on screen: a stock redux-tribes hull, drawn as redux-tribes draws it
 plating wearing their decals), meshed by brick, CPU chewers eating it cell by
 cell and throwing chunks, the four alien archetypes in chitin, the swarm
 drawn instanced off the buffer a compute pass ticks, and the archive's sky
-baked at launch. See `CLAUDE.md` for the design and the rules.
+baked at launch. The swarm SHADES ITSELF: a density grid is counted and
+marched toward the sun once a tick, so a mote buried in a thick cloud is dark
+and one on the near face of it is not, while anything a mote lights itself
+with stays lit wherever it is standing. See `CLAUDE.md` for the design and the
+rules.
 
 ![Terran frigate](docs/terran_close.png)
 ![Karisen cruiser](docs/karisen_close.png)
@@ -124,3 +129,11 @@ pulling, and a wing of reinforcements on station.
 ![The whole battle](docs/fx_battle.png)
 ![The HUD](docs/fx_hud.png)
 ![The pause menu](docs/fx_menu.png)
+
+The same swarm, the same seed and the same tick, with the shading off
+(`--thickness 0`) and on. Flat, every mote is the same brightness however many
+stand in front of it; shaded, the bodies go dark where the cloud is thick and
+what comes through is what a mote lights itself with.
+
+![A flat lit swarm](docs/fx_shade_off.png)
+![The swarm shading itself](docs/fx_shade_on.png)
