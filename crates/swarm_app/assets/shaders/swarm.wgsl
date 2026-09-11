@@ -121,7 +121,7 @@ const ATTACK_R: f32 = 0.90;
 const RING_FLAT: f32 = 5.0;
 
 /// How many pieces a mote comes apart into, on top of its own spark burst.
-const DEBRIS: u32 = 7u;
+const DEBRIS: u32 = 4u;
 
 /// How far out from a rock a mote starts turning, as a share of its radius.
 const ROCK_MARGIN: f32 = 0.55;
@@ -248,13 +248,18 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
             let g = base + SPARKS_PER_MOTE + k;
             let h = vec3<f32>(hash(g + 17u), hash(g + 53u), hash(g + 97u)) - 0.5;
             var sp: Spark;
-            sp.pos_life = vec4<f32>(me, 1.1 + 1.3 * hash(g + 5u));
+            sp.pos_life = vec4<f32>(me, 0.7 + 0.9 * hash(g + 5u));
             sp.vel_size = vec4<f32>(m.vel_seed.xyz * 0.5 + h * (1.6 + 3.4 * hash(g + 3u)),
                                     m.pos_scale.w * (0.22 + 0.30 * hash(g + 7u)));
             // Barely over white: a chunk of shell is LIT by the scene, and the
             // only tool here is an additive particle, so it is kept dim enough
             // to read as matter instead of as another spark.
-            let d = 0.30 + 0.30 * hash(g + 11u);
+            // Dim, and this is the line to watch. Additive particles stack:
+            // four a kill at two seconds each, over a swarm losing dozens a
+            // second, is a violet haze over the whole battle rather than
+            // pieces of anything. Bright debris is the mothership's green
+            // emissive by another route, so it is kept under a third.
+            let d = 0.16 + 0.16 * hash(g + 11u);
             sp.colour_seed = vec4<f32>(0.55 * d, 0.30 * d, 0.78 * d, hash(g + 13u));
             sparks[slot] = sp;
         }
