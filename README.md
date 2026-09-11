@@ -83,3 +83,12 @@ actually pulling, and a wing of reinforcements on station.
 ![Geometric flames](docs/fx_flame.png)
 ![A wing on station](docs/fx_wing.png)
 ![The whole battle](docs/fx_battle.png)
+
+The same swarm, the same seed and the same tick, with the shading off
+(`--thickness 0`) and on. Flat, every mote is the same brightness however many
+stand in front of it; shaded, the bodies go dark where the cloud is thick and
+what comes through is what a mote lights itself with. Mean frame brightness
+67.5 against 55.1 of 255.
+
+![A flat lit swarm](docs/fx_shade_off.png)
+![The swarm shading itself](docs/fx_shade_on.png)
