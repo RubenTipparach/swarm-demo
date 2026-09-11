@@ -3769,10 +3769,9 @@ const ARRIVE: f32 = 0.6;
 /// How fast a hull turns onto its heading, in radians a second, eased.
 const HULL_TURN: f32 = 2.2;
 /// How far one order may send a ship, in radii of the biggest hull in the
-/// selection: the radius of the move disc. Past the carriers' standoff band
-/// (`HIVE_FAR` is twenty two), so an order can reach the fight and a little
-/// beyond it, and no further. The disc IS the range: a point past its rim is
-/// not an order the ship can take, so the cursor is clamped to the rim rather
+/// selection: where the move disc stops growing. Past the carriers' standoff
+/// band (`HIVE_FAR` is twenty two), so an order can reach the fight and a
+/// little beyond it, and no further: a point past it is clamped to it rather
 /// than refused.
 const MOVE_RANGE: f32 = 24.0;
 /// Under this much drag, in pixels, a press is a click and not a box.
@@ -4475,12 +4474,11 @@ fn add_disc(pos: &mut Vec<[f32; 3]>, col: &mut Vec<[f32; 4]>, idx: &mut Vec<u32>
 /// Draw the order picture, all of it in one mesh rebuilt every frame: the
 /// selection rings, the standing orders, the move disc and the pings.
 ///
-/// The disc is the approved prototype's, one to one. A LARGE cyan disc on the
-/// plane through the selection, its rim at the move range with an X across
-/// it, which is what says "this far and no further" without a number; a
-/// small gold ring where the order will land, with a gold line from the
-/// selection to it; and when shift has lifted the point, the right angle
-/// triangle: the vertical from the plane point up to the target, the direct
+/// The disc is Homeworld's. A LARGE cyan disc on the plane through the
+/// selection whose rim is at the cursor, with an X across it; a small gold
+/// ring ON that rim where the order will land, with a gold line from the
+/// selection out to it, which is the disc's radius; and when shift has lifted
+/// the point, the right angle triangle: the vertical from the plane point up to the target, the direct
 /// line from the selection to it, and a red ring at the raised point with the
 /// distance beside it (`hud_orders` draws the label). A standing order is an
 /// orange line and ring per ship until it arrives, which is the
@@ -4525,17 +4523,27 @@ fn draw_nav(
     // ---- the move disc ----
     if *mode == OrderMode::Move {
         let r = order.radius;
-        let range = order.range();
         let at = order.anchor;
+        // The disc's rim is AT THE CURSOR. Its radius is the order's own
+        // distance on the plane, so the gold ring sits on the rim by
+        // construction and shift raises the point straight off it: the
+        // triangle's base is the disc's radius. This is Homeworld's disc,
+        // which grows with the mouse, and not a range ring: the first port
+        // drew a fixed rim at `MOVE_RANGE` while the cursor named a point a
+        // third of the way out, and a disc that does not reach the cursor
+        // says nothing about the order. It stops growing where the cursor is
+        // clamped, which is `NavOrder::range`. Never smaller than the gold
+        // ring, so the disc does not vanish under the ship at a zero order.
+        let reach = (order.on_plane - at).length().max(r * 0.85);
         // The fill is ADDITIVE and in linear light, so the prototype's 0.13
         // of alpha blended sRGB is about 0.03 here: at 0.13 the whole field
         // went teal and the ships inside it read as under water.
-        add_disc(&mut pos, &mut col, &mut idx, at, range, CYAN, 0.03, 96);
-        add_ring(&mut pos, &mut col, &mut idx, at, range, r * 0.045, CYAN, 0.95, 96);
+        add_disc(&mut pos, &mut col, &mut idx, at, reach, CYAN, 0.03, 96);
+        add_ring(&mut pos, &mut col, &mut idx, at, reach, r * 0.045, CYAN, 0.95, 96);
         // The X: two diameters at forty five and a hundred and thirty five
         // degrees, so neither lies along the line to the target.
         for a in [std::f32::consts::FRAC_PI_4, 3.0 * std::f32::consts::FRAC_PI_4] {
-            let d = Vec3::new(a.cos(), 0.0, a.sin()) * range;
+            let d = Vec3::new(a.cos(), 0.0, a.sin()) * reach;
             add_line(&mut pos, &mut col, &mut idx, eye, at - d, at + d, r * 0.03, CYAN, 0.75);
         }
         // Where it lands on the plane, and the line out to it.

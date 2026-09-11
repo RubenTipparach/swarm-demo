@@ -5,9 +5,10 @@ A real time space RTS against an alien swarm, in the voxel language of
 
 **Left drag** selects, a click picks one ship, shift adds to the selection. A
 selected ship wears a cyan ring and a health bar, and nothing else does.
-**Right click** opens the move disc on the selection: the large cyan disc is
-how far one order can send it, the small gold ring is where it will go, and
-holding **shift** lifts that point off the plane and draws the right angle
+**Right click** opens the move disc on the selection: the large cyan disc
+grows with the cursor so its rim is how far the order goes, the small gold
+ring on that rim is where it will go, and holding **shift** lifts that point
+off the rim and draws the right angle
 triangle back down to it, with the distance in red. **Left click** confirms
 (a gold ring pings at the destination and an orange line and ring stand on
 each ship until it arrives), **Esc** cancels; Esc again opens the pause menu.

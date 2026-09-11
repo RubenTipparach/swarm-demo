@@ -452,12 +452,17 @@ system, and every one of the four defects came from that.
   orange line and ring stand on each ship until it arrives: the order is
   visibly THERE.
 
-**The disc is the RANGE, and a point past its rim is clamped to it.** A large
-cyan disc on the plane through the selection, its rim at `MOVE_RANGE` radii
-of the biggest selected hull with an X across it; a small gold ring where the
-order lands and a gold line out to it; and lifted, the vertical, the direct
-line and a red ring at the raised point with the distance in red beside it.
-The elevation is read FROM THE CURSOR'S POSITION rather than from how far it
+**The disc's rim is AT THE CURSOR.** A large cyan disc on the plane through
+the selection whose radius is the order's own distance, with an X across it,
+so the small gold ring where the order lands sits ON the rim and the gold line
+out to it is a radius; lifted, the vertical, the direct line and a red ring at
+the raised point with the distance in red beside it, and the triangle's base
+is the disc's radius. This is Homeworld's disc, which grows with the mouse.
+The first port drew a fixed rim at `MOVE_RANGE` while the cursor named a point
+a third of the way out, and the owner caught it off the screenshot: a disc
+that does not reach the cursor says nothing about the order. It stops growing
+at `MOVE_RANGE` radii of the biggest selected hull, and a point past that is
+clamped to it. The elevation is read FROM THE CURSOR'S POSITION rather than from how far it
 moved: the plane point holds still and the target sits on the vertical through
 it at the closest point to the cursor's ray, `t = (b*e - d)/(1 - b*b)` with
 `w = P - O`. Not `O - P`, which negates `t` and put the target below the plane
