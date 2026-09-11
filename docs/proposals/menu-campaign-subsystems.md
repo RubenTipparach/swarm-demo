@@ -18,6 +18,8 @@ The six asks, in the order they were given:
    through it can be seen.
 6. A damaged swarm creature glows hot yellow and pops when it has had enough:
    explosives and projectiles kill outright, beams wound.
+7. A sandbox: shoot a ship with different kinds of gun and watch it tumble,
+   and a physics engine, with a recommendation for this kind of voxel game.
 
 ## 1. The Karisen question, measured first
 
@@ -193,11 +195,13 @@ Cost: a session. The core half is small and tested; the app half touches
 `spawn_ship`, `fly_hull`, `fire_guns`, `aim_turrets`, `draw_flames` and the
 bars, each in one place.
 
-## 5. Playground
+## 5. Playground and sandbox
 
 A third menu entry that is a set of toggles on a skirmish rather than a
-scenario. Every one of these is a question about the game that a fight cannot
-hold still long enough to answer.
+scenario, and a firing range. Every one of these is a question about the game
+that a fight cannot hold still long enough to answer.
+
+### 5a. The toggles
 
 - **Freeze the swarm.** The swarm's own clock already stops when the game
   pauses, and the compute pass still runs with a step of nought, so a frozen
@@ -215,8 +219,39 @@ hold still long enough to answer.
   ending.
 - **Any hull, any fleet**: the skirmish setup's own controls.
 
-Cost: small. Freeze and slow motion are two flags the config already nearly
-has; the dummy and the debug shot are a spawn and a key.
+### 5b. The firing range
+
+A target hull of any class hangs in the middle of an empty field, and the
+player is the gun. Pick a weapon, click a cell on the hull, and the shot lands
+THERE: the damage it does and the shove it gives are both read off the hit.
+
+| weapon | what it does to the cells | what it does to the ship |
+| --- | --- | --- |
+| beam | the ring of bites a beam already takes, held while the button is down | a steady push, small, along the beam |
+| flak | a blast of cells at the point, as a burst already does to a carrier | a kick outward from the burst |
+| slug | NEW: a kinetic round; one deep crater, a column of cells along its line | the hardest kick of the four, along its own line, at the point it hit |
+| torpedo | NEW: slow, visible in flight, a big blast on arrival | a wide shove and a spin if it lands off centre |
+| the swarm's bite | what a chewer does, one cell at a time, at the point | nothing: a mote has no mass to speak of |
+
+The click is a ray into the hull's own cells (`nearest_exposed` from where the
+ray meets the plating), the same place a chewer's bite lands, so the range
+tests exactly the damage path a fight uses. The ship TUMBLES: every hit is an
+impulse at a point, and a point off the centre of mass turns the ship as well
+as shoving it. That is the rigid body of section 7, and it is the whole reason
+the range exists: a slug into a frigate's bow should swing the bow away and
+leave the ship drifting nose down, and a torpedo under the keel should roll it.
+Readouts on screen: mass, where the centre of mass is (it MOVES as cells come
+off), spin in degrees a second, cells lost, and each subsystem's state from
+section 4. R resets the target. The ship's own guns can be turned on the dummy
+too, to watch a turret's fire from outside.
+
+Cost: small for the range itself (a mode, a weapon picker, a ray and the
+readouts) once the rigid body exists; the slug and the torpedo are two new
+shot kinds on the shot list, one blast each, and a torpedo is a tracer that
+takes longer.
+
+Cost of the toggles: small. Freeze and slow motion are two flags the config
+already nearly has; the dummy and the debug shot are a spawn and a key.
 
 ## 6. The swarm glows hot, then pops
 
@@ -251,21 +286,90 @@ Cost: small. A dozen lines in the shader and the reference, one test, and a
 headless render with the swarm frozen to prove the carve, which is what the
 playground's freeze is for.
 
-## 7. The order to build it in
+## 7. Physics: the tumble, the contacts, and which engine
+
+**What this game needs from physics, honestly.** Dozens of rigid bodies (the
+ships, the wrecks, the rocks), not thousands: the swarm is a field on the GPU
+and is never a body. Impulses from shots, so a hit turns a ship. Contacts that
+are RARE: a ship brushing a rock, a wreck section drifting into another, debris
+bouncing off plating. No joints, no ragdolls, no stacking. And a simulation
+that can be made deterministic and hashed, because the plan for the
+authoritative swarm is a coarse continuum on the CPU and lockstep on top of it,
+and a physics step that differs in the last bit between two machines is a
+desync with no message on it. redux-tribes measured Rapier against exactly
+that requirement (ADR-16) and kept forty lines of sphere separation instead,
+and its reasons still hold here for the CONTACTS. They do not hold for the
+tumble, which needs no contact at all.
+
+**The tumble is the core's, and it is small.** A voxel hull hands over its
+mass and its inertia tensor for nothing: every live cell is a point mass at
+its centre, so the mass, the centre of mass and the tensor are three sums over
+the cells, recomputed from the live cells when bricks go dirty, which is what
+makes a ship with its bow shot off spin differently from a whole one. An
+impulse at a point is `dv = j / m` and `dw = I_inv (r x j)`, the orientation
+integrates the angular velocity, a little damping stands in for the attitude
+thrusters fighting the spin (and none at all when the thrusters are dead, from
+section 4). About a hundred and fifty lines in `swarm_core`, `std` only,
+pinned by tests a block can answer: a hit through the centre of mass does not
+turn it, a hit at the rim turns it about the right axis, momentum is kept,
+and the same hits give the same spin on two runs. The wrecks already tumble
+this way with a hand picked spin; they would take their spin from the blast
+instead.
+
+**Which engine, when contacts come.** All three Rust candidates and the two
+others, against what this game is:
+
+| engine | what it is | for this game |
+| --- | --- | --- |
+| **Avian** (`avian3d`) | Bevy native, ECS first: a body is `RigidBody` and `Collider` components on the entity you already have, forces and impulses are components too, colliders come from Parry. 0.5 is the Bevy 0.18 update, published on its own so Bevy upgrades are never held for features; 0.6 adds a BVH broad phase, faster spatial queries and joint motors; 0.7 is the Bevy 0.19 update. | The best fit. The hull entity gains two components and its transform is driven by the engine; the impulse at a point the range needs is `ExternalImpulse::apply_at_point`; a wreck section is the same entity with the same components. Tracks Bevy minors within weeks. |
+| **Rapier** (`bevy_rapier3d`) | The older, more travelled Rust engine, with its Bevy plugin as a wrapper round a context resource rather than pure ECS. 0.33 updates to Bevy 0.18 (March), 0.35 to 0.19 (July); 0.34 added support and examples for Parry's new `Voxels` collider shape, which is a voxel hull as its own collider. Has an `enhanced-determinism` feature for cross platform lockstep. | A close second. The voxel collider is exactly our shape, and determinism is a stated feature; but the changelog's unreleased notes say `enhanced-determinism` currently fails to compile with Bevy (a `glam` feature clash) and is incompatible with its new `simd8`, which is the feature this game would most want. Worth re-checking at adoption. |
+| **Jolt** (`jolt-rust`) | The C++ engine under Horizon Forbidden West, with Rust bindings that are an early work in progress over a C shim (`joltc-sys` unsafe and up to date, the safe layer best effort). No Bevy plugin. | Not now. Best raw quality and speed of the five, but a C++ build dependency, an unsafe boundary this project has none of, and no Bevy glue to lean on. |
+| **PhysX** (`bevy_mod_physx`) | NVIDIA's engine through Embark's bindings and a community Bevy plugin. | No. Heavier than Jolt in every way that matters here, for a game with dozens of bodies. |
+| **Own, in the core** | The tumble above plus sphere on sphere and sphere on rock separation, which `fly_hull` already half does. | What to build FIRST, because the sandbox needs the tumble and nothing else, and because it is deterministic and hashable by construction. It stops being enough the day contacts get rich. |
+
+**The recommendation.** Build the rigid body in the core now: the sandbox
+needs it, the wrecks want it, and the future continuum needs it deterministic.
+When the contacts get rich (ship on ship, wrecks piling on a rock, debris that
+bounces), adopt **Avian**, and measure before adopting exactly as redux-tribes
+did: bodies and colliders for the fleet, a collision run twice for bit
+identical output, the cost of a step against the frame budget, and how much
+state a body carries beyond position and velocity, because that is what has to
+be hashed and restored. Rapier is the fallback if Avian's determinism falls
+short, once its own determinism flag builds against Bevy again.
+
+**A voxel hull's collider**, in three sizes, cheapest first: the bounding
+sphere it has today (wrong at the bow and the flanks, right for a first
+contact test); a compound of one box per live brick (a frigate is 128 boxes,
+a brick that goes dirty rebuilds its box, and the shape follows the damage);
+Parry's `Voxels` shape, one cell at a time, exact and made for this, at the
+cost of a bigger rebuild when cells die. The compound of bricks is the one to
+start with: it is the same partition the mesher and the damage grid already
+keep, so a hole in the picture is a hole in the collider.
+
+Cost: a session for the rigid body and its tests, half a session for the
+range on top of it. The engine adoption is its own ADR and its own pull
+request, when the contacts ask for it.
+
+## 8. The order to build it in
 
 1. **Subsystems** (section 4) and the **reactor burial fix** (section 1),
    because every scenario is a ship that can be disabled and a swarm that has
    to reach the core.
-2. **The swarm's glow and pop** (section 6), small and self contained.
-3. **The playground** (section 5), because the freeze is how the swarm changes
-   above are proved.
-4. **Menu, skirmish setup and the result screen** (section 2).
-5. **The campaign** (section 3), which is data once the screens exist.
+2. **The rigid body in the core and the firing range** (sections 7 and 5b),
+   because a ship that tumbles when hit is what makes the subsystems above
+   read, and the range is where every weapon gets tuned.
+3. **The swarm's glow and pop** (section 6), small and self contained.
+4. **The playground toggles** (section 5a), because the freeze is how the
+   swarm changes above are proved.
+5. **Menu, skirmish setup and the result screen** (section 2).
+6. **The campaign** (section 3), which is data once the screens exist.
+7. **A physics engine**, as its own ADR, the day contacts get rich (section
+   7).
 
 Each step is a pull request with its headless pictures and the numbers in the
 commit message, as the rest of the project is.
 
-## 8. Decisions that are yours
+## 9. Decisions that are yours
 
 - **The offline threshold**: half a subsystem's cells (proposed), or
   redux-tribes' fifth? Half means a gun keeps firing through a lot of damage;
@@ -280,3 +384,7 @@ commit message, as the rest of the project is.
   exception?
 - **Time to critical is what "difficulty" means.** Tune every mission by that
   number, measured headless, rather than by feel. Yes?
+- **The engine**: the rigid body in the core now and Avian when contacts get
+  rich (proposed), or Avian from the start and the tumble through it?
+- **The new guns**: a slug and a torpedo for the range (proposed). Do they
+  also go on the ships, as classes that carry `ORDNANCE` cells already could?
