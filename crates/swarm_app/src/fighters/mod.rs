@@ -151,7 +151,7 @@ pub(crate) fn fly_fighters(
     mut fighters: Query<(&mut Fighter, &mut Transform)>,
 ) {
     let Ok(hull) = flagship.single() else { return };
-    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
+    let dt = scene.step(&time);
     let radius = hull.model.radius();
     let station = radius * FIGHTER_STATION;
     for (mut f, mut xf) in &mut fighters {
@@ -200,7 +200,7 @@ pub(crate) fn wear_fighters(
     mut sparks: ResMut<SparkQueue>,
     mut fighters: Query<(Entity, &mut Fighter, &Transform)>,
 ) {
-    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
+    let dt = scene.step(&time);
     for (e, mut f, xf) in &mut fighters {
         // How deep into the thickest part of the cloud it is, over every ship
         // the swarm is divided between.

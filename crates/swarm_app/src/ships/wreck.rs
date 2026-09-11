@@ -56,7 +56,7 @@ pub(crate) fn drift_wrecks(
     mut commands: Commands,
     mut q: Query<(Entity, &mut Transform, &mut Wreck)>,
 ) {
-    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
+    let dt = scene.step(&time);
     for (e, mut xf, mut w) in &mut q {
         let step = w.vel * dt;
         w.pivot += step;
@@ -68,8 +68,14 @@ pub(crate) fn drift_wrecks(
     }
 }
 
-pub(crate) fn fly_chunks(time: Res<Time>, tick: Res<Tick>, mut commands: Commands, mut q: Query<(Entity, &mut Transform, &Debris)>) {
-    let dt = time.delta_secs();
+pub(crate) fn fly_chunks(
+    time: Res<Time>,
+    scene: Res<SceneSpec>,
+    tick: Res<Tick>,
+    mut commands: Commands,
+    mut q: Query<(Entity, &mut Transform, &Debris)>,
+) {
+    let dt = scene.step(&time);
     for (e, mut xf, d) in &mut q {
         xf.translation += d.vel * dt;
         xf.rotate_local_x(dt * 3.0);

@@ -45,7 +45,7 @@ pub(crate) fn orbit_input(
     mut q: Query<&mut Orbit>,
 ) {
     let Ok(mut o) = q.single_mut() else { return };
-    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
+    let dt = scene.step(&time);
 
     // The pointer over a button belongs to the BUTTON. `orbit_input` reads the
     // raw mouse and Bevy's UI does not consume it, so pressing Call
@@ -183,7 +183,7 @@ pub(crate) fn orbit_camera(
     hulls: Query<&Transform, (With<Flagship>, Without<Camera3d>)>,
     mut q: Query<(&mut Orbit, &mut Transform), With<Camera3d>>,
 ) {
-    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
+    let dt = scene.step(&time);
     for (mut o, mut xf) in &mut q {
         if o.follow {
             if let Ok(hull) = hulls.single() {

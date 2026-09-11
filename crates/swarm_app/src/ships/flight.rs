@@ -38,7 +38,7 @@ pub(crate) fn fly_hull(
     // wreck, which is a hull too and drifts on its own rule.
     mut hulls: Query<(&mut Hull, &mut Transform, Option<&Escort>), (Without<Hive>, Without<Wreck>)>,
 ) {
-    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
+    let dt = scene.step(&time);
     for (mut hull, mut xf, escort) in &mut hulls {
         let radius = hull.model.radius();
         // What it can still pull. A ship that has been chewed to the stern

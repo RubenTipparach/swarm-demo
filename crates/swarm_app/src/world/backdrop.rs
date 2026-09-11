@@ -27,8 +27,9 @@ pub(crate) struct Showcase;
 /// in two places drift into.
 pub(crate) const SUN: Vec3 = Vec3::new(0.42, 0.66, -0.62);
 
-pub(crate) fn spin_showcase(time: Res<Time>, mut q: Query<&mut Transform, With<Showcase>>) {
+pub(crate) fn spin_showcase(time: Res<Time>, scene: Res<SceneSpec>, mut q: Query<&mut Transform, With<Showcase>>) {
+    let dt = scene.step(&time);
     for mut xf in &mut q {
-        xf.rotate_y(time.delta_secs() * 0.5);
+        xf.rotate_y(dt * 0.5);
     }
 }

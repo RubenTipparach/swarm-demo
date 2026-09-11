@@ -40,7 +40,7 @@ pub(crate) struct Hive {
 
 /// Carriers drift across the line to the ship, and turn as they go.
 pub(crate) fn move_hives(time: Res<Time>, scene: Res<SceneSpec>, mut hives: Query<(&Hive, &mut Transform)>) {
-    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
+    let dt = scene.step(&time);
     for (h, mut xf) in &mut hives {
         xf.translation += h.vel * dt;
         xf.rotate_y(dt * 0.13);

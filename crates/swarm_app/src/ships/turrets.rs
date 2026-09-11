@@ -43,7 +43,7 @@ pub(crate) fn aim_turrets(
     hives: Query<(&Hive, &Transform, &Hull), Without<Turret>>,
     mut turrets: Query<(&Turret, &ChildOf, &mut Transform)>,
 ) {
-    let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
+    let dt = scene.step(&time);
     for (t, parent, mut xf) in &mut turrets {
         let Ok((hull, ship)) = hulls.get(parent.parent()) else { continue };
         if hull.dead_hull {

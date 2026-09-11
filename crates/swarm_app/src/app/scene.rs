@@ -68,12 +68,25 @@ pub(crate) struct Tick {
     pub(crate) acc: f32,
 }
 
-pub(crate) fn advance_tick(time: Res<Time>, scene: Res<SceneSpec>, mut t: ResMut<Tick>) {
-    if scene.fixed_dt {
-        t.tick += 1;
-        return;
+impl SceneSpec {
+    /// One frame's worth of time for everything on the CPU that integrates
+    /// anything: a sixtieth under `--fixed-dt`, so a headless render is a
+    /// function of its frame count and not of the machine, and the frame's
+    /// own delta otherwise, clamped at the swarm's clamp because two clamps
+    /// are two clocks. Every system asks this; none writes the rule itself.
+    pub(crate) fn step<T: Default>(&self, time: &Time<T>) -> f32 {
+        if self.fixed_dt {
+            1.0 / 60.0
+        } else {
+            time.delta_secs().min(swarm::STEP_CLAMP)
+        }
     }
-    t.acc += time.delta_secs().min(swarm::STEP_CLAMP);
+}
+
+pub(crate) fn advance_tick(time: Res<Time>, scene: Res<SceneSpec>, mut t: ResMut<Tick>) {
+    // Under a fixed step this adds exactly a sixtieth and takes exactly one
+    // off, so it is one tick a frame with nothing accumulating.
+    t.acc += scene.step(&time);
     while t.acc >= 1.0 / 60.0 {
         t.acc -= 1.0 / 60.0;
         t.tick += 1;

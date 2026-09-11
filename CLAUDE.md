@@ -162,6 +162,18 @@ are gone: the rock rotations drew from `0.0..6.283` three times and draw from
 `TAU` now, which is at most eighteen hundred thousandths of a radian on an
 asteroid, and `ride_the_eye` computed a zero two ways and added it.
 
+**One clock, asked in one place.** The fixed step was written out eight
+times, the same three lines in eight systems, and three more places that
+integrated something had never copied it: debris flew by the frame's own
+delta, the showcase spun by it, and an order's ping aged on the real clock
+whatever `--fixed-dt` said. On a software rasteriser a frame is a quarter
+of a second, so a debris cube flew fifteen times too far per frame in
+exactly the pictures the flag exists for, and a picture with an order in it
+depended on how loaded the machine was. `SceneSpec::step` is the rule now,
+and every system asks it. The lesson is the one the two clamps already
+taught: a rule copied is a rule one copy will miss, and the copy that is
+missing is the one nobody can grep for.
+
 ## The swarm is a field, not a million entities
 
 Do the arithmetic before adding anything per mote. Sixteen milliseconds over a

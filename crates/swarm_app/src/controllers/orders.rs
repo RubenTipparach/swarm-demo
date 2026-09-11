@@ -141,8 +141,9 @@ pub(crate) fn nav_input(
 ) {
     // The acknowledgements age on the REAL clock: a ping plays out whether or
     // not the world is running, because it is about the click and not about
-    // the simulation.
-    let dt = real.delta_secs().min(0.1);
+    // the simulation. Under a fixed step it is the step, like everything else,
+    // or a headless picture with an order in it would depend on the machine.
+    let dt = scene.step(&real);
     for p in &mut pings.0 {
         p.1 += dt;
     }
