@@ -151,7 +151,7 @@ imports that replace `use crate::*;` once each module knows what it reads.
 prints is that stage's work.
 
 **Then the format, on its own.** The tree had never been through rustfmt:
-RUSTFMT_HUNKS hunks at the default width, which is the width redux-tribes
+342 hunks at the default width, which is the width redux-tribes
 keeps too. That commit carries nothing else and is in
 `.git-blame-ignore-revs`, so `git blame` reads through it.
 
