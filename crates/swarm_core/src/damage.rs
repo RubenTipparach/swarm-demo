@@ -145,8 +145,20 @@ pub struct DamageGrid {
 
 impl DamageGrid {
     pub fn new(m: &VoxelModel) -> Self {
+        Self::with_armour(m, 1.0)
+    }
+
+    /// The same grid with every cell's hit points multiplied.
+    ///
+    /// A SCALE rather than a second table, because what a cell is made of and
+    /// how much of a beating the ship it is part of can take are two
+    /// different facts: `hp_for` stays the material's answer, and the ship
+    /// says how heavily it is armoured. The tests below drive the bare grid,
+    /// so a number tuned for the game cannot quietly move what they pin.
+    pub fn with_armour(m: &VoxelModel, armour: f32) -> Self {
         let n = m.len();
-        let max_hp: Vec<f32> = m.grid.iter().map(|&x| hp_for(x)).collect();
+        let armour = armour.max(0.0);
+        let max_hp: Vec<f32> = m.grid.iter().map(|&x| hp_for(x) * armour).collect();
         let bricks = [m.nx.div_ceil(BRICK), m.ny.div_ceil(BRICK), m.nz.div_ceil(BRICK)];
         DamageGrid {
             nx: m.nx,

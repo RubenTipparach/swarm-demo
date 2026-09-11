@@ -13,6 +13,7 @@
 //!   the heat ramp a fresh hole cools along, ported from `wound.ts`.
 //! - [`alien`]: seeded, symmetric, connected voxel motes on a small lattice.
 //! - [`rng`]: a deterministic generator and the hash a chunk's drift comes from.
+//! - [`rock`]: asteroids, seeded, in one piece, with ore in them.
 //! - [`sky`]: the nebula baked to a cubemap and the stars as points, from
 //!   `sky.ts`.
 //! - [`fx`]: what a shot is, what a blast kills, and what comes off a thing
@@ -23,6 +24,7 @@ pub mod damage;
 pub mod fx;
 pub mod mesh;
 pub mod rng;
+pub mod rock;
 pub mod sky;
 pub mod voxel;
 

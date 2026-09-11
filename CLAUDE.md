@@ -182,6 +182,243 @@ is what makes moving it worth doing: the cloud is dragged along behind and a
 player who runs can watch the swarm string out. `--move x,y,z` issues one
 order at startup so a headless render can show it.
 
+## The swarm makes RUNS, and a torus is what it did instead
+
+**The cloud settled into a donut and that was two bugs wearing one shape.**
+One standoff per mote plus one swirl AXIS for the whole swarm is a torus by
+construction: every mote circulated about the same global up, so whatever the
+standoffs were spread over, the cloud was a ring. Both halves are gone.
+
+- **The swirl axis is the MOTE's now**, from its own seed, so the orbits sit
+  at every inclination and the traffic is a sphere rather than a ring.
+- **A mote makes ATTACK RUNS.** `state.w` is a run clock: positive is boring
+  in, negative is breaking off, and it flips when the leg runs out. In is
+  short and committed and presses to contact just off the plating; the break
+  is longer and goes several lengths clear, because a pass that turned round
+  the moment it arrived would never get far enough out for the next one to
+  read as an approach.
+- **And each one WEAVES**, a lateral oscillation about the third axis of its
+  own frame at its own rate and phase. Without it a mote flies a clean arc,
+  and ten thousand clean arcs read as a machine.
+
+**The swarm bites, and you can see it.** A mote in contact throws sparks off
+the plating, in the orange a hull burns rather than the green a mote bleeds.
+The CPU is not told that it happened and does not need to be: the chewers are
+what actually take cells off, and this is what says on screen that the cloud is
+the reason. It is gated hard (about one in forty of the motes in contact, per
+tick) because thousands are touching at once and the spark ring is shared with
+everything that dies.
+
+## Asteroids are drawn as lumps and navigated as spheres
+
+`swarm_core::rock::generate` is a seeded asteroid: three octaves of value noise
+sampled BY DIRECTION, so the radius varies with where you are looking from and
+the silhouette is lumps and shelves. A threshold on distance alone gives a ball
+and a ball is a planet. It carries ore on its own surface, which is the only
+thing on a rock worth looking at twice, and the suite holds every seed to one
+piece, clear of its own lattice wall, and actually different from the next
+seed.
+
+**The navigation shape is a sphere and that is not a shortcut, it is the
+budget.** Every mote tests every rock every tick, so the distance to one has
+to have a closed form. The sphere is INSCRIBED rather than circumscribed
+(`ROCK_HULL` is 0.72 of the model's radius), because a sphere that contained a
+lumpy rock would stand the swarm off well clear of the thin axes, and a cloud
+swerving round empty space is worse than one clipping a corner.
+
+The steering is the field's GRADIENT: push out along the normal, harder the
+nearer the surface, squared so a mote well outside the margin is barely
+deflected and one about to touch is turned hard. It also takes the INTO
+component off the velocity a mote already has, or one arriving fast carries its
+own momentum through the rock before the push can turn it. And after the
+position is written there is a hard clamp out of any rock, because steering can
+be beaten: a mote shoved by a blast arrives with more speed than a gradient
+takes off it in one tick. The clamp costs nothing in the normal case and is the
+only thing that makes "never inside a rock" a guarantee rather than a hope.
+
+## The reactor is buried, and only the reactor kills the ship
+
+**A share of the hull is a hit point bar with extra steps.** The old rule was
+"a tenth of its cells gone", which does not care WHERE the damage landed: a
+ship scoured evenly all over died exactly as fast as one drilled through the
+middle, so aiming at anything bought nothing. redux-tribes' own rule is that
+the layout IS the damage model, and this is that rule: the plating, the
+machinery behind it, and finally the core, in the order they physically stand
+in.
+
+`fx::reactor_of` DERIVES the reactor, because there is nothing to read.
+redux-tribes' eight purposes are propulsion, attitude, gun, ordnance, command,
+crew, boarding and structure, with no reactor among them, and adding a ninth
+would mean changing that project, which is reference only. So it is derived
+from the one thing the owner said about it: it is buried. Depth is a multi
+source breadth first search inward from every empty cell, so a cell's depth is
+how many cells of solid material stand between it and the nearest gap; the
+deepest cell is the most buried place in the ship by construction, and the
+reactor is the ball of solid cells around it. Ties break toward the middle of
+the lattice, so a long flat run of equally buried cells gets its reactor
+amidships rather than at whichever end the scan reached first.
+
+Half of it gone is what takes the ship (`REACTOR_LOSS`). Nothing else does, so
+a hull can be shot to pieces everywhere else and keep flying, which is what
+makes a wreck that is still fighting possible at all. The suite holds the
+reactor to buried (no cell of it has a face open to space), solid, small, and
+amidships: a reactor that came out at one end passes the first three and is
+still a reactor anybody can shoot from the front.
+
+**And the plating is worth a hundred times the bare material.** `ARMOUR` is a
+multiplier on hit points rather than a divisor on the bite, so the heat ramp
+and the crust still run off the same share of a cell's own maximum and a wound
+looks exactly as it did. A siege, not a countdown.
+
+## The ship puts up a squadron
+
+A dozen fighters, and they are ENTITIES, for the reason the whole design turns
+on: the ECS holds what there are dozens of. They share one mesh and one
+material set between them, built once, so twelve fighters are twelve transforms
+and one upload.
+
+**They patrol rather than intercept, and that is not laziness.** The CPU cannot
+see where a mote is, so there is nothing to intercept: a fighter picks a point
+out on the sphere the swarm holds, flies to it, and picks another when it
+arrives. Flying the circuit and firing into it is what a screen actually does,
+and it puts the shots where the swarm has to come through.
+
+Their gun needed nothing new. A burst is a `Blast`, which is a capsule of zero
+length, which is the shape everything that kills a mote already is, so the
+squadron added a weapon without adding a resolution path.
+
+## A mothership is a SHIP, and it bleeds purple
+
+Carriers used to be one mesh with a floating hit point number on it, so the
+entire per cell model, the bricks, the four layer wound, the chunks that come
+off and the re-mesh of only what changed, existed on one side of the battle.
+There was never a reason for that beyond the order things were built in: a
+carrier is a voxel model, and everything here works on a voxel model.
+
+`spawn_ship` is `spawn_hull` with the model and its materials handed in, and a
+carrier goes through it. It gets a damage grid at its own armour (eight, not
+the player's hundred, or neither side could hurt the other and the battle would
+never resolve), its bricks, its wounds and its chunks. `go_critical` takes it
+the same way it takes a ship, on the same reactor rule, so `hives_critical` and
+the hit point number are both gone.
+
+**What it costs is that every system taking hulls now takes carriers.** Three
+had to say otherwise: `fly_hull` would have every carrier flying the flagship's
+orders, and `fire_guns` and `fire_flak` would have a mothership opening up with
+the fleet's own guns on its own side. `Without<Hive>` on those three, and the
+rest of the machinery was simply correct.
+
+**A beam takes CELLS off.** It used to subtract from a number. The hit point is
+taken into the carrier's own frame first (`bite` works in model coordinates and
+a carrier is drawn scaled, turned, and a long way from the origin), and it
+lands as a ring of bites rather than one, because a beam that took a single
+cell off a mothership would need thousands of shots before the picture changed.
+
+And it **bleeds purple**. The swarm is chitin over violet, so that is what
+comes out of one: the death sparks, the beam splash and the carrier's own
+bleeding all throw violet now. They used to throw green, which is the colour of
+the lamps ON a mote rather than the colour of the animal, so a kill read as a
+light going out instead of as a thing coming apart.
+
+## Rounds fly, and the blast is where they land
+
+A flak burst used to appear where it was going to go off, which is a gun with
+no shell in it: the muzzle flashed, the target flashed, and nothing crossed the
+gap between them. `Tracer` is that gap. A round travels over `TRACER_TICKS`, is
+drawn as a short bright bolt (the same camera facing quad a beam is, for the
+same reason), and the `Blast` is pushed when it ARRIVES rather than when the
+trigger is pulled.
+
+So what kills a mote is the shell reaching it, and a player can watch a burst
+travel into the cloud and see the hole appear at the end of its own flight,
+which is the whole reason for having a shell at all.
+
+## Veins: a share of the swarm winds round the rocks
+
+A fifth of the motes do not go for the ship. They take an asteroid as their
+focus instead, at a standoff of a little over its own radius, and they do not
+make runs: they HOLD, and they run fast along their own orbit.
+
+It is one hash and one select, and nothing else in the tick knows which kind a
+mote is. That is the point: a vein is not a second behaviour, it is the same
+behaviour pointed at something else. Combined with the per mote swirl axis it
+draws a braid winding round the rock rather than a shell round it, because a
+few hundred near circular orbits at every inclination is what a braid is.
+
+Two things had to be told about it. A vein's OWN rock pushes it far less than
+the others do, or the avoidance term would shove the ribbon straight off the
+thing it is wound round, since the standoff is inside the margin by design. And
+a vein does not bite the hull, because it is nowhere near it.
+
+## The controls are on the screen
+
+There were none. Every binding was a key somebody had to be told about, so
+"where is my button to call in reinforcements" is the only question a player
+could have had. A button that is only a key is a feature nobody can find, which
+is redux-tribes' own lesson about move mode being buried in a rail.
+
+The HUD is a button that calls the wave, a line saying what the wing is at, and
+the bindings. The button and the R key are the same action asked for twice. It
+is built only for a window: a headless run has no pointer, nobody to read a
+label, and pays for every frame of it on a software rasteriser.
+
+## There is no fog, and what looked like fog was the lighting
+
+Nothing in this renderer fades with range. No shader reads a depth, there is no
+fog component anywhere, and the far plane clips rather than blending. What read
+as distance fog was two lights.
+
+- **A green cubemap at 250 puts the sky's own colour on every surface in the
+  scene.** A rock forty units out and the nebula behind it came out nearly the
+  same green, so the rock's contrast against its background went to almost
+  nothing. That is what aerial perspective IS, arrived at from the other
+  direction, and it is exactly the thing space does not have: there is no
+  medium between the camera and the rock. The environment light is 90 now.
+- **A flat ambient is a grey floor under the whole picture.** An ambient term
+  stands in for light bounced off air and ground and there is neither out here.
+  It is 6 rather than 40, and not nought: zero puts a hull's shadowed flank at
+  the same value as the gap between two stars, and a silhouette with no
+  interior is a hole in the picture rather than a ship.
+
+The general rule, and it is the one this file already keeps twice: **a picture
+that looks wrong names a symptom, not a cause.** "Distance fog" is a real
+effect with a real implementation, and looking for that implementation would
+have found nothing for as long as anybody cared to look.
+
+**The same trap caught the motherships.** They were "objectively glowing
+green", and there was no green lamp: `tint_hives` set the material's EMISSIVE
+to a green that grew with damage, and emissive applies over the whole material
+rather than over the places that were hit. At 2.2 it did not mark a wound, it
+turned the entire hull into a uniform green bulb the shape of a mothership. It
+is a tenth of that now, and what actually says a carrier is hurt is that it
+BURNS: sparks off its hull, thicker the worse it is, the same thing a chewed
+frigate does. A fire has a place on the ship and a tint does not, which is why
+one of them carries the information and the other only carried colour.
+
+## An RTS camera: the focus is a place
+
+It used to ease its focus onto the flagship every frame, which is a chase
+camera wearing an orbit's controls, and two things are wrong with that in a
+game about where you put your ships. You cannot look at anything except the
+ship, so the swarm, the carriers and the rocks can only be seen by flying to
+them. And the moment you give a move order the whole world slides under you,
+which is the ship standing still and everything else moving, exactly backwards
+from what an order is.
+
+So the focus is a point in the world the player drives. WASD and the arrows pan
+it, Q and E lift and drop it, because this is a game in three dimensions and a
+camera that could only pan on one plane could not be put above a fight that is
+happening at an angle to it. Panning is in the CAMERA's frame, not the world's,
+or the keys mean something different at every heading and nobody can learn
+them, and it is scaled by the camera's own distance so one press covers the
+same share of the screen at every zoom.
+
+Space snaps to the flagship, eased, and then **lets go**: a focus is a move to
+a place rather than a lock, so the ship flies out of the middle of the view
+under its own power, which is what says it is going somewhere. Any pan clears
+it, because a focus that fought the pan keys would be a camera arguing with its
+own user.
+
 ## Engines burn, and a flame is GEOMETRY
 
 **A drive plumes on the throttle it is actually pulling.** `Hull.accel` is
@@ -430,10 +667,13 @@ the same failure as one that never loaded.
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 43, the core
+cargo test -p swarm_core                                   # 51, the core
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
 cargo build --release -p swarm_app
-./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png
+./target/release/swarm_app --headless --motes 5000 --frames 60 --launch-delay 0 --out shot.png
+# --launch-delay 0 on every headless shot that wants a swarm in it: the
+# carriers hold for ten seconds by default, and a render aimed at tick ninety
+# cannot wait for that.
 ./target/release/swarm_app --fps 60          # a window, capped; --fps 0 lifts the cap
 ./target/release/swarm_app --headless --motes 1 --chewers 0 --zoom 1.7 --out close.png
 # The effects, aimed: one frame is one tick, so a shot can be taken AT a tick.
@@ -445,6 +685,8 @@ cargo build --release -p swarm_app
     --frames 93 --zoom 6.0 --out boom.png               # three ticks after the reactor
 ./target/release/swarm_app --headless --fixed-dt --motes 800 --reinforce 4 \
     --move 30,3,-16 --chewers 0 --frames 320 --zoom 7 --out wing.png   # a wing on station
+./target/release/swarm_app --headless --fixed-dt --motes 3000 --hives 3 --rocks 14 \
+    --launch-delay 0 --chewers 0 --frames 150 --zoom 5 --out battle.png  # the whole thing
 node tools/export_hulls.mjs ../redux-tribes assets/hulls   # re-export the fleet (needs npm install in tools/)
 ```
 

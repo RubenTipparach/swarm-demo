@@ -91,6 +91,14 @@ pub struct SwarmConfig {
     /// by the app each frame, so a hive that dies shortens the list and the
     /// motes that flew from it re-home to whatever is left.
     pub hives: Vec<Vec4>,
+    /// The asteroid field, as spheres: centre xyz, radius w. Written once at
+    /// startup, because a rock does not move.
+    pub rocks: Vec<Vec4>,
+    /// How long every mote waits inside its carrier before the first one
+    /// comes out. The carriers arrive, they sit there, and THEN the swarm
+    /// starts: an opening beat the player can read before anything is
+    /// happening to them.
+    pub launch_delay: f32,
     pub paused: bool,
     /// One tick a frame rather than the wall clock, so a headless render is a
     /// function of its frame count. See `--fixed-dt`.
@@ -106,6 +114,8 @@ impl Default for SwarmConfig {
             hull_centre: Vec3::ZERO,
             hull_radius: 3.5,
             hives: Vec::new(),
+            rocks: Vec::new(),
+            launch_delay: 10.0,
             paused: false,
             fixed_dt: false,
         }
@@ -114,6 +124,14 @@ impl Default for SwarmConfig {
 
 /// How many motherships the swarm may fly from at once.
 pub const MAX_HIVES: usize = 16;
+
+/// How many asteroids the swarm shader tests a mote against.
+///
+/// Every mote pays for every rock every tick, so this is a budget rather than
+/// a limit on the field: thirty two is about a microsecond of the tick at a
+/// million motes, and a field that needs more than thirty two rocks in one
+/// place needs a grid rather than a longer list.
+pub const MAX_ROCKS: usize = 32;
 
 /// The capsules that kill this tick, rebuilt by the app every frame.
 ///
@@ -196,11 +214,12 @@ struct Params {
     spark_base: u32,
     spark_cap: u32,
     hives: u32,
-    pad0: u32,
+    rocks: u32,
     pad1: u32,
     pad2: u32,
     shot: [Vec4; MAX_SHOTS * 2],
     hive: [Vec4; MAX_HIVES],
+    rock: [Vec4; MAX_ROCKS],
 }
 
 /// Put this on an entity with a `Mesh3d` and that mesh is drawn once per mote.
@@ -340,6 +359,9 @@ fn prepare_swarm_buffers(
     let mut hive = [Vec4::ZERO; MAX_HIVES];
     let hives = cfg.hives.len().min(MAX_HIVES);
     hive[..hives].copy_from_slice(&cfg.hives[..hives]);
+    let mut rock = [Vec4::ZERO; MAX_ROCKS];
+    let rocks = cfg.rocks.len().min(MAX_ROCKS);
+    rock[..rocks].copy_from_slice(&cfg.rocks[..rocks]);
     let params = Params {
         dt: clock.dt,
         time: clock.time,
@@ -351,11 +373,12 @@ fn prepare_swarm_buffers(
         spark_base: CPU_SPARKS,
         spark_cap: GPU_SPARKS,
         hives: hives as u32,
-        pad0: 0,
+        rocks: rocks as u32,
         pad1: 0,
         pad2: 0,
         shot,
         hive,
+        rock,
     };
 
     let write_sparks = |buffer: &Buffer, cursor: &mut u32| {
@@ -406,9 +429,10 @@ fn prepare_swarm_buffers(
             Mote {
                 pos_scale: Vec3::ZERO.extend(0.0),
                 vel_seed: Vec3::ZERO.extend((i as f32 + 0.5) / cfg.count as f32),
-                // Spread over about eight seconds, and never exactly nought,
-                // which the shader reads as "already out".
-                state: Vec4::new(0.02 + rng.range(0.0, 8.0), scale, hive, 0.0),
+                // The delay first, then spread over about eight seconds, and
+                // never exactly nought, which the shader reads as "already
+                // out".
+                state: Vec4::new(cfg.launch_delay + 0.02 + rng.range(0.0, 8.0), scale, hive, 0.0),
             }
         })
         .collect();
