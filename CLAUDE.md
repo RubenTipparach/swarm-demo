@@ -1217,15 +1217,19 @@ lancer came out in three pieces.
 of them `DRIVE_HOT`, the near white; against a swarm that shades itself that
 made every bug a bank of headlamps seen from behind, and the darker the bodies
 round it got the more a mote read as its own exhaust. What is left is the
-centreline cell a row BELOW the middle, which is what insets it: the body is an
-ellipsoid, so the row above and the columns either side stand further aft than
-that one does and the light sits in the notch they leave, chitin over it and
-chitin down both sides. A light flush with the widest part of a stern is a lamp
-stuck on the back; one in a recess is an exhaust. It is two cells wide rather
-than one and that is the mirror and not a choice, since anything on the
-centreline is a pair by construction; they touch, so they read as one. The
-lancer and the chewer keep their hot drives, because neither of them is what a
-hundred thousand of are on screen at once.
+centreline cell a row BELOW the middle, and it is WALLED IN: `shroud` fills
+whatever is empty on the five faces that are not the aft one, so exactly one
+face of the light is open and it is the one pointing the way the mote came
+from. That is the whole of the difference between a lamp and an exhaust, and
+it was not free by construction: a drive is the aftmost cell of its column, so
+it is open aft AND open wherever the body's ellipsoid stopped short, which
+measured two faces on a good seed and three on most.
+`a_drones_drive_shows_one_face_and_it_faces_aft` holds it per seed, because
+which side the ellipsoid falls short on moves with the radius it rolled.
+It is two cells wide rather than one and that is the mirror and not a choice,
+since anything on the centreline is a pair by construction; they touch, so
+they read as one. The lancer and the chewer keep their hot drives, because
+neither of them is what a hundred thousand of are on screen at once.
 
 `GLOW`, which is what everything ALIVE about an alien is lit with, came down
 from 0x9BFF4A to 0x6FB835 for the same reason. At the emissive a lit cell
@@ -1267,7 +1271,7 @@ the same failure as one that never loaded.
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 55, the core
+cargo test -p swarm_core                                   # 56, the core
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
 cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png

@@ -192,15 +192,34 @@ impl Builder {
     /// Marked as PROPULSION as well as lit, because that is what makes it an
     /// engine rather than a light: `engines_of` clusters on the purpose, so a
     /// mote's plume comes off the same query a ship's does.
-    fn engine(&mut self, i: i32, j: i32, colour: u32) -> bool {
-        let Some(k) = self.stern(i, j) else { return false };
+    fn engine(&mut self, i: i32, j: i32, colour: u32) -> Option<i32> {
+        let k = self.stern(i, j)?;
         if !self.put(i, j, k, mat::GLOW, colour) {
-            return false;
+            return None;
         }
         self.light(i, j, k);
         let n = self.m.index(i as usize, j as usize, k as usize);
         self.m.purp[n] = purpose::PROPULSION;
-        true
+        Some(k)
+    }
+
+    /// Wall a lit cell in on every side but the one it shines out of.
+    ///
+    /// A drive is the aftmost cell of its column, so its AFT face is open by
+    /// construction and so is whichever of the other five the body happened
+    /// not to reach. That is a light that wraps round a corner: three faces
+    /// lit reads as a lamp stuck on the outside, and what an exhaust looks
+    /// like is one face at the bottom of a recess. Anything empty beside it
+    /// becomes chitin, so the only face left open is the one facing aft.
+    ///
+    /// Five directions and never the aft one, which is the whole point of it.
+    fn shroud(&mut self, i: i32, j: i32, k: i32, colour: u32) {
+        for (di, dj, dk) in [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1)] {
+            let (a, b, c) = (i + di, j + dj, k + dk);
+            if self.m.get(a, b, c) == mat::EMPTY {
+                self.put(a, b, c, mat::CASE, colour);
+            }
+        }
     }
 
     /// An eye is a body cell relit, on the crown of its column, so it is in
@@ -286,7 +305,15 @@ fn drone(b: &mut Builder, rng: &mut Rng, c: f32) {
     // the lattice is folded about the plane between the two centre columns, so
     // anything on the centreline is a pair by construction. They are adjacent,
     // so they read as one light.
-    b.engine(c as i32, c as i32 - 1, DRIVE);
+    //
+    // And it is WALLED IN afterwards. The stern of a column is open aft and
+    // open wherever the ellipsoid stopped short, which was two faces on a good
+    // seed and three on most: a light round a corner is a lamp stuck on the
+    // back. `shroud` fills whatever is empty on the other five, so one face
+    // shows and it is the one pointing the way the mote came from.
+    if let Some(k) = b.engine(c as i32, c as i32 - 1, DRIVE) {
+        b.shroud(c as i32, c as i32 - 1, k, CHITIN_DARK);
+    }
     // Legs: two or three pairs off the flank, out then down.
     let pairs = rng.int(2, 3);
     for p in 0..pairs {
@@ -464,6 +491,31 @@ mod tests {
         }
     }
 
+    /// A drone's drive shows ONE face, and it is the one pointing aft.
+    ///
+    /// The stern of a column is open aft by construction and open on whatever
+    /// side the body stopped short of, which was two faces on a good seed and
+    /// three on most: a light round a corner reads as a lamp stuck on the back
+    /// rather than as an exhaust in a recess. This is what `shroud` is for, and
+    /// it is held per seed because the body is an ellipsoid at a rolled radius
+    /// and which side it falls short on moves with the roll.
+    #[test]
+    fn a_drones_drive_shows_one_face_and_it_faces_aft() {
+        for seed in 0..12u64 {
+            let m = generate(Archetype::Drone, seed);
+            let drives: Vec<usize> = (0..m.len()).filter(|&n| m.purp[n] == crate::voxel::purpose::PROPULSION).collect();
+            assert_eq!(drives.len(), 2, "seed {seed}: {} drive cells", drives.len());
+            for &n in &drives {
+                let (i, j, k) = m.at(n);
+                let open: Vec<[i32; 3]> = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
+                    .into_iter()
+                    .filter(|d| m.get(i as i32 + d[0], j as i32 + d[1], k as i32 + d[2]) == mat::EMPTY)
+                    .collect();
+                assert_eq!(open, vec![[0, 0, -1]], "seed {seed}: drive at {i},{j},{k} is open on {open:?}");
+            }
+        }
+    }
+
     #[test]
     fn a_mote_meshes_like_a_hull() {
         let m = generate(Archetype::Chewer, 3);
@@ -472,3 +524,4 @@ mod tests {
         assert_eq!(s.quad_cells.len(), crate::mesh::exposed_faces(&m, None));
     }
 }
+
