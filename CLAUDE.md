@@ -116,37 +116,57 @@ before and on the binary from after and compared with `tools/pngdiff.py`:
 | scene | before vs after | the before binary vs itself |
 | --- | --- | --- |
 | order | 0.141% | 0.013%, 0.166%, 0.167% (three runs, every pair) |
-| wreck | 0.032% | 0.249% (two runs of the pre merge binary) |
+| wreck | 0.032% | 2.069% (and 0.249% on the pre merge binary) |
 | beams | 0.733% | 0.847% |
 | battle | 0.429% | 0.418% |
 | wing | 2.869% | 3.144% |
 
 Every share is of pixels moved by more than 8 of 255. The wing is the noisy
-one because it runs three hundred and twenty frames with an order in it,
-and the next section says why an order made a fixed step picture depend on
-the machine; the after picture against the before binary's OTHER run is
-2.221%.
+one: three hundred and twenty frames of kills, with an order in it, and the
+after picture against the before binary's OTHER run is 2.221%.
 
-The floor is two runs of the SAME binary, and it is not nought: the tick
-reads its neighbours' positions out of the buffer it is writing them into
-(`motes[j]` at line 767 of `swarm.wgsl`, `motes[i] = m` at 829), so which
-of them a mote sees already moved depends on thread order, and a software
-rasteriser's thread order is not the same twice. Measured on the order
-picture, three runs of the before binary against each other: 0.013%,
-0.166% and 0.167% of the pixels; the HUD's frame counter alone is about two
-hundred of them, because it reads real time. So a pair is judged against
-that scene's OWN floor, never against a number typed into a skill, and a
-share inside it is a refactor. One trap on the way: the before pictures
-were being taken off `target/release/swarm_app` while cargo was replacing
-it, so the last of them came from the binary under test. Copy a binary aside
-before it is the control for anything.
+**The floor is two runs of the SAME binary, and it was not nought, for two
+reasons it took the whole exercise to tell apart.** The first was the CPU:
+three systems read the frame's own clock under `--fixed-dt` (the next
+section), so the debris, the showcase and an order's ping stood somewhere
+different every run, and the wreck scene's own floor on the before binary was
+two percent. The second is the GPU, and it is intermittent: the spark and
+shock rings are claimed with `atomicAdd`, so which deaths a full ring keeps
+depends on the order the threads arrived in, and the swarm diverges from
+there. Intermittent, because two runs on a quiet machine can arrive in the
+same order, and then they agree to the BYTE: the split binary's battle
+picture was byte identical to one of the before binary's, and its wing
+picture to another, which is also what proves the split beyond any share.
+With the clocks fixed, the wreck scene, which kills nothing after the
+reactor goes, is byte identical run to run, and the scenes with kills differ
+by 0.12% to 2.4% between two runs of the same binary. So a pair is judged
+against that scene's OWN floor, `cmp` is the check only for a scene that has
+one, and the HUD's frame counter, which reads real time, is about two
+hundred pixels of any picture it is in. The whole branch, measured last, on
+the final binary:
 
-**What this stage did not do, on purpose.** The eleven functions over a
-hundred lines are exactly where they were, only in smaller files: `setup`
-(476), `build_hud` (238), `go_critical` (233), `spawn_ship` (180) and the
-rest, and `swarm.rs` and the core's `fx.rs` are still one file each. They
-come apart in the next stage, with the four `SystemSet`s and the explicit
-imports that replace `use crate::*;` once each module knows what it reads.
+| scene | before vs final | the final binary vs itself |
+| --- | --- | --- |
+| order | 0.162% | 0.131% |
+| wreck | 0.499% | 0, byte identical |
+| beams | 0.638% | 0.123% |
+| battle | 0.485% | 0.407% |
+| wing | 3.164% | 2.411% |
+
+The wreck's half a percent is real and is the fix: its debris flew fifteen
+times too far per frame before. The battle's is the rocks turned through
+`TAU` rather than 6.283. One trap on the way: the before pictures were being
+taken off `target/release/swarm_app` while cargo was replacing it, so the
+last of them came from the binary under test. Copy a binary aside before it
+is the control for anything.
+
+**What this stage did not do, on purpose.** The long functions are exactly
+where they were, only in smaller files: `setup` (583 lines once rustfmt had
+wrapped it), `go_critical` (299), `build_hud` (294), `spawn_ship` (205) and
+the rest, seventeen over a hundred after the format against eleven before
+it, and `swarm.rs` and the core's `fx.rs` are still one file each. They come
+apart in the next stage, with the four `SystemSet`s and the explicit imports
+that replace `use crate::*;` once each module knows what it reads.
 `tools/shape.py --check` therefore still fails, on those, and the list it
 prints is that stage's work.
 

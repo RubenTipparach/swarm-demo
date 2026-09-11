@@ -30,10 +30,11 @@ as "some warnings".
 7. **The pictures, when the change claims to change nothing.** A refactor is
    proved by its renders: copy the binary from before aside, build the one
    from after, take the suite's headless shots on both, and `python3
-   tools/pngdiff.py before.png after.png` on each pair. Two runs of the SAME
-   binary differ (the tick reads neighbours out of the buffer it writes, so
-   thread order shows), by up to about 0.17% of the order picture, so each
-   pair is held against that scene's own floor, two runs of the before
-   binary, and never against `cmp` or a number typed here.
+   tools/pngdiff.py before.png after.png` on each pair. A scene with no
+   kills in it is byte identical run to run and `cmp` is its check; a scene
+   with kills is not, because the spark and shock rings are claimed with
+   atomics and the swarm diverges from the order the threads arrived in, so
+   each such pair is held against that scene's own floor, two runs of the
+   before binary, and never against a number typed here.
 
 Then say, in one line each, what passed, what failed, and what was changed.
