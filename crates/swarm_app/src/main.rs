@@ -35,7 +35,7 @@ use std::{
 use swarm_core::{
     alien::{generate, Archetype},
     damage::{chunk_for, Chunk, DamageGrid, Vent},
-    fx::{blast_sparks, breach_sparks, engines_of, gun_clusters, muzzle_sparks, reactor_of, shatter, Beam, Blast, Gun, Spark, SparkKind},
+    fx::{blast_sparks, breach_sparks, engine_clusters, gun_clusters, muzzle_sparks, reactor_of, shatter, Beam, Blast, Gun, Spark, SparkKind},
     mesh::{greedy_mesh, mesh_region, srgb_to_linear, MeshData, Surfaces},
     rng::{drift_of, Rng},
     sky::{bake_cubemap, starfield, to_half, SkyPreset},
@@ -563,7 +563,9 @@ struct Hull {
     /// Not the thrusters: those wear the same surface and are all over a
     /// hull, and a thruster plumed constantly is a ship that never stops
     /// spinning.
-    engines: Vec<Gun>,
+    ///
+    /// With their cells, so a drive that has been eaten stops being one.
+    engines: Vec<Drive>,
     /// Where it has been told to go, in world units, or nothing.
     order: Option<Vec3>,
     vel: Vec3,
@@ -631,6 +633,62 @@ struct Flagship;
 struct Escort {
     station: Vec3,
 }
+
+/// One engine cluster, and the cells it was read off.
+///
+/// The CELLS are the point. An engine used to be a position and a direction
+/// taken off the intact model at spawn and never looked at again, so a ship
+/// whose drives had been eaten went on burning them at full throttle and
+/// flying as if nothing had happened: the damage was drawn on the hull and
+/// meant nothing to it. An engine is only an engine while the cells it is
+/// made of are still there.
+struct Drive {
+    gun: Gun,
+    cells: Vec<usize>,
+}
+
+impl Drive {
+    /// What share of it is left, nought to one.
+    fn left(&self, dmg: &DamageGrid) -> f32 {
+        if self.cells.is_empty() {
+            return 0.0;
+        }
+        let live = self.cells.iter().filter(|&&c| !dmg.is_dead(c)).count();
+        live as f32 / self.cells.len() as f32
+    }
+}
+
+impl Hull {
+    /// What the ship can still PULL, nought to one.
+    ///
+    /// The share of its propulsion cells that are still there, and a floor
+    /// under it, because a hull's attitude thrusters are scattered all over
+    /// it and are not what `engine_clusters` counts: a ship that has lost
+    /// every main drive can still shove itself about, slowly, and one that has
+    /// lost them all and can do nothing at all would coast out of the map for
+    /// ever on whatever velocity it happened to have.
+    ///
+    /// This is what was missing. The plating was coming off all along (three
+    /// hundred and eighty five cells in four hundred ticks against forty eight
+    /// chewers, measured), and none of it meant anything: the only thing that
+    /// read damage was the reactor, so a ship with its whole stern eaten flew
+    /// exactly as well as one fresh out of the yard.
+    fn thrust(&self) -> f32 {
+        let (mut live, mut all) = (0usize, 0usize);
+        for e in &self.engines {
+            all += e.cells.len();
+            live += e.cells.iter().filter(|&&c| !self.damage.is_dead(c)).count();
+        }
+        if all == 0 {
+            return 1.0;
+        }
+        THRUSTERS + (1.0 - THRUSTERS) * (live as f32 / all as f32)
+    }
+}
+
+/// What is left of a ship's push when every main drive is gone: its attitude
+/// thrusters, which are all over the hull and are not drives.
+const THRUSTERS: f32 = 0.18;
 
 struct Chewer {
     at: Vec3,
@@ -791,8 +849,10 @@ const HIVE_FAR: f32 = 22.0;
 /// A mothership: where the swarm comes from, and the thing worth killing.
 #[derive(Component)]
 struct Hive {
-    /// Read off its own cells, the same query a ship's engines come from.
-    engines: Vec<Gun>,
+    /// Read off its own cells, the same query a ship's engines come from, and
+    /// with those cells, so a carrier that has had its drives chewed off stops
+    /// burning them exactly as a ship does.
+    engines: Vec<Drive>,
     /// In world units, which is what the shader is told and what a beam is
     /// tested against. The model's own radius times the scale it is drawn at.
     radius: f32,
@@ -1113,7 +1173,7 @@ fn spawn_ship(
         None => {}
     }
     let guns: Vec<Gun> = turrets.iter().map(|(g, _, _)| *g).collect();
-    let engines = engines_of(&model);
+    let engines: Vec<Drive> = engine_clusters(&model).into_iter().map(|(gun, _, cells)| Drive { gun, cells }).collect();
     let cells = model.solid_count();
     let mut hull = Hull {
         surface_mats,
@@ -1393,7 +1453,7 @@ fn setup(
             unlit: true,
             ..default()
         });
-        let engines = engines_of(&m);
+        let engines: Vec<Drive> = engine_clusters(&m).into_iter().map(|(gun, _, cells)| Drive { gun, cells }).collect();
         let at_xf = Transform::from_translation(at).with_scale(Vec3::splat(scale));
         // No armour multiplier: the hundred is what makes the PLAYER's ship a
         // siege, and putting it on the carriers too would mean neither side
@@ -3896,20 +3956,26 @@ fn draw_flames(
         }
         let forward = xf.rotation * Vec3::Z;
         for e in &hull.engines {
-            let throttle = throttle_of(hull, forward, e.out[2]);
+            // What is LEFT of it. A drive whose cells have been chewed off
+            // cannot burn, and one half eaten burns half: the flame is the
+            // only thing on screen that says whether a ship still has its
+            // legs, so it has to be read off the cells and not off a list
+            // taken at spawn.
+            let left = e.left(&hull.damage);
+            let throttle = throttle_of(hull, forward, e.gun.out[2]) * left;
             if throttle <= 0.01 {
                 continue;
             }
-            let at = xf.transform_point(Vec3::from(e.at));
-            let dir = (xf.rotation * Vec3::from(e.out)).normalize_or(Vec3::NEG_Z);
+            let at = xf.transform_point(Vec3::from(e.gun.at));
+            let dir = (xf.rotation * Vec3::from(e.gun.out)).normalize_or(Vec3::NEG_Z);
             cone(
                 at,
                 dir,
-                hull.model.cell * 2.4,
+                hull.model.cell * 2.4 * (0.55 + 0.45 * left),
                 throttle,
                 Vec3::new(5.4, 4.3, 3.0),
                 Vec3::new(3.0, 0.86, 0.14),
-                e.cell ^ hull.seed,
+                e.gun.cell ^ hull.seed,
             );
         }
     }
@@ -3920,22 +3986,28 @@ fn draw_flames(
         // A carrier is always under way, and slowly: a fixed low throttle
         // rather than one read off its drift, which would be invisible.
         for e in &hive.engines {
+            // The same rule on a carrier, which is a ship with a damage grid
+            // like any other.
+            let left = e.left(&hull.damage);
+            if left <= 0.01 {
+                continue;
+            }
             // NOT `* hive.scale`. The carrier's own Transform already carries
             // that scale, and `transform_point` applies it, so multiplying it
             // in here squared it: an engine a fifth of the way out from the
             // centre was drawn at a fifth SQUARED of the scaled radius, which
             // put every carrier's flames in open space several lengths off its
             // hull. They looked unaligned because they were not on the ship.
-            let at = xf.transform_point(Vec3::from(e.at));
-            let dir = (xf.rotation * Vec3::from(e.out)).normalize_or(Vec3::NEG_Z);
+            let at = xf.transform_point(Vec3::from(e.gun.at));
+            let dir = (xf.rotation * Vec3::from(e.gun.out)).normalize_or(Vec3::NEG_Z);
             cone(
                 at,
                 dir,
-                hull.model.cell * hive.scale * 2.2,
-                0.5,
+                hull.model.cell * hive.scale * 2.2 * (0.55 + 0.45 * left),
+                0.5 * left,
                 Vec3::new(3.4, 5.4, 6.0),
                 Vec3::new(0.45, 2.6, 3.8),
-                e.cell ^ hive.seed as u32,
+                e.gun.cell ^ hive.seed as u32,
             );
         }
     }
@@ -4426,7 +4498,13 @@ fn fly_hull(
     let dt = if scene.fixed_dt { 1.0 / 60.0 } else { time.delta_secs().min(swarm::STEP_CLAMP) };
     for (mut hull, mut xf, escort) in &mut hulls {
         let radius = hull.model.radius();
-        let (speed, accel, arrive) = (radius * HULL_SPEED, radius * HULL_ACCEL, radius * ARRIVE);
+        // What it can still pull. A ship that has been chewed to the stern
+        // does not accelerate like a fresh one and does not cruise like one
+        // either: both scale with the drives it has left, so losing them reads
+        // as a ship going lame rather than as a paint job.
+        let thrust = hull.thrust();
+        let (speed, accel, arrive) =
+            (radius * HULL_SPEED * thrust, radius * HULL_ACCEL * thrust, radius * ARRIVE);
         let mut hurry = 1.0;
         let want = match escort {
             // An escort has no order of its own: its goal is a place in the
@@ -5076,9 +5154,14 @@ fn headless_capture(
     h.shot = true;
     let breaches: usize = hulls.iter().map(|x| x.breaches).sum();
     let dead: usize = hulls.iter().map(|x| x.damage.dead_count()).sum();
+    // And what the chewing DID, which is the number that was missing: cells
+    // coming off meant nothing to any ship until the drives started counting
+    // theirs, so a run that chewed hundreds of cells and one that chewed none
+    // reported the same thing.
+    let worst = hulls.iter().map(|x| x.thrust()).fold(1.0f32, f32::min);
     println!(
-        "headless: {} frames in {:.1}s ({:.1} ms/frame mean, wall clock), swarm ticks {}, chewed {} cells ({} breaches thrown)",
-        *frames, spent, spent * 1000.0 / *frames as f32, clock.ticks, dead, breaches
+        "headless: {} frames in {:.1}s ({:.1} ms/frame mean, wall clock), swarm ticks {}, chewed {} cells ({} breaches thrown), worst thrust {:.2}",
+        *frames, spent, spent * 1000.0 / *frames as f32, clock.ticks, dead, breaches, worst
     );
     println!(
         "fx: {} beams fired and {} flak bursts, {} beams live and {} quads on the last frame, {} blasts live, {} sparks queued",
