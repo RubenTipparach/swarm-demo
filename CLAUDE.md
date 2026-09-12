@@ -399,12 +399,47 @@ still lit, which is the picture.
 
 **A WOUND is in that same channel, and that is the whole reason it can be
 seen.** A mote is hurt rather than only alive or dead (`extra.x`, one down to
-nought), and a hurt one now burns violet, the colour it bleeds rather than the
-green its eyes are lit with, squared so a graze is nearly nothing and a mote
-one shot from coming apart is plainly glowing as it turns for home. Shading
-that would be exactly wrong: the swarm is thickest where the fighting is, so
-shading a wound would put every bright one in the picture precisely where the
-cloud has already put it out.
+nought), and a hurt one BURNS as it turns for home. Shading that would be
+exactly wrong: the swarm is thickest where the fighting is, so shading a wound
+would put every bright one in the picture precisely where the cloud has already
+put it out.
+
+**And it burns ORANGE, not violet.** Violet was the first answer, on the
+reasoning that violet is what a mote bleeds. That is the colour of the ANIMAL
+rather than the colour of an injury, and laid over a body that is already
+violet chitin it made a bug that happened to be a brighter purple: a player
+reads that as another kind of mote, not as one they have just hit. Every other
+damaged thing in this game goes orange, from a chewed frigate to a carrier
+coming apart, so a damaged mote goes orange too. What stays violet is the GORE
+that comes out when it bursts. Burning is what a hit DOES to it; bleeding is
+what is inside it.
+
+Two numbers make it read, and both were wrong in the first cut. It has to
+clear the bloom threshold at the one hit a mote actually survives, which is
+`SHOT_BITE` off a whole one, so the square the wound is scaled by is 0.36 and
+nothing under about three ever blooms at all. And it PULSES, on a clock the
+tick hands over in `shade.z` at the mote's own rate and phase: a steady glow is
+a colour, a pulse is an injury, and a pulse is what carries at the one or two
+pixels a mote is usually drawn at. `mote.wgsl` has no clock of its own, which
+is why the beat comes down with the shading rather than being worked out in
+the draw.
+
+**And a kill FLASHES.** Five gore sparks and four pieces of debris was a puff:
+at the size a mote is drawn, nine small additive particles read as a sparkle
+rather than as a thing coming apart, which is why a volley into the cloud
+looked like nothing was happening. Eleven of the spray now, and one big short
+lived flash at the mote's own place, white hot and warm rather than violet,
+because the flash is the moment of bursting rather than anything that came out
+of it. The DEBRIS is deliberately not raised with them: that is the half that
+lasts, and four a kill at a second and a half each over a swarm losing dozens
+a second is the violet haze this file warned about once already. A kill is
+bright and BRIEF.
+
+The flash lives a third of a second and no less, and that is a trap in the
+spark shader rather than a taste: a spark's colour is scaled by
+`min(1, life * 3)` at birth, so a flash asked to live a tenth of a second is
+born at a third of the brightness it was thrown with. It is brief because it
+fades, not because it is cut short.
 
 What it cost is a fifth `vec4` on the mote, on the same terms as the fourth.
 It buys the only thing a shaded swarm cannot do without, which is somewhere to

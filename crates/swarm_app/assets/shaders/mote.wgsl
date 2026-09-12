@@ -32,7 +32,8 @@ struct Vertex {
     // apart.
     @location(10) i_life: vec4<f32>,
     // And what the cloud does to the light on it: x how much of the sun
-    // reaches it through the rest of the swarm, y how much of the sky does.
+    // reaches it through the rest of the swarm, y how much of the sky does,
+    // z the beat a wound throbs on.
     @location(11) i_shade: vec4<f32>,
 };
 
@@ -45,8 +46,9 @@ struct VertexOutput {
     // How much of its OWN light this fragment makes. Nought for chitin, and
     // over one for a drive at transit speed.
     @location(4) glow: f32,
-    // x = the sun that got through, y = the sky that got through.
-    @location(5) shade: vec2<f32>,
+    // x = the sun that got through, y = the sky that got through, z = the
+    // beat a wound throbs on.
+    @location(5) shade: vec3<f32>,
     // How hurt it is: nought whole, one about to come apart.
     @location(6) hurt: f32,
 };
@@ -123,7 +125,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     // ember below the threshold, and only one at full transit crosses it.
     let speed = length(vertex.i_vel_seed.xyz);
     out.glow = (1.0 - vertex.color.a) * (0.5 + 1.4 * clamp(speed / 14.0, 0.0, 1.0));
-    out.shade = vertex.i_shade.xy;
+    out.shade = vertex.i_shade.xyz;
     out.hurt = clamp(1.0 - vertex.i_life.x, 0.0, 1.0);
     return out;
 }
@@ -174,14 +176,28 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // Nothing above touches this line: a mote in the dark heart of the swarm
     // is a dark body with its drives still lit, which is the picture.
     //
-    // A HURT mote burns too, in the violet it bleeds rather than the green its
-    // eyes are lit with, so what a hit did is on the thing that took it and
-    // not only in the burst. Squared, so a graze is nearly nothing and a mote
-    // one shot from coming apart is plainly glowing as it turns for home,
-    // which is where `PH_RETURN` is already sending it. Emissive, because a
-    // wound is a hole with the light of the animal coming out of it: shading
-    // it would put the brightest wounds in the swarm exactly where the cloud
-    // is thickest and nobody can see them.
-    let wound = vec3<f32>(1.05, 0.20, 1.45) * in.hurt * in.hurt;
+    // A HURT mote BURNS, and it burns the colour everything else in this game
+    // that has been damaged burns: hot yellow through orange, the hull's own
+    // heat ramp.
+    //
+    // It was violet, on the reasoning that violet is what a mote bleeds. That
+    // is the colour of the ANIMAL rather than the colour of an injury, and laid
+    // on a body that is already violet chitin it is a bug that happens to be a
+    // brighter purple: a player reads it as another kind of mote, not as one
+    // they have just hit. Everything else that takes damage here goes orange,
+    // from a chewed frigate to a carrier coming apart, so a damaged mote goes
+    // orange too. What stays violet is the GORE that comes out when it finally
+    // bursts: burning is what a hit does to it, bleeding is what is inside it.
+    //
+    // OVER THE BLOOM THRESHOLD, and it has to be. The first cut was a fifth of
+    // this, and at the one hit a mote actually survives (`SHOT_BITE` is 0.6 off
+    // a whole one, so the square is 0.36) it came out under one in every
+    // channel and never bloomed at all. At these numbers that same single hit
+    // clears white in the red and the wound flares.
+    //
+    // And it BEATS, on the clock the tick handed over in `shade.z`. A steady
+    // glow is a colour; a pulse is an injury, and a pulse is what carries at
+    // the one or two pixels a mote is usually drawn at.
+    let wound = vec3<f32>(5.0, 2.2, 0.30) * in.hurt * in.hurt * in.shade.z;
     return vec4<f32>(body + in.color.rgb * in.glow + wound, 1.0);
 }
