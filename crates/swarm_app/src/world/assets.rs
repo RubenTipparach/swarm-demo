@@ -163,6 +163,22 @@ pub(crate) fn crystal_material(
 #[derive(Resource, Default)]
 pub(crate) struct ChunkMaterials(pub(crate) HashMap<u32, Handle<StandardMaterial>>);
 
+/// What a system needs in order to BUILD something: the mesh store, the
+/// material store, and the cache of one material per chunk colour.
+///
+/// It is one struct because the three of them always travel together (a hull,
+/// a dummy, a chunk and a piece of a wreck each want all three) and because
+/// `#[allow(clippy::too_many_arguments)]` is the smell that says a struct is
+/// missing. That debt came due at Bevy's own limit on a system's parameters:
+/// `sandbox_fire` reached it exactly, and the error is a `.after` that no
+/// longer resolves rather than anything about arguments.
+#[derive(SystemParam)]
+pub(crate) struct Forge<'w> {
+    pub(crate) meshes: ResMut<'w, Assets<Mesh>>,
+    pub(crate) materials: ResMut<'w, Assets<StandardMaterial>>,
+    pub(crate) chunks: ResMut<'w, ChunkMaterials>,
+}
+
 /// A mote, as one mesh with its LIT cells marked.
 ///
 /// The motes are one instanced draw, so their lit cells cannot be a second

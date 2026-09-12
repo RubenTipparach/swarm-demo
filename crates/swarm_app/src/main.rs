@@ -28,6 +28,7 @@ use bevy::{
     app::{AppExit, ScheduleRunnerPlugin},
     asset::{LoadState, RenderAssetUsages},
     camera::RenderTarget,
+    ecs::system::SystemParam,
     image::{
         ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler,
         ImageSamplerDescriptor,
@@ -177,6 +178,10 @@ struct Args {
     /// One scripted shot on the range: `--fire slug,40` lands a slug on the
     /// dummy at tick forty, so a tumble can be photographed.
     fire: Option<(Weapon, u32)>,
+    /// `--blast TICK`: one sandbox blast down the camera's own line at that
+    /// tick, so what it does to a hull and to the cloud can be photographed.
+    /// There is no cursor in a headless run, and the blast is aimed with one.
+    blast: Option<u32>,
     /// A system of The Long Retreat: gather, hold, and jump out before the
     /// swarm's fleet arrives.
     retreat: bool,
@@ -233,6 +238,7 @@ fn parse_args() -> Args {
         seed: 4242,
         stand: 1.0,
         fire: None,
+        blast: None,
         retreat: false,
         run_seed: 0xB0A7,
         job: None,
@@ -348,6 +354,11 @@ fn parse_args() -> Args {
                 let (w, at) = s.split_once(',').unwrap_or((&s, "40"));
                 let w = Weapon::parse(w).expect("--fire beam|flak|slug|torpedo|bite[,TICK]");
                 a.fire = Some((w, at.parse().expect("--fire WEAPON,TICK")));
+                a.sandbox = true;
+                i += 1;
+            }
+            "--blast" => {
+                a.blast = Some(next().parse().expect("--blast TICK"));
                 a.sandbox = true;
                 i += 1;
             }
@@ -613,6 +624,7 @@ fn main() {
         .init_resource::<TideState>()
         .insert_resource(Sandbox {
             auto: args.fire,
+            auto_blast: args.blast,
             ..default()
         })
         .init_resource::<Landed>()
@@ -723,7 +735,18 @@ fn main() {
                 // flames are all rebuilt every frame from state, so skipping
                 // them empties their meshes and the picture goes blank behind
                 // the menu.
-                (draw_beams, draw_nav, draw_flames, glow_engines, aim_turrets),
+                (
+                    draw_beams,
+                    draw_nav,
+                    draw_flames,
+                    // Beside the flame it belongs to, and in the DRAWING half
+                    // for the same reason: a plume light is the flame's own
+                    // fact and a paused frame still shows the flame.
+                    light_plumes,
+                    fade_flashes,
+                    glow_engines,
+                    aim_turrets,
+                ),
                 remesh_dirty,
                 (orbit_camera, ride_the_eye),
             )

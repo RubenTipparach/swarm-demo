@@ -1,8 +1,10 @@
 //! What is drawn that is not a thing: the nav disc and the helpers that
 //! build lines and rings.
 
+mod lights;
 mod nav;
 
+pub(crate) use lights::*;
 pub(crate) use nav::*;
 
 use crate::*;
