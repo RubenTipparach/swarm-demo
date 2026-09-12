@@ -137,21 +137,12 @@ pub(crate) fn script_jobs(
     auto: Res<Script>,
     targets: Query<(Entity, &Transform, Option<&Rock>), (With<Hull>, WorkableBody)>,
     mut crews: Query<(Entity, &Support, &mut Job, &Transform)>,
-    mut done: Local<bool>,
+    mut fired: Local<bool>,
     mut commands: Commands,
 ) {
-    // The first tick AT OR PAST the mark, once, rather than the mark
-    // exactly. Only under `--fixed-dt` is one frame one tick; on a real
-    // clock the tick jumps by whatever the frame took, so a run without it
-    // stepped straight over the mark and every support ship stood idle for
-    // the whole render with nothing in the log to say why. This is the
-    // scripted jump's own lesson (it arms whenever the drive is idle) and
-    // the rule is the same: a harness that fires on an exact tick fires only
-    // on the one clock that counts by ones.
-    if !auto.job.is_some_and(|at| tick.tick >= at) || *done {
+    if !tick.cue(auto.job, &mut fired) {
         return;
     }
-    *done = true;
     for (entity, support, mut job, xf) in &mut crews {
         // The nearest thing this role can work, which is the rock a player
         // would have picked and is the only choice a script can defend.

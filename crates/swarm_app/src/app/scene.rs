@@ -101,6 +101,31 @@ pub(crate) struct Tick {
     pub(crate) acc: f32,
 }
 
+impl Tick {
+    /// Whether a scripted moment has arrived, once.
+    ///
+    /// The harness's own clock rule, in one place, because it has already
+    /// been got wrong twice by being written out. `== tick.tick` is right
+    /// only under `--fixed-dt`, where one frame is one tick; on a real clock
+    /// the tick jumps by whatever the frame took, so a mark can fall in a
+    /// gap between two frames and the thing it was meant to trigger simply
+    /// never happens, with nothing in the log to say why. At or past the
+    /// mark, and the caller's `fired` is what makes it once: a `Local<bool>`
+    /// on the system, so nothing global remembers a scene that has been torn
+    /// down.
+    ///
+    /// This is the one clock lesson a third time: a rule copied is a rule
+    /// one copy will miss, and the copy that is missing is the one nobody
+    /// can grep for.
+    pub(crate) fn cue(&self, at: Option<u32>, fired: &mut bool) -> bool {
+        if *fired || at.is_none_or(|mark| self.tick < mark) {
+            return false;
+        }
+        *fired = true;
+        true
+    }
+}
+
 impl SceneSpec {
     /// One frame's worth of time for everything on the CPU that integrates
     /// anything: a sixtieth under `--fixed-dt`, so a headless render is a

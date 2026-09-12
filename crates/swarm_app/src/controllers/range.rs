@@ -206,10 +206,16 @@ pub(crate) fn range_input(
     flagship: Query<&Transform, (With<Flagship>, Without<Dummy>)>,
     mut fx: ResMut<LiveFx>,
     mut sparks: ResMut<SparkQueue>,
+    mut fired: Local<bool>,
 ) {
     // The scripted shot first: from the camera, at the dummy's centre of
-    // mass, a little above it, so the picture is of a ship turning.
-    let auto = sb.auto.filter(|(_, at)| *at == tick.tick).map(|(w, _)| w);
+    // mass, a little above it, so the picture is of a ship turning. Through
+    // `Tick::cue`, which is what makes it land on a real clock as well as
+    // under `--fixed-dt`.
+    let auto = sb
+        .auto
+        .filter(|(_, at)| tick.cue(Some(*at), &mut fired))
+        .map(|(w, _)| w);
     if auto.is_some() {
         info!("range: scripted shot at tick {}", tick.tick);
     }

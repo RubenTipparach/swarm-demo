@@ -131,8 +131,9 @@ pub(crate) fn script_wreck(
     tick: Res<Tick>,
     scene: Res<SceneSpec>,
     mut hulls: Query<&mut Hull, LiveEscort>,
+    mut fired: Local<bool>,
 ) {
-    if scene.wreck == 0 || tick.tick != scene.wreck {
+    if scene.wreck == 0 || !tick.cue(Some(scene.wreck), &mut fired) {
         return;
     }
     let Some(mut hull) = hulls.iter_mut().find(|h| !h.dead_hull) else {

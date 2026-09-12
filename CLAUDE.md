@@ -1989,9 +1989,28 @@ counts by ones.** `--job` was `auto.job == tick.tick`, which is right under
 `--fixed-dt`, where one frame is one tick, and wrong on a real clock, where
 the tick jumps by whatever the frame took: a run without the flag stepped
 straight over the mark and every support ship stood idle for the whole render
-with nothing in the log to say why. It is the first tick AT OR PAST the mark,
-once, which is the rule the scripted jump already keeps by arming whenever
-the drive is idle.
+with nothing in the log to say why.
+
+**And fixing it in one place left the other two.** `--wreck` was written the
+same way and missed the same run, and `--fire` in the sandbox was the third
+copy; the second run of the fix proved only that `--job` now fires, because
+the wreck it was meant to work had never been made. `Tick::cue` is the rule
+now and all three call it: at or past the mark, once, with a `Local<bool>` on
+the system so nothing global remembers a scene that has been torn down. The
+scripted jump was right all along by arming whenever the drive is idle. This
+is the one clock lesson a third time: **a rule copied is a rule one copy will
+miss, and the copy that is missing is the one nobody can grep for.**
+
+**A cadence written in TICKS is sampled once a FRAME, and that is not the
+same thing.** `work_jobs` cuts when `tick % CUT_TICKS == 0`, and the tick
+advances by `step / (1/60)` per frame: one under `--fixed-dt` and three on
+this container, where every frame clamps at `STEP_CLAMP`. So a cadence of ten
+fires every ten FRAMES rather than every ten ticks, and a cutter on a slow
+machine works at a third of its rate with nothing in the report to say so.
+That is the two clamps again in a third costume: the numbers are in ticks and
+the sampling is in frames, and only under `--fixed-dt` are those the same
+clock. It is why `--fixed-dt` is the harness for anything being MEASURED and
+not only for anything being photographed.
 
 **And the report says what the loop DID.** `retreat:` counts the ore and the
 crystal left in the field, what is in the bank, and what share of each dead
