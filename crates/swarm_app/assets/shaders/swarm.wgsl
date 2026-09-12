@@ -835,12 +835,20 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     // whole swarm at a crawl.
     var v = (m.vel_seed.xyz + acc * p.dt) * pow(0.985, p.dt * 60.0);
     let s = length(v);
-    // Fast enough to CROSS. The carriers stand fifty to seventy five units
-    // off now, and at the three to six units a second this used to allow, a
-    // fighter took twenty seconds to reach the fight and the cloud round the
-    // ship never built at all. Eight to sixteen makes the transit five
-    // seconds, which is a supply line a player can watch working.
-    let vmax = 8.0 + 8.0 * hash(u32(seed * 1000.0));
+    // Fast enough to CROSS, and no faster. The carriers stand fifty to
+    // seventy five units off, and at the three to six units a second the
+    // swarm once allowed a fighter took twenty seconds to reach the fight and
+    // the cloud round the ship never built at all.
+    //
+    // HALVED from the eight to sixteen that fixed that, which made the
+    // transit five seconds and everything after it a blur: a mote arrived,
+    // crossed the ring and was gone again before a player could pick it out,
+    // and a gun laid on one was laid on where it had been. Four to eight puts
+    // the transit at ten seconds and leaves the fighting legible, which is
+    // what the speed is actually for. It is the CAP, so nothing else in the
+    // tick changes: the pulls and the swirl are what they were, and a mote
+    // simply stops gaining once it is here.
+    let vmax = 4.0 + 4.0 * hash(u32(seed * 1000.0));
     if (s > vmax) { v = v * (vmax / s); }
     m.vel_seed = vec4<f32>(v, seed);
     var at = me + v * p.dt;

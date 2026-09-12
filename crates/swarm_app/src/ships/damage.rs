@@ -2,6 +2,103 @@
 
 use crate::*;
 
+/// Where one tooth's bite lands: a RAY, cast from outside the hull.
+///
+/// A bug attacks what it can SEE, so the cell it takes is the first live one
+/// along the line it comes in on, holes included: a ray into a crater lands on
+/// the crater's floor. That is what stops a tooth tunnelling. It can only ever
+/// reach the surface facing it, and a hole deepens only as fast as the plating
+/// around it goes.
+///
+/// The line is nudged off its own axis by half a cell, and no more. It is
+/// tempting to spread it wide enough to make the crater by itself, and that is
+/// wrong twice over: a plate cell is a hundred hit points against a bite of
+/// nine, so a tooth whose bites land on a dozen different cells scratches all
+/// of them and kills none, and the crater does not need the help. `bite` takes
+/// the nearest EXPOSED cell to the point, so the moment one hole opens its
+/// neighbours are nearer than its own floor and the hole widens on its own.
+///
+/// Measured over seven hundred ticks against sixty four teeth: a cell and a
+/// half of spread took 312 cells off, half a cell takes 492. The tunnelling it
+/// replaced took 744, and that is the price of the fix rather than a
+/// regression, because a tooth that bores keeps hitting a face it has already
+/// damaged and one that eats the outside is always starting on fresh plating.
+fn bite_of(hull: &mut Hull, from: Vec3, n: usize, tick: u32) -> Option<Breach> {
+    let reach = hull.model.radius() * 2.0;
+    let seed = (n as u32).wrapping_mul(0x9E37_79B9) ^ tick;
+    let jit =
+        |q: u32| swarm_core::rng::hash_cell(seed.wrapping_add(q)) as f32 / u32::MAX as f32 - 0.5;
+    let side = from.cross(Vec3::Y).normalize_or(Vec3::X);
+    let up = from.cross(side);
+    let at = from * reach + (side * jit(1) + up * jit(7)) * hull.model.cell;
+    let hit = swarm_core::ray::march(
+        &hull.model,
+        |i| !hull.damage.is_dead(i),
+        at.to_array(),
+        (-from).to_array(),
+        reach * 2.0,
+    )?;
+    hull.damage.bite(&hull.model, hit.point, 9.0, tick)
+}
+
+/// The cube a piece of debris is drawn as.
+///
+/// A little under a cell, so a spray of them reads as pieces rather than as
+/// a solid block, and made once per system that throws any. One function
+/// because there are two throwers now, the swarm's bite and a miner's cut,
+/// and the day the 0.9 was written in both of them is the day one of them
+/// keeps it.
+pub(crate) fn chunk_cube(
+    meshes: &mut Assets<Mesh>,
+    cache: &mut Option<Handle<Mesh>>,
+    cell: f32,
+) -> Handle<Mesh> {
+    cache
+        .get_or_insert_with(|| meshes.add(Cuboid::from_length(cell * 0.9)))
+        .clone()
+}
+
+/// The pieces a voxel model throws when cells come off it, as entities.
+///
+/// One implementation, because a chewer's bite, a miner's shaft and a
+/// salvager's cut all take cells off a voxel model and all leave the same
+/// thing behind: a cube of that cell's own colour, drifting. The materials
+/// are cached by colour, since a rock is a few colours and a hull is a
+/// dozen, and the cube comes in from the caller because how big a cell is
+/// belongs to whatever was cut.
+pub(crate) fn throw_chunks(
+    chunks: Vec<Chunk>,
+    xf: &Transform,
+    cube: Handle<Mesh>,
+    commands: &mut Commands,
+    materials: &mut Assets<StandardMaterial>,
+    chunk_mats: &mut ChunkMaterials,
+) {
+    for ch in chunks {
+        let mat = chunk_mats
+            .0
+            .entry(ch.colour)
+            .or_insert_with(|| {
+                let [r, g, b, _] = swarm_core::mesh::rgb_of(ch.colour);
+                materials.add(StandardMaterial {
+                    base_color: Color::srgb(r, g, b),
+                    perceptual_roughness: 0.8,
+                    ..default()
+                })
+            })
+            .clone();
+        commands.spawn((
+            Mesh3d(cube.clone()),
+            MeshMaterial3d(mat),
+            Transform::from_translation(xf.transform_point(Vec3::from(ch.origin))),
+            Debris {
+                vel: Vec3::from(ch.velocity),
+                born: ch.born,
+            },
+        ));
+    }
+}
+
 pub(crate) fn chew(
     tick: Res<Tick>,
     cfg: Res<SwarmConfig>,
@@ -23,32 +120,29 @@ pub(crate) fn chew(
             continue;
         }
         let mut breaches: Vec<Chunk> = Vec::new();
-        for c in &mut hull.chewers {
-            while c.next <= tick.tick {
-                c.next += 6;
-                if let Some(b) = hull
-                    .damage
-                    .bite(&hull.model, c.at.to_array(), 9.0, tick.tick)
-                {
-                    // Follow the hole in: stand where the cell was.
-                    c.at = Vec3::from(hull.model.centre_of(b.cell as usize));
-                    // The spray comes off the FACE that opened, in world
-                    // space: a spark thrown in the hull's own frame would
-                    // fly off in the wrong direction the moment a ship moves.
-                    let at = xf.transform_point(Vec3::from(hull.model.centre_of(b.cell as usize)));
-                    let out = xf.rotation * Vec3::from(b.outward);
-                    let mut list = Vec::new();
-                    breach_sparks(
-                        b.cell,
-                        b.tick,
-                        at.to_array(),
-                        out.to_array(),
-                        hull.model.cell,
-                        &mut list,
-                    );
-                    sparks.extend(list);
-                    breaches.push(chunk_for(&hull.model, &b));
-                }
+        for n in 0..hull.chewers.len() {
+            while hull.chewers[n].next <= tick.tick {
+                hull.chewers[n].next += 6;
+                let from = hull.chewers[n].from;
+                let Some(b) = bite_of(hull, from, n, tick.tick) else {
+                    continue;
+                };
+                // The spray comes off the FACE that opened, in world space: a
+                // spark thrown in the hull's own frame would fly off in the
+                // wrong direction the moment a ship moves.
+                let at = xf.transform_point(Vec3::from(hull.model.centre_of(b.cell as usize)));
+                let out = xf.rotation * Vec3::from(b.outward);
+                let mut list = Vec::new();
+                breach_sparks(
+                    b.cell,
+                    b.tick,
+                    at.to_array(),
+                    out.to_array(),
+                    hull.model.cell,
+                    &mut list,
+                );
+                sparks.extend(list);
+                breaches.push(chunk_for(&hull.model, &b));
             }
         }
         if breaches.is_empty() {
@@ -56,14 +150,12 @@ pub(crate) fn chew(
         }
         hull.breaches += breaches.len();
         throw_chunks(
+            breaches,
+            xf,
+            chunk_cube(&mut meshes, &mut cube, hull.model.cell),
             &mut commands,
-            &mut meshes,
             &mut materials,
             &mut chunk_mats,
-            &mut cube,
-            hull.model.cell,
-            xf,
-            &breaches,
         );
     }
 }
@@ -103,55 +195,5 @@ pub(crate) fn vent_smoke(
                 kind: SparkKind::Breach,
             });
         }
-    }
-}
-
-/// Throw the pieces a cut took off, wherever the cut came from.
-///
-/// One implementation, because a chewer's bite, a miner's shaft and a
-/// salvager's cut all take cells off a voxel model and all leave the same
-/// thing behind: a cube of that cell's own colour, drifting. The cube mesh
-/// is built once per caller and the materials are cached by colour, since a
-/// rock is two colours and a hull is a dozen.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn throw_chunks(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
-    chunk_mats: &mut ChunkMaterials,
-    cube: &mut Option<Handle<Mesh>>,
-    cell: f32,
-    xf: &Transform,
-    chunks: &[Chunk],
-) {
-    if chunks.is_empty() {
-        return;
-    }
-    let cube = cube
-        .get_or_insert_with(|| meshes.add(Cuboid::from_length(cell * 0.9)))
-        .clone();
-    for ch in chunks {
-        let mat = chunk_mats
-            .0
-            .entry(ch.colour)
-            .or_insert_with(|| {
-                let [r, g, b, _] = swarm_core::mesh::rgb_of(ch.colour);
-                materials.add(StandardMaterial {
-                    base_color: Color::srgb(r, g, b),
-                    perceptual_roughness: 0.8,
-                    ..default()
-                })
-            })
-            .clone();
-        let origin = xf.transform_point(Vec3::from(ch.origin));
-        commands.spawn((
-            Mesh3d(cube.clone()),
-            MeshMaterial3d(mat),
-            Transform::from_translation(origin),
-            Debris {
-                vel: Vec3::from(ch.velocity),
-                born: ch.born,
-            },
-        ));
     }
 }
