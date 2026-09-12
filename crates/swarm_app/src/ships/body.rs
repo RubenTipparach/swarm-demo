@@ -127,10 +127,9 @@ pub(crate) fn spawn_dummy(
         materials,
         tex,
         &scene.target_hull,
-        Transform::from_translation(dummy_station(radius)),
-        (scene.chewers / 2) as u32,
-        7,
-        None,
+        ShipSpec::at(Transform::from_translation(dummy_station(radius)))
+            .chewers((scene.chewers / 2) as u32)
+            .seed(7),
     );
     // `spawn_hull` marks a hull with no station as the flagship and selects
     // it, because a fresh flagship is the only such hull in a fight. A dummy

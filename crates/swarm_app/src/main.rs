@@ -16,6 +16,7 @@ mod controllers;
 mod fighters;
 mod fx;
 mod hives;
+mod retreat;
 mod ships;
 mod swarm;
 mod ui;
@@ -48,6 +49,7 @@ use controllers::*;
 use fighters::*;
 use fx::*;
 use hives::*;
+use retreat::*;
 use ships::*;
 use std::{
     collections::HashMap,
@@ -62,13 +64,17 @@ use swarm_core::{
     alien::{generate, Archetype},
     body::Body,
     damage::{chunk_for, Breach, Chunk, DamageGrid, Vent},
+    economy::{yield_of, Cube, Cut, Yield, DATA_CUBE, ORE_CUBE},
     fx::{
         blast_sparks, breach_sparks, engine_clusters, engines_of, gun_clusters, guns_of,
         muzzle_sparks, reactor_of, shatter, Beam, Blast, Gun, Spark, SparkKind,
     },
+    map::{self, Map, Node as MapNode, Tag},
     mesh::{greedy_mesh, mesh_region, srgb_to_linear, MeshData, Surfaces},
     rng::{drift_of, Rng},
+    rock::{self, Flavour},
     sky::{bake_cubemap, starfield, to_half, SkyPreset},
+    tide::{Phase, Tide},
     VoxelModel, SURF_COUNT,
 };
 use ui::*;
@@ -171,6 +177,23 @@ struct Args {
     /// One scripted shot on the range: `--fire slug,40` lands a slug on the
     /// dummy at tick forty, so a tumble can be photographed.
     fire: Option<(Weapon, u32)>,
+    /// A system of The Long Retreat: gather, hold, and jump out before the
+    /// swarm's fleet arrives.
+    retreat: bool,
+    /// The run's seed, which is the whole map.
+    run_seed: u64,
+    /// `--job TICK` puts every support ship to work at that tick, so a
+    /// headless run can photograph a shaft being cut.
+    job: Option<u32>,
+    /// Which support ships the fleet arrives with, by role: `--support
+    /// miner,miner,salvager`. Empty means the run's own fleet.
+    support: Vec<Role>,
+    /// `--jump TICK` has the drive ready at that tick, so the jump and the
+    /// screen after it can be photographed without mining for the fuel.
+    jump: Option<u32>,
+    /// And `--onward` goes straight on into the next system rather than
+    /// waiting on the map for a branch to be pressed.
+    onward: bool,
 }
 
 fn parse_args() -> Args {
@@ -210,6 +233,12 @@ fn parse_args() -> Args {
         seed: 4242,
         stand: 1.0,
         fire: None,
+        retreat: false,
+        run_seed: 0xB0A7,
+        job: None,
+        support: Vec::new(),
+        jump: None,
+        onward: false,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -272,6 +301,35 @@ fn parse_args() -> Args {
                 i += 1;
             }
             "--sandbox" => a.sandbox = true,
+            "--retreat" => a.retreat = true,
+            "--run-seed" => {
+                a.run_seed = next().parse().expect("--run-seed N");
+                i += 1;
+            }
+            "--job" => {
+                a.job = Some(next().parse().expect("--job TICK"));
+                a.retreat = true;
+                i += 1;
+            }
+            "--onward" => {
+                a.onward = true;
+                a.retreat = true;
+            }
+            "--jump" => {
+                a.jump = Some(next().parse().expect("--jump TICK"));
+                a.retreat = true;
+                i += 1;
+            }
+            "--support" => {
+                a.support = next()
+                    .split(',')
+                    .map(|r| {
+                        Role::parse(r).unwrap_or_else(|| panic!("--support: no role called {r}"))
+                    })
+                    .collect();
+                a.retreat = true;
+                i += 1;
+            }
             "--play" => a.play = true,
             "--target-hull" => {
                 a.target_hull = next();
@@ -373,6 +431,7 @@ fn main() {
         Some("menu") => AppState::Menu,
         Some("setup") => AppState::Setup,
         Some("result") => AppState::Result,
+        Some("map") => AppState::Map,
         Some(other) => panic!("--screen {other}: menu, setup or result"),
         None if args.headless || args.play => AppState::Playing,
         None => AppState::Menu,
@@ -404,7 +463,22 @@ fn main() {
         seed: args.seed,
         stand: args.stand,
         target_hull: args.target_hull.clone(),
+        retreat: args.retreat,
+        tide: Tide::default(),
+        support: Vec::new(),
+        lean: Flavour::Ore,
     };
+    let mut run = RunState::new(args.run_seed, &scene.hull);
+    if !args.support.is_empty() {
+        run.fleet = args.support.clone();
+    }
+    let run = run;
+    let mut scene = scene;
+    if args.retreat {
+        run.write(&mut scene);
+        info!("{}", run.brief());
+    }
+    let scene = scene;
     let form = SetupForm::from_scene(&scene, &fleet);
     // `--screen result` has no fight to report on, so it reports a made up
     // one: the screen is what is being photographed.
@@ -418,6 +492,9 @@ fn main() {
             hives: 3,
             ships: 3,
             decided: None,
+            jumped: true,
+            left: 0,
+            escaped: false,
         }
     } else {
         Outcome::default()
@@ -477,13 +554,22 @@ fn main() {
             OnEnter(AppState::Playing),
             build_sandbox_panel.run_if(|s: Res<SceneSpec>| s.sandbox),
         );
+        app.add_systems(
+            OnEnter(AppState::Playing),
+            build_retreat_panel.run_if(|s: Res<SceneSpec>| s.retreat),
+        )
+        .add_systems(
+            Update,
+            retreat_readouts.run_if(in_state(AppState::Playing).and(|s: Res<SceneSpec>| s.retreat)),
+        );
         app.add_systems(OnEnter(AppState::Playing), build_hud)
             .add_systems(
                 Update,
                 (
-                    (toggle_pause, select_input, sandbox_input)
+                    (toggle_pause, select_input, sandbox_input, assign_work)
                         .chain()
                         .before(nav_input),
+                    jump_input,
                     (range_input, sandbox_fire).after(nav_input),
                     sandbox_readouts,
                     adopt_dummies,
@@ -516,6 +602,15 @@ fn main() {
         .insert_resource(form)
         .insert_resource(fleet)
         .init_resource::<HullFacts>()
+        .insert_resource(run)
+        .init_resource::<Bank>()
+        .insert_resource(Script {
+            job: args.job,
+            jump: args.jump,
+            onward: args.onward,
+        })
+        .init_resource::<JumpDrive>()
+        .init_resource::<TideState>()
         .insert_resource(Sandbox {
             auto: args.fire,
             ..default()
@@ -546,7 +641,7 @@ fn main() {
         // picture that screen sits over.
         .add_systems(
             OnEnter(AppState::Playing),
-            (teardown_field, reset_run, spawn_field).chain(),
+            (teardown_field, reset_run, reset_retreat, spawn_field).chain(),
         )
         .add_systems(OnEnter(AppState::Menu), teardown_field)
         .add_systems(OnExit(AppState::Playing), clear_bars)
@@ -556,12 +651,15 @@ fn main() {
         .add_systems(OnEnter(AppState::Menu), build_menu)
         .add_systems(OnEnter(AppState::Setup), build_setup)
         .add_systems(OnEnter(AppState::Result), build_result)
+        .add_systems(OnEnter(AppState::Map), build_map)
+        .add_systems(OnEnter(AppState::Result), script_onward)
         .add_systems(
             Update,
             (
                 menu_input.run_if(in_state(AppState::Menu)),
                 setup_input.run_if(in_state(AppState::Setup)),
                 result_input.run_if(in_state(AppState::Result)),
+                map_input.run_if(in_state(AppState::Map)),
                 hover_buttons.run_if(not(in_state(AppState::Playing))),
             ),
         )
@@ -593,6 +691,22 @@ fn main() {
                     (launch_fighters, fly_fighters, fighters_fire, wear_fighters).chain(),
                     resolve_beams,
                     (chew, vent_smoke, go_critical, bleed_hives),
+                    // The retreat: what the support ships are doing, what
+                    // the tanker has refined, what the tide has brought in,
+                    // and the drive, which is the only way out.
+                    (
+                        size_holds,
+                        apply_scars,
+                        price_jump,
+                        haul_cargo,
+                        script_jobs,
+                        script_jump,
+                        work_jobs,
+                        refine,
+                        tide_carriers,
+                        jump_spool,
+                    )
+                        .chain(),
                     judge,
                     (publish_hives, publish_field).chain(),
                     (fly_tracers, land_torpedoes).chain(),

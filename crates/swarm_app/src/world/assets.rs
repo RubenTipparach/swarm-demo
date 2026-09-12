@@ -14,6 +14,17 @@ pub(crate) struct Textures {
     pub(crate) windows: HashMap<String, WindowMaps>,
     pub(crate) chitin: Option<Handle<Image>>,
     pub(crate) ember: Option<Handle<Image>>,
+    /// The crystal a rock's fuel seam is made of, and the one material here
+    /// with a DEPTH map: its faces are parallax mapped, so a cut seam reads
+    /// as looking into the stone rather than as blue paint on it.
+    pub(crate) crystal: Option<CrystalMaps>,
+}
+
+#[derive(Clone)]
+pub(crate) struct CrystalMaps {
+    pub(crate) colour: Handle<Image>,
+    pub(crate) normal: Handle<Image>,
+    pub(crate) depth: Handle<Image>,
 }
 
 #[derive(Clone)]
@@ -80,6 +91,15 @@ pub(crate) fn load_textures(mut commands: Commands, assets: Res<AssetServer>) {
             },
         );
     }
+    // The crystal: colour in sRGB because it is a colour, the other two
+    // linear because they are geometry, and all three REPEATING, because a
+    // seam is many cells across and a clamped map would stretch one facet
+    // over the whole of it.
+    t.crystal = Some(CrystalMaps {
+        colour: load("textures/surf/crystal_c.png".into(), true, true),
+        normal: load("textures/surf/crystal_n.png".into(), false, true),
+        depth: load("textures/surf/crystal_d.png".into(), false, true),
+    });
     let chitin = load("textures/alien_chitin_n.png".into(), false, true);
     // The ember atlas is the one texture a burn comes off, wherever it is: the
     // inside of a hole, the soot round it, and every spark in the air. One
@@ -92,6 +112,52 @@ pub(crate) fn load_textures(mut commands: Commands, assets: Res<AssetServer>) {
     t.chitin = Some(chitin);
     t.ember = Some(ember);
     commands.insert_resource(t);
+}
+
+/// The crystal in a rock's seam: parallax mapped, and lit from inside.
+///
+/// The one material here that is not flat. Bevy walks the view ray through
+/// the depth map per fragment (`StandardMaterial::depth_map`), which is the
+/// trick the "parallax ice" shader does on a plane mesh and is why this is a
+/// texture rather than a shader of ours: the engine already has it.
+///
+/// Three numbers decide how it reads and each is a trade:
+///
+/// - `parallax_depth_scale` is in the TEXTURE's units, so it is how deep the
+///   facets are against how far the tile stretches, not a world distance.
+///   A tenth is Bevy's own ceiling for something that will not distort, and
+///   this sits under it because a seam face is a couple of cells across and
+///   is seen at a glancing angle as often as head on.
+/// - `Occlusion` rather than `Relief`, and sixteen layers rather than more,
+///   because every layer is a texture lookup per fragment and the headless
+///   runs this project checks itself with are a software rasteriser.
+/// - The EMISSIVE is the colour map itself rather than a flat colour, so a
+///   facet's own hue is what glows out of a shaft. A crystal lit by nothing
+///   but the sun would be a dark blue stone at the bottom of a hole, which
+///   is exactly where a miner cuts it.
+pub(crate) fn crystal_material(
+    tex: &Textures,
+    materials: &mut Assets<StandardMaterial>,
+) -> Handle<StandardMaterial> {
+    let maps = tex.crystal.clone();
+    materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        base_color_texture: maps.as_ref().map(|m| m.colour.clone()),
+        emissive: LinearRgba::rgb(1.6, 1.6, 1.6),
+        emissive_texture: maps.as_ref().map(|m| m.colour.clone()),
+        normal_map_texture: maps.as_ref().map(|m| m.normal.clone()),
+        depth_map: maps.as_ref().map(|m| m.depth.clone()),
+        parallax_depth_scale: 0.075,
+        parallax_mapping_method: ParallaxMappingMethod::Occlusion,
+        max_parallax_layer_count: 16.0,
+        perceptual_roughness: 0.14,
+        metallic: 0.0,
+        // A seam is many cells wide, so the tile repeats across it at the
+        // finishes' own rate: one tile to two cells, which is what the
+        // chitin already keeps and for the same reason.
+        uv_transform: bevy::math::Affine2::from_scale(Vec2::splat(0.5)),
+        ..default()
+    })
 }
 
 #[derive(Resource, Default)]

@@ -1653,16 +1653,203 @@ the close up (`--target -1.4,-2.3,3.9 --zoom 1.05`, which is where the
 showcase stands) is the check, because a normal map that reads as nothing is
 the same failure as one that never loaded.
 
+## The Long Retreat: a run is systems, and a system is a clock
+
+The skirmish is a fight you win by killing every carrier. A RUN is not that.
+You arrive in a system with a fleet and a bank, you have about six minutes
+before the swarm's fleet does, and the way out is the jump drive: what you
+take with you is what was standing inside the field when it went, and what
+you leave is gone. Killing carriers is worth doing and is never a victory,
+because the tide brings more.
+
+**The rules are the core's and the ships are the app's.** `economy::yield_of`
+says what a cell is worth when it comes off something, `tide` says how much
+of the swarm is out at tick N, `map` is a run as a branching chain of systems
+from a seed, and none of the three knows what a Bevy is. The app is what
+flies the miner at the rock.
+
+**A ROCK IS A HULL, and that is the whole of the mining model.** An asteroid
+was always a voxel model with a damage grid; it just never went through the
+ship builder, so it had no bricks and nothing could take a cell off it. It
+goes through `spawn_ship` now and is born `inert`, which is `dead_hull` from
+the first frame, so everything that already skips a dead hull skips it: the
+swarm's targets, the guns, the bars, the orders, the chewers and the reactor
+rule. That is most of the game for one flag, and it is why a miner's shaft
+looks exactly like a chewed frigate. One damage pipeline, one four layer
+wound, one re-mesh of only the bricks that changed.
+
+`ShipSpec` is what made that affordable. `spawn_ship` was nine positional
+arguments under an `allow(too_many_arguments)`, which this file calls the
+smell that says a struct is missing, and a rock needed two more. `HiveSeat`
+is the same answer for a carrier's place in the spiral, and both exist
+because the day a rock needed to be a ship was the day the argument list had
+to be paid for.
+
+**A cut is the slug's bored column with a different thing on the end of it.**
+`DamageGrid::bore` serves the range's slug, a miner's shaft and a salvager's
+cut; `economy::yield_of` reads the cell that came off and answers what it was
+worth. Only a seam cell is worth anything on a rock, and on a hull it is the
+machinery that is worth DATA and the plating that is worth materials.
+
+**The fuel is CRYSTAL, and it grows on the ore.** Ice rocks were a second
+flavour of asteroid, so a field had metal rocks and fuel rocks and a miner
+had to be sent to the right one. Crystal is `mat::GLOW` seeded against the
+ore seam instead (`seed_crystal`, a second pass because "near the ore" is not
+knowable while the ore is still being placed), so every rock worth cutting
+carries both and one rock is one decision rather than two. What a node's tag
+moves is how MUCH: measured, an ordinary rock is 1015 cells with 32 of ore
+and 32 of crystal in it, and a field that leans to crystal carries three
+times the crystal on the same ore.
+
+That also took the flavour out of the yield. `Cut::Rock` carries nothing now,
+because the CELL says what it is worth: ore to materials, crystal to
+volatiles, and nothing upstream can hand a cutter the wrong answer.
+
+**And the crystal has DEPTH.** It is the one material in the game that is not
+flat: `tools/make_crystal_texture.py` writes a colour map, a normal map and a
+DEPTH map of jittered facets at two scales, and Bevy's own parallax mapping
+walks the view ray through it per fragment. That is the "parallax ice" trick
+the owner asked for, done by the engine rather than by a shader of ours.
+Three things make it read as opal rather than as blue glass: facets at
+different depths, so the parallax has layers to move against; a hue per facet
+off a green through cyan to violet arc, with the same map as the EMISSIVE, so
+a facet's own colour is what glows out of a shaft; and a rim, so a facet has
+a border rather than reading as noise. The first cut had the height field the
+wrong way up and the maps said so immediately: a depth map whose cell WALLS
+are white is one where the walls are the bottom.
+
+**A harvester carries CUBES, and they come off the rock.** The bank used to
+go up the moment a cutter got home, which is an economy with nothing in the
+world to look at. Eight cells of one seam pack into a cube (`Cube::packed`,
+the one place cells become cargo), the cube is spawned at the shaft, pulled
+in by the ship that cut it, and rides in a line behind that ship all the way
+back. A miner killed on the way home is carrying something a player can watch
+it lose, and a cube whose ship is gone goes LOOSE where it died rather than
+vanishing.
+
+An ore cube lands 120 materials and a crystal cube 50 of volatiles, which are
+the owner's numbers, and a data cube off a wreck lands 30. Every price in the
+yard is written as a multiple of those, because "two cubes" is a thing a
+player can count in the field and a price in bare materials is a number
+nothing in the world corresponds to.
+
+**A jump is priced by the FLEET.** The drive costs 250 to spin up and every
+other hull standing inside the field adds its own rung: 25 for a corvette,
+50 for a frigate or a civil trade, 100 for a destroyer, 200 for a cruiser.
+So calling in an escort is a decision with two sides to it, because the ship
+that helps you hold a system is the ship you then pay to take out of it. It
+is counted off the LIVE ships rather than off the run's roster, so an escort
+that died is an escort you no longer pay for.
+
+**Where a cutter stands is written in the AVOIDANCE's terms.** `fly_hull`
+holds every ship off a rock by the rock's own navigation sphere plus its own
+radii, so a standoff written against the rock ALONE is a standoff the flight
+rule can refuse, and then a miner hovers just outside its own reach for ever
+with nothing in the log to say so. It was measured against the rock's
+bounding radius first and worked by luck of two numbers.
+
+**A shaft that breaks through makes the miner walk ROUND.** A rock is done
+when it has nothing left in it, not when one face of it is used up. The first
+cut of this went home the moment a bore came out the far side and left three
+quarters of the field's ice in the ground, and what caught it was the run
+report rather than the picture: a still frame of a rock cannot tell a miner
+that gave up from a miner that is still working.
+
+**The tide is three phases and the last one is the one you should have left
+before.** Probes for two minutes (one carrier, far off), the swarm for four,
+then the fleet, all at once. `carriers_at` is monotone and the app spawns the
+difference, comparing against how many have EVER been spawned rather than how
+many are alive: killing a carrier does not bring another, which is the whole
+reason to shoot at them while you gather.
+
+**The drive spools for thirty seconds and takes what is inside the field.**
+Everything outside is left in the system, and what went is the fleet the next
+system starts with. The fleet is despawned on the way out, because the result
+screen sits over the field and a fleet still standing in it under the word
+JUMPED is the one picture this must not leave behind.
+
+**Fuel is not a second pile of materials.** A crystal cube lands as
+volatiles, and the tanker turns those into fuel ten a second, so a fleet's
+four hundred is most of a minute of refining AFTER the cube is landed and
+mining the crystal early is what opens the window. No tanker, no refining: a
+hold of volatiles with nothing to process it is a hold of rock. It is a cadence and not a rate times the
+frame's step, and that is a bug this had: at a fiftieth of a cell a frame,
+`volatiles -= take.floor()` took nothing for ever while the fuel went up
+anyway, so the tank filled itself out of a pile of ice that never shrank. A
+rate in a resource counted in whole cells needs somewhere to keep the
+remainder. A cadence needs none.
+
+**The flagship carries its holes.** The field is built fresh every system, so
+without that a run would arrive in a pristine ship however the last one went,
+and nothing that happened in a system would cost anything. `scars_of` reads
+the dead cells off the damage grid when it jumps and `apply_scars` puts them
+back on the hull it arrives in, which needed one thing in the core: a scar is
+dead and COLD. `heat_of` measures from a tick in THIS action and there is no
+tick before nought, so a wound carried between systems and killed at tick
+nought arrives white hot and burns for fifteen seconds. `DamageGrid::scar` is
+a sentinel in `died_at` rather than an old number, and everything downstream
+sees an ordinary dead cell: the four layer wound, the bricks, the vents and
+the mesher are untouched.
+
+**A run ends with the COMMAND SHIP, not with the last hull flying.** A
+retreat whose flagship is a wreck is over however many miners are still
+cutting, because the drive that carries them out was in it. And `judge`
+stands down entirely once the drive has gone: the frame after a jump sees no
+player hulls at all and called it a defeat, over the top of what the jump had
+already written.
+
+**Between two systems is one screen, because the two halves are one
+decision.** What a node is worth depends on what you can afford to meet in
+it, and what is worth buying depends on where you are going. The fleet on the
+left, the yard in the middle, the branches on the right. Materials buy HULLS
+(another escort, another support ship, the scars welded shut, by the cell);
+data buys the RIGHT to buy (a role the yard has never built, or the next rung
+of the flagship's own navy). That is the design's "equipment that unlocks
+more research" said the one way that costs nothing to implement, and the
+ladder is read off the fleet manifest rather than typed, so a class added
+tomorrow is on it tomorrow. A row the bank cannot afford is DIM rather than
+absent: what you could have had if you had mined one more rock is the
+information the screen exists to give.
+
+A purchase rebuilds the screen by hand rather than through the state machine,
+because a yard whose prices and roster were painted once would go on offering
+what it has already sold, and Bevy does not run `OnEnter` for a transition to
+the state it is already in.
+
+**The harness is two flags for the two things a player presses**, since a
+headless run has no pointer: `--job TICK` is the right click that puts every
+support ship to work, and `--jump TICK` is the button, with the fuel check
+skipped because half an hour of mining is not a thing a headless run can
+afford to render. `--onward` takes the map's first branch without being
+pressed, so the system AFTER a jump can be photographed, which is the only
+place a run's scars and roster show. The scripted jump arms whenever the
+drive is idle rather than on tick nought, because the clock is advanced ahead
+of it in the same frame and tick nought is never a tick anything there sees.
+
+**And the report says what the loop DID.** `retreat:` counts the ore and the
+ice left in the field and what is in the bank, because a picture of a rock
+cannot tell a miner that arrived from a miner that never did, and the first
+three runs of this were three different reasons for a bank that stayed at
+nought.
+
+Measured, headless, one miner on a field of eight rocks: the shaft reaches
+the surface at tick 240 and the seam under it a few cuts later. A run played
+straight through with `--onward` crosses three systems in 420 frames and the
+flagship arrives in the third with 257 cells still open.
+
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 56, the core
+cargo test -p swarm_core                                   # 85, the core
+cargo test -p swarm_app                                    # 5, the run's own economy
 python3 tools/shape.py --check                             # no file over 900 lines, no function over 100
 cargo fmt --all -- --check                                 # the format
 cargo clippy -p swarm_core -- -D warnings                  # the core's lints
 python3 tools/pngdiff.py before.png after.png --grid       # a refactor's pictures, against the scene's own floor
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
+python3 tools/make_crystal_texture.py --check              # nor the crystal's three maps
 cargo run --release -p swarm_core --example hull_stats -- assets/hulls   # what makes a hull tough
+cargo run --release -p swarm_core --example rock_stats                   # what a rock is worth, and how buried its ore is
 cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png
 # A headless run defaults the launch delay to NOUGHT and a window defaults it
@@ -1695,6 +1882,16 @@ cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --fixed-dt --motes 200 --frames 12 --screen result --out result.png
 ./target/release/swarm_app --headless --fixed-dt --sandbox --hud --fire slug,30 --motes 600 \
     --hives 2 --rocks 6 --chewers 0 --frames 150 --zoom 5 --out sandbox.png   # the range, two seconds on
+# The Long Retreat. `--job` is the right click and `--jump` is the button,
+# since a headless run has no pointer, and `--onward` takes the map's first
+# branch so the system after a jump can be photographed.
+./target/release/swarm_app --headless --fixed-dt --screen map --motes 200 --frames 12 --out map.png
+./target/release/swarm_app --headless --fixed-dt --retreat --hud --job 40 --motes 600 \
+    --frames 560 --target 2.2,7.1,-25.4 --zoom 2.6 --out mining.png   # a shaft being cut
+./target/release/swarm_app --headless --fixed-dt --retreat --jump 200 --motes 900 \
+    --chewers 90 --frames 240 --zoom 8 --out jump.png                 # the system, left
+./target/release/swarm_app --headless --fixed-dt --retreat --jump 200 --onward --motes 900 \
+    --chewers 90 --frames 420 --zoom 3.2 --out second.png             # and the scars it carried
 for y in 0.0 1.6 3.1; do                                   # the same tick, three angles
   ./target/release/swarm_app --headless --fixed-dt --motes 4000 --frames 150 \
       --zoom 11 --yaw $y --out ang_$y.png

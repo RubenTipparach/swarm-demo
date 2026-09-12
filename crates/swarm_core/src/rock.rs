@@ -17,7 +17,7 @@
 //! answer on every machine, and the suite pins the shapes it makes.
 
 use crate::rng::Rng;
-use crate::voxel::{mat, Surface, VoxelModel, SURF_ARMOUR, SURF_FRAME};
+use crate::voxel::{mat, Surface, VoxelModel, NEIGHBOURS, SURF_ARMOUR, SURF_DRIVE, SURF_FRAME};
 
 /// How far a rock's surface may swing from its mean radius, as a share of it.
 /// Over about a half the lumps stop touching and the flood fill that keeps a
@@ -28,6 +28,57 @@ const RELIEF: f32 = 0.42;
 /// which the livery draws in its own colour, so a seam reads at a glance
 /// without anything here knowing what colour it will be drawn in.
 const ORE_SHARE: f32 = 0.06;
+
+/// The warm yellow an ore seam is drawn in, and the pale blue of a crystal.
+/// A crystal is `mat::GLOW`, which is what everything that is a LIGHT in this
+/// game is made of, so it is lit rather than painted and a shaft that reaches
+/// one is a shaft with something shining at the bottom of it.
+const ORE_COLOUR: u32 = 0xC8A24A;
+const CRYSTAL_COLOUR: u32 = 0x86E8FF;
+
+/// Which surface a crystal draws in.
+///
+/// A rock authors its own surface table, so the index is only a slot and any
+/// would do; what matters is that it is ONE slot named in one place, because
+/// the app has to override it with an emissive material and a second copy of
+/// the number is a crystal that stops glowing the day either moves.
+pub const CRYSTAL_SURF: u8 = SURF_DRIVE;
+
+/// What a rock is made of besides stone.
+///
+/// Both seams are in every rock that is worth anything, and the flavour is
+/// which way it LEANS. That is the whole reason crystal is seeded off the
+/// ore rather than given rocks of its own: a miner sent for metal comes back
+/// with fuel as well, so one rock is one decision instead of two, and a
+/// system cannot stand a fleet up by handing it the wrong kind of asteroid.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Flavour {
+    /// Metal, with crystal in the seams: a miner cuts it mostly for
+    /// materials.
+    #[default]
+    Ore,
+    /// The same rock run through with crystal: mostly volatiles, which is
+    /// what the tanker refines into jump fuel.
+    Crystal,
+    /// Stone all the way through, and the only thing in the field that is
+    /// worth nothing at all.
+    Barren,
+}
+
+impl Flavour {
+    /// How much of the stone TOUCHING a seam is crystal.
+    ///
+    /// Crystal grows against the ore and never on its own, which is the
+    /// owner's rule and is also what makes the two shares one number: a rock
+    /// with no ore in it has no crystal either, and nothing has to say so.
+    pub fn crystal_share(self) -> f32 {
+        match self {
+            Flavour::Ore => 0.34,
+            Flavour::Crystal => 0.86,
+            Flavour::Barren => 0.0,
+        }
+    }
+}
 
 /// Value noise on the integer lattice, hashed rather than tabled.
 ///
@@ -94,17 +145,14 @@ fn relief(d: [f32; 3], seed: f32) -> f32 {
     sum / norm.max(1e-4)
 }
 
-/// Build one asteroid on a lattice `n` cells on a side.
+/// What a rock is made OF: the stone, the ore in it, and the crystal grown
+/// against that.
 ///
-/// `cell` is what one cell is worth in the world, so a rock is placed on the
-/// same ladder a hull is: the app scales nothing, it asks for the lattice it
-/// wants and puts the model where it wants it.
-pub fn generate(n: usize, cell: f32, seed: u64) -> VoxelModel {
-    let mut m = VoxelModel::new(n, n, n, cell);
-    // Two surfaces, and that is the whole material story of a rock: the stone
-    // and the ore in it. A rock with one surface is a rock with no seam, and
-    // the seam is the only thing on it worth looking at twice.
-    m.surfaces = (0..crate::voxel::SURF_COUNT)
+/// Its own function rather than a block inside the generator, because it is
+/// a different question from what shape a rock is, and because the one thing
+/// the app has to agree with about a rock is in here.
+fn surfaces() -> Vec<Surface> {
+    (0..crate::voxel::SURF_COUNT)
         .map(|s| {
             if s == SURF_FRAME as usize {
                 // The ore: tighter and glossier than the stone round it.
@@ -112,6 +160,16 @@ pub fn generate(n: usize, cell: f32, seed: u64) -> VoxelModel {
                     finish: "greeble".into(),
                     metal: 0.55,
                     rough: 0.38,
+                }
+            } else if s == CRYSTAL_SURF as usize {
+                // The crystal: smooth, glassy and not metal at all. What
+                // makes it glow, and what gives its faces DEPTH, is the app
+                // laying a parallax mapped material over this slot, the same
+                // way a carrier's drives are lit.
+                Surface {
+                    finish: "smooth".into(),
+                    metal: 0.0,
+                    rough: 0.12,
                 }
             } else {
                 // The stone: battered, and barely metallic at all.
@@ -122,8 +180,22 @@ pub fn generate(n: usize, cell: f32, seed: u64) -> VoxelModel {
                 }
             }
         })
-        .collect();
+        .collect()
+}
 
+/// Build one asteroid on a lattice `n` cells on a side.
+///
+/// `cell` is what one cell is worth in the world, so a rock is placed on the
+/// same ladder a hull is: the app scales nothing, it asks for the lattice it
+/// wants and puts the model where it wants it.
+pub fn generate(n: usize, cell: f32, seed: u64) -> VoxelModel {
+    generate_of(n, cell, seed, Flavour::Ore)
+}
+
+/// The same rock, carrying what its flavour says it carries.
+pub fn generate_of(n: usize, cell: f32, seed: u64, flavour: Flavour) -> VoxelModel {
+    let mut m = VoxelModel::new(n, n, n, cell);
+    m.surfaces = surfaces();
     let mut rng = Rng::new(seed);
     let noise_seed = rng.range(0.0, 64.0);
     // The mean radius, in cells, with a margin so the relief cannot push a
@@ -171,10 +243,10 @@ pub fn generate(n: usize, cell: f32, seed: u64) -> VoxelModel {
                 // vein that ran over the surface would read as paint.
                 let deep = r < want - 1.2;
                 let vein = noise3([u[0] * 3.1 + 11.0, u[1] * 3.1 + 11.0, u[2] * 3.1 + 11.0]);
-                if deep && vein > 1.0 - ORE_SHARE * 4.0 {
+                if deep && vein > 1.0 - ORE_SHARE * 4.0 && flavour != Flavour::Barren {
                     m.grid[idx] = mat::ACCENT;
                     m.surf[idx] = SURF_FRAME;
-                    m.colour[idx] = 0xC8A24A;
+                    m.colour[idx] = ORE_COLOUR;
                 } else {
                     m.grid[idx] = mat::PLATE;
                     m.surf[idx] = SURF_ARMOUR;
@@ -188,7 +260,66 @@ pub fn generate(n: usize, cell: f32, seed: u64) -> VoxelModel {
             }
         }
     }
+    seed_crystal(&mut m, flavour);
     m
+}
+
+/// Grow crystal against the ore, once the rock is laid.
+///
+/// A second pass rather than a case in the loop above, because "near the
+/// ore" is not knowable while the ore is still being placed: the cell beside
+/// this one may be a seam and may be stone, and which it is depends on a
+/// vein this row has not reached yet.
+///
+/// It is hashed off the CELL rather than rolled off the rng, so a crystal is
+/// a function of where it is and the same rock comes back the same way
+/// however it was reached. A cell is taken only if it is stone and BURIED,
+/// which is the ore's own rule a second time: a crystal with a face open to
+/// space would read as paint on the outside of a rock, and what a player
+/// should have to do to reach one is cut.
+fn seed_crystal(m: &mut VoxelModel, flavour: Flavour) {
+    let share = flavour.crystal_share();
+    if share <= 0.0 {
+        return;
+    }
+    let mut take: Vec<usize> = Vec::new();
+    for k in 0..m.nz {
+        for j in 0..m.ny {
+            for i in 0..m.nx {
+                let idx = m.index(i, j, k);
+                if m.grid[idx] != mat::ACCENT {
+                    continue;
+                }
+                for (di, dj, dk) in NEIGHBOURS {
+                    let (ni, nj, nk) = (i as i32 + di, j as i32 + dj, k as i32 + dk);
+                    if !m.inside(ni, nj, nk) {
+                        continue;
+                    }
+                    let n = m.index(ni as usize, nj as usize, nk as usize);
+                    if m.grid[n] != mat::PLATE || !buried(m, ni, nj, nk) {
+                        continue;
+                    }
+                    if hash3(ni * 7 + 3, nj * 7 + 5, nk * 7 + 11) < share {
+                        take.push(n);
+                    }
+                }
+            }
+        }
+    }
+    for n in take {
+        m.grid[n] = mat::GLOW;
+        m.surf[n] = CRYSTAL_SURF;
+        m.colour[n] = CRYSTAL_COLOUR;
+    }
+}
+
+/// Whether a cell has stone on all six faces, which is the one thing that
+/// keeps a seam under the skin.
+fn buried(m: &VoxelModel, i: i32, j: i32, k: i32) -> bool {
+    NEIGHBOURS.iter().all(|(di, dj, dk)| {
+        let (a, b, c) = (i + di, j + dj, k + dk);
+        m.inside(a, b, c) && m.grid[m.index(a as usize, b as usize, c as usize)] != mat::EMPTY
+    })
 }
 
 #[cfg(test)]

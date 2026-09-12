@@ -278,15 +278,27 @@ firing:
 
 | hull | chewers | ticks | cells eaten | share of the hull | went critical |
 | --- | ---: | ---: | ---: | ---: | --- |
-| terran_frigate | 120 | 1500 | 2622 | 29% | no |
-| karisen_frigate | 120 | 1500 | 2612 | 37% | no |
+| terran_frigate | 120 | 1500 | 2612 | 31% | no |
+| karisen_frigate | 120 | 1500 | 2622 | 40% | no |
 
 The chewers eat the SAME number of cells a tick on either hull (a bite is a
-bite), so the smaller ship loses a bigger share of itself in the same time:
-the Karisen frigate is a third gone where the Terran is under a third. Neither
-reached its reactor in twenty five seconds, which says how long a siege is at
-this chew rate and nothing about a difference between the two. If a Karisen
-seemed to last longer in play, it was not its hull values.
+bite, and the two runs are within ten cells of each other over twenty five
+seconds), so the smaller ship loses a bigger share of itself in the same time:
+the Karisen frigate is two fifths gone where the Terran is under a third.
+Neither reached its reactor in twenty five seconds, which says how long a
+siege is at this chew rate and nothing about a difference between the two. If
+a Karisen seemed to last longer in play, it was not its hull values.
+
+**The share is against the hull that was CHEWED, which is not the number in
+the manifest.** A ship's gun cells are lifted out of its model before the
+bricks are built, because a turret that swivels cannot be part of the mesh it
+is bolted to, so the Terran frigate spawns with 8362 of its 8938 cells and the
+Karisen with 6486 of 7029: the guns are children with meshes of their own and
+no chewer can reach them. Measuring either share against the manifest reads
+two points low on the Terran and three on the Karisen. Any "share of a hull"
+taken from `manifest.cells` is wrong for a spawned ship by whatever its guns
+carry, and the honest denominator is `Hull.cells`, which is what the ship
+actually started with.
 
 What a player would feel as "stronger" is not in the tables and is worth
 knowing anyway:
@@ -359,6 +371,10 @@ Cost: a session for the states and the two screens, in the HUD's own style,
 with the ship list built from `assets/hulls/manifest.json` rather than typed.
 
 ## 3. Campaign
+
+*Superseded by `roguelike-campaign.md`, which turns these five missions into
+the node archetypes of a roguelike run with an economy and a support fleet.
+The escalation knobs and the data table rule below still hold.*
 
 Scenarios are DATA, one table in `scenario.rs`: name, a short briefing, the
 player's fleet (flagship class, escorts, fighters), motherships, motes, rocks,

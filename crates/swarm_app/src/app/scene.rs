@@ -76,6 +76,16 @@ pub(crate) struct SceneSpec {
     pub(crate) stand: f32,
     /// The class the sandbox's target dummy is.
     pub(crate) target_hull: String,
+    /// A system of The Long Retreat rather than a skirmish: the carriers
+    /// arrive on a tide, the rocks are worth cutting, and the way out is the
+    /// jump drive rather than killing everything.
+    pub(crate) retreat: bool,
+    pub(crate) tide: Tide,
+    /// Which support ships arrived with the fleet.
+    pub(crate) support: Vec<Role>,
+    /// Which flavour this field's rocks lean toward. Both are always there:
+    /// a system with no ice is a system that strands a run.
+    pub(crate) lean: Flavour,
 }
 
 /// Sixty a second, accumulated from wall time and clamped, so the chewers eat
@@ -157,6 +167,14 @@ pub(crate) fn spawn_field(
         &mut cfg,
         radius,
     );
+    spawn_support(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &tex,
+        &scene,
+        radius,
+    );
     if scene.sandbox {
         spawn_dummy(
             &mut commands,
@@ -188,10 +206,7 @@ fn spawn_fleet(
         materials,
         tex,
         &scene.hull,
-        Transform::IDENTITY,
-        scene.chewers as u32,
-        0,
-        None,
+        ShipSpec::at(Transform::IDENTITY).chewers(scene.chewers as u32),
     );
     cfg.hull_radius = radius;
     if let Some(order) = scene.order {
@@ -279,80 +294,26 @@ fn spawn_hives(
     // again the size of the ship it is besieging: a carrier that a frigate
     // dwarfed would read as another fighter.
     let want = radius * HIVE_RADIUS;
-    for n in 0..scene.hives {
-        let m = generate(Archetype::Mother, 900 + n as u64);
-        let scale = want / m.radius();
-        // A golden angle spiral over the sphere, which spreads n points
-        // evenly without any two ending up in the same place, whatever n is.
-        let t = (n as f32 + 0.5) / scene.hives as f32;
-        let y = 1.0 - 2.0 * t;
-        let r = (1.0 - y * y).max(0.0).sqrt();
-        let a = n as f32 * 2.399_963_2;
-        let dir = Vec3::new(r * a.cos(), y * 0.45, r * a.sin()).normalize();
-        let at = dir
-            * radius
-            * scene.stand
-            * (HIVE_NEAR + (HIVE_FAR - HIVE_NEAR) * ((n % 3) as f32 / 2.0));
-        // A carrier is a SHIP now, through the same builder the frigate goes
-        // through: a damage grid per cell, bricks, the four layer wound, the
-        // chunks that come off and the re-mesh of only what changed. It used
-        // to be one mesh with a floating hit point number on it, and there was
-        // never a reason for that beyond the order things were built in.
-        //
-        // Its materials are the chitin, one per surface, with the cells the
-        // generator marked as lit on their own unlit emissive so bloom can
-        // find them. Built per carrier rather than shared, because a wound is
-        // per ship and one shared material would burn all ten together.
-        let mut surf: Vec<Handle<StandardMaterial>> = (0..SURF_COUNT)
-            .map(|_| {
-                materials.add(StandardMaterial {
-                    base_color: Color::WHITE,
-                    perceptual_roughness: 0.42,
-                    metallic: 0.05,
-                    normal_map_texture: tex.chitin.clone(),
-                    uv_transform: bevy::math::Affine2::from_scale(Vec2::splat(0.5)),
-                    ..default()
-                })
-            })
-            .collect();
-        surf[SURF_DRIVE as usize] = materials.add(StandardMaterial {
-            base_color: Color::LinearRgba(LinearRgba::rgb(2.6, 2.6, 2.6)),
-            unlit: true,
-            ..default()
-        });
-        let engines: Vec<Drive> = engine_clusters(&m)
-            .into_iter()
-            .map(|(gun, _, cells)| Drive { gun, cells })
-            .collect();
-        let at_xf = Transform::from_translation(at).with_scale(Vec3::splat(scale));
-        // No armour multiplier: the hundred is what makes the PLAYER's ship a
-        // siege, and putting it on the carriers too would mean neither side
-        // could hurt the other and the battle would never resolve.
-        let (e, _) = spawn_ship(
+    // A retreat's carriers arrive on the tide rather than all at once, so
+    // the field starts with whatever the first tick of it calls for.
+    let now = if scene.retreat {
+        scene.tide.carriers_at(0)
+    } else {
+        scene.hives
+    };
+    for n in 0..now {
+        spawn_hive(
             commands,
             meshes,
             materials,
             tex,
-            m,
-            surf,
-            Vec::new(),
-            at_xf,
-            0,
-            0x5EED ^ (n as u32).wrapping_mul(0x9E37),
-            None,
-            HIVE_ARMOUR,
-            None,
+            HiveSeat {
+                n,
+                of: scene.hives.max(1),
+                radius,
+                stand: scene.stand,
+            },
         );
-        commands.entity(e).insert(Hive {
-            engines,
-            // A slow drift ACROSS the line to the ship rather than toward it:
-            // a carrier that closed would arrive, and then there is nothing
-            // left to fly the fighters anywhere.
-            vel: dir.cross(Vec3::Y).normalize_or(Vec3::X) * radius * 0.07,
-            radius: want,
-            scale,
-            seed: 900 + n as u64,
-        });
     }
     info!(
         "{} motherships at {:.1} to {:.1} units, radius {:.2} each",
@@ -361,6 +322,110 @@ fn spawn_hives(
         radius * HIVE_FAR,
         want
     );
+}
+
+/// Which carrier of how many, and the two numbers that decide where one
+/// stands. A struct rather than four more arguments, for the reason this
+/// project states everywhere it says `too_many_arguments` is a smell.
+pub(crate) struct HiveSeat {
+    /// Which of the spiral's places this one takes, and how many places
+    /// there are: a tide's carriers arrive one at a time and each has to
+    /// land on its own place rather than on the first.
+    pub(crate) n: usize,
+    pub(crate) of: usize,
+    /// The ship it is besieging, which is what everything about a carrier is
+    /// measured in: how big it is and how far off it stands.
+    pub(crate) radius: f32,
+    pub(crate) stand: f32,
+}
+
+/// One carrier, seated on the golden angle spiral round the ship it is
+/// besieging.
+///
+/// Factored out of the field the day the tide arrived: a carrier that could
+/// only be made while a system was being built is a carrier that cannot
+/// arrive two minutes into one.
+pub(crate) fn spawn_hive(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    tex: &Textures,
+    seat: HiveSeat,
+) {
+    let HiveSeat {
+        n,
+        of,
+        radius,
+        stand,
+    } = seat;
+    let want = radius * HIVE_RADIUS;
+    let m = generate(Archetype::Mother, 900 + n as u64);
+    let scale = want / m.radius();
+    // A golden angle spiral over the sphere, which spreads n points
+    // evenly without any two ending up in the same place, whatever n is.
+    let t = (n as f32 + 0.5) / of as f32;
+    let y = 1.0 - 2.0 * t;
+    let r = (1.0 - y * y).max(0.0).sqrt();
+    let a = n as f32 * 2.399_963_2;
+    let dir = Vec3::new(r * a.cos(), y * 0.45, r * a.sin()).normalize();
+    let at = dir * radius * stand * (HIVE_NEAR + (HIVE_FAR - HIVE_NEAR) * ((n % 3) as f32 / 2.0));
+    // A carrier is a SHIP now, through the same builder the frigate goes
+    // through: a damage grid per cell, bricks, the four layer wound, the
+    // chunks that come off and the re-mesh of only what changed. It used
+    // to be one mesh with a floating hit point number on it, and there was
+    // never a reason for that beyond the order things were built in.
+    //
+    // Its materials are the chitin, one per surface, with the cells the
+    // generator marked as lit on their own unlit emissive so bloom can
+    // find them. Built per carrier rather than shared, because a wound is
+    // per ship and one shared material would burn all ten together.
+    let mut surf: Vec<Handle<StandardMaterial>> = (0..SURF_COUNT)
+        .map(|_| {
+            materials.add(StandardMaterial {
+                base_color: Color::WHITE,
+                perceptual_roughness: 0.42,
+                metallic: 0.05,
+                normal_map_texture: tex.chitin.clone(),
+                uv_transform: bevy::math::Affine2::from_scale(Vec2::splat(0.5)),
+                ..default()
+            })
+        })
+        .collect();
+    surf[SURF_DRIVE as usize] = materials.add(StandardMaterial {
+        base_color: Color::LinearRgba(LinearRgba::rgb(2.6, 2.6, 2.6)),
+        unlit: true,
+        ..default()
+    });
+    let engines: Vec<Drive> = engine_clusters(&m)
+        .into_iter()
+        .map(|(gun, _, cells)| Drive { gun, cells })
+        .collect();
+    let at_xf = Transform::from_translation(at).with_scale(Vec3::splat(scale));
+    // No armour multiplier: the hundred is what makes the PLAYER's ship a
+    // siege, and putting it on the carriers too would mean neither side
+    // could hurt the other and the battle would never resolve.
+    let (e, _) = spawn_ship(
+        commands,
+        meshes,
+        materials,
+        tex,
+        m,
+        surf,
+        Vec::new(),
+        ShipSpec::at(at_xf)
+            .seed(0x5EED ^ (n as u32).wrapping_mul(0x9E37))
+            .armour(HIVE_ARMOUR),
+    );
+    commands.entity(e).insert(Hive {
+        engines,
+        // A slow drift ACROSS the line to the ship rather than toward it:
+        // a carrier that closed would arrive, and then there is nothing
+        // left to fly the fighters anywhere.
+        vel: dir.cross(Vec3::Y).normalize_or(Vec3::X) * radius * 0.07,
+        radius: want,
+        scale,
+        seed: 900 + n as u64,
+    });
 }
 
 /// The asteroid field, and the spheres the swarm is told about.
@@ -385,8 +450,24 @@ fn spawn_rocks(
     let mut rocks: Vec<Vec4> = Vec::new();
     let mut rng = Rng::new(scene.seed);
     for n in 0..scene.rocks.min(swarm::MAX_ROCKS) {
-        let m = swarm_core::rock::generate(ROCK_LATTICE, radius * ROCK_CELL, 700 + n as u64);
+        // A skirmish's rocks lean to ore, which is what they have always
+        // been; a retreat's field leans the way its node says. Either way
+        // both seams are in every rock, because the crystal grows on the
+        // ore: the lean is how much of it there is, never whether.
+        let flavour = if scene.retreat {
+            flavour_at(n, scene.lean)
+        } else {
+            Flavour::Ore
+        };
+        let m = rock::generate_of(
+            ROCK_LATTICE,
+            radius * ROCK_CELL,
+            scene.seed.wrapping_add(700 + n as u64),
+            flavour,
+        );
         let rr = m.volume_radius();
+        let count = |what: u8| (0..m.len()).filter(|&c| m.grid[c] == what).count() as u32;
+        let (ore, crystal) = (count(swarm_core::mat::ACCENT), count(swarm_core::mat::GLOW));
         // Strewn between the ship and the carriers, off the plane, so they
         // are cover on the way out rather than scenery at the edge.
         let t = (n as f32 + 0.5) / scene.rocks.max(1) as f32;
@@ -397,37 +478,32 @@ fn spawn_rocks(
             (rng.range(-1.0, 1.0)) * radius * 2.6,
             a.sin() * out,
         );
-        let sm = greedy_mesh(&m, None);
-        // One child per surface, through the hull's own material builder, so
-        // the ore keeps its own finish instead of wearing the stone's. A
-        // surface is a material is a draw call here exactly as it is on a
-        // ship: a rock is two of them, and a rock with nothing in a surface
-        // emits nothing for it.
-        let mats = surface_materials(&m, tex, materials);
-        let rock = commands
-            .spawn((
-                Transform::from_translation(at).with_rotation(Quat::from_euler(
-                    EulerRot::YXZ,
-                    rng.range(0.0, std::f32::consts::TAU),
-                    rng.range(0.0, std::f32::consts::TAU),
-                    rng.range(0.0, std::f32::consts::TAU),
-                )),
-                Visibility::default(),
-                Rock,
-            ))
-            .id();
-        for surf in 0..SURF_COUNT {
-            if sm.skin.get(surf).map(|x| x.quads()).unwrap_or(0) == 0 {
-                continue;
-            }
-            let mesh = meshes.add(to_mesh_where(&sm, |i| i == surf));
-            commands.spawn((
-                Mesh3d(mesh),
-                MeshMaterial3d(mats[surf].clone()),
-                Transform::IDENTITY,
-                ChildOf(rock),
-            ));
-        }
+        // One material per surface, so the seam keeps its own finish instead
+        // of wearing the stone's, and through the SHIP builder, so the rock
+        // has a damage grid and bricks and a miner has something to cut.
+        let mut mats = surface_materials(&m, tex, materials);
+        // And the crystal gets the one material in the game with depth in
+        // it. Overridden here rather than described in the core, the same
+        // way a carrier's drives are: what a surface is made OF is the
+        // model's business and how it is drawn is the picture's.
+        mats[rock::CRYSTAL_SURF as usize] = crystal_material(tex, materials);
+        let xf = Transform::from_translation(at).with_rotation(Quat::from_euler(
+            EulerRot::YXZ,
+            rng.range(0.0, std::f32::consts::TAU),
+            rng.range(0.0, std::f32::consts::TAU),
+            rng.range(0.0, std::f32::consts::TAU),
+        ));
+        let (rock, _) = spawn_ship(
+            commands,
+            meshes,
+            materials,
+            tex,
+            m,
+            mats,
+            Vec::new(),
+            ShipSpec::at(xf).seed(0x0CE4 ^ n as u32).inert(),
+        );
+        commands.entity(rock).insert(Rock { ore, crystal });
         // The sphere the swarm is told about, and it is the VOLUME radius,
         // not the bounding one. `radius()` measures to the furthest corner of
         // the furthest cell, so on a rock stretched half again on one axis it

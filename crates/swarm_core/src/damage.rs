@@ -13,95 +13,25 @@
 //! those.
 
 use crate::fx::Blast;
+pub use crate::heat::*;
 use crate::rng::drift_of;
 use crate::voxel::{mat, VoxelModel, NEIGHBOURS};
-
-/// How long a fresh wound burns, in ticks. Sixty ticks a second, so a hole is
-/// glowing for fifteen seconds and is char after that.
-pub const COOL_TICKS: u32 = 900;
-
-/// The ramp is quantised so a cooling wound is a repaint every 28 ticks rather
-/// than every frame, and so two faces at nearly the same heat merge.
-pub const HEAT_STEPS: u32 = 32;
 
 /// Cells on a side of one re-mesh block.
 pub const BRICK: usize = 8;
 
-/// How far the soot spreads from a hole, in cells, and how much of it there
-/// is at each remove.
-///
-/// A shot that takes cells out of a flank does not leave the plate beside it
-/// factory fresh, and that is what it looked like: the survivors of a partly
-/// eaten quad were rebuilt in the hull's own colour, so the edge of every
-/// wound was a clean cut through clean paint. The near ring is nearly all
-/// soot and the far one is a smudge.
-pub const SCORCH_RINGS: [f32; 2] = [0.78, 0.34];
-
-/// The colour soot is. Not black: a burnt mark on plating is char, and flat
-/// black reads as a hole rather than as a stain.
-pub const CHAR: [f32; 3] = [0.09, 0.075, 0.07];
-
 /// Not yet dead.
 const ALIVE: u32 = u32::MAX;
 
-/// The heat ramp, hottest first, from `wound.ts`. White hot cores through
-/// orange to char, and the last stop is not black: a cold wound is a hole with
-/// a burnt edge, and flat black reads as a gap in the mesh.
-const HEAT: [[f32; 4]; 5] = [
-    [1.00, 1.00, 1.00, 1.00],
-    [0.70, 1.00, 0.82, 0.62],
-    [0.40, 0.88, 0.44, 0.22],
-    [0.18, 0.52, 0.20, 0.09],
-    [0.00, 0.10, 0.085, 0.08],
-];
-
-/// Where a cell sits on the ramp, given how long ago it died.
-pub fn heat_of(died_at: u32, tick: u32) -> f32 {
-    let age = tick.saturating_sub(died_at) as f32;
-    (1.0 - age / COOL_TICKS as f32).clamp(0.0, 1.0)
-}
-
-/// The colour at a heat.
-pub fn ramp(heat: f32) -> [f32; 3] {
-    for i in 1..HEAT.len() {
-        let hi = HEAT[i - 1];
-        let lo = HEAT[i];
-        if heat > lo[0] || i == HEAT.len() - 1 {
-            let span = hi[0] - lo[0];
-            let t = if span > 0.0 {
-                ((heat - lo[0]) / span).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            return [
-                lo[1] + (hi[1] - lo[1]) * t,
-                lo[2] + (hi[2] - lo[2]) * t,
-                lo[3] + (hi[3] - lo[3]) * t,
-            ];
-        }
-    }
-    [HEAT[4][1], HEAT[4][2], HEAT[4][3]]
-}
-
-/// How much of the char crust still covers what it burned. A third stays once
-/// the embers are gone: a crust does not un-char itself.
-pub const COLD_CRUST: f32 = 0.34;
-pub fn crust_alpha(heat: f32) -> f32 {
-    COLD_CRUST + heat * (1.0 - COLD_CRUST)
-}
-
-/// Hit points a cell starts with, by what it is made of. Plate is what armour
-/// is for; a glowing cell is a light and a light is fragile.
-pub fn hp_for(m: u8) -> f32 {
-    match m {
-        mat::PLATE | mat::SKINNED => 100.0,
-        mat::FRAME => 60.0,
-        mat::CASE => 50.0,
-        mat::MACHINE | mat::ACCENT => 40.0,
-        mat::GLOW => 30.0,
-        _ => 0.0,
-    }
-}
+/// A cell that died BEFORE this action began: dead, and cold from the first
+/// frame it is drawn.
+///
+/// A run carries its flagship's wounds from one system to the next, and a
+/// ship that arrived scarred must not arrive glowing. There is no way to say
+/// that with a tick, because `heat_of` measures from a tick in THIS action
+/// and there is no tick before nought, so it is a sentinel rather than an
+/// old number.
+const COLD: u32 = u32::MAX - 1;
 
 /// A cell that died this tick.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -203,6 +133,7 @@ impl DamageGrid {
 
     pub fn heat(&self, n: usize, tick: u32) -> f32 {
         match self.died_at(n) {
+            Some(COLD) => 0.0,
             Some(t) => heat_of(t, tick),
             None => 0.0,
         }
@@ -217,7 +148,7 @@ impl DamageGrid {
     pub fn heat_key(&self, tick: u32) -> u32 {
         let mut hottest: f32 = 0.0;
         for &t in &self.died_at {
-            if t == ALIVE {
+            if t == ALIVE || t == COLD {
                 continue;
             }
             hottest = hottest.max(heat_of(t, tick));
@@ -320,6 +251,20 @@ impl DamageGrid {
     /// other side of it. A cell already dead or never there is left alone.
     pub fn kill(&mut self, n: usize, tick: u32) -> Option<Breach> {
         self.chip(n, f32::MAX, tick, [0.0; 3])
+    }
+
+    /// Kill a cell as an OLD wound: dead, charred, and never hot.
+    ///
+    /// This is what a run's scars are made of. Everything downstream sees an
+    /// ordinary dead cell, so the four layer wound, the bricks, the vents and
+    /// the mesher are untouched: only the heat ramp is told the fire went out
+    /// before this system started.
+    pub fn scar(&mut self, n: usize) -> Option<Breach> {
+        let b = self.kill(n, 0);
+        if b.is_some() {
+            self.died_at[n] = COLD;
+        }
+        b
     }
 
     /// The nearest live cell with a face open to space, within `reach` cells
@@ -880,5 +825,36 @@ mod tests {
             chunk_for(&m, &breaches[0]),
             "a chunk is a function of its breach"
         );
+    }
+
+    #[test]
+    fn a_scar_is_dead_and_cold_from_the_first_frame() {
+        let mut m = VoxelModel::new(8, 8, 8, 0.1);
+        for i in 2..6 {
+            for j in 2..6 {
+                for k in 2..6 {
+                    m.set(i, j, k, mat::PLATE, 0x808080);
+                }
+            }
+        }
+        let mut d = DamageGrid::new(&m);
+        let n = m.index(2, 3, 3);
+        assert!(d.scar(n).is_some(), "a live cell with a face out scars");
+        assert!(d.is_dead(n), "and it is dead, like any other hole");
+        // The point of it: a run carries its flagship's wounds from system to
+        // system, and the tick a new system starts on is nought, so a scar
+        // killed at nought would arrive white hot and burn for fifteen
+        // seconds. It is cold at the first frame and stays cold.
+        assert_eq!(d.heat(n, 0), 0.0, "cold on the frame it arrives");
+        assert_eq!(d.heat(n, COOL_TICKS * 9), 0.0, "and cold for ever after");
+        assert_eq!(d.heat_key(0), 0, "so it asks for no repaint");
+        // And a fresh hole beside it still burns: the sentinel is per cell.
+        let hot = m.index(5, 3, 3);
+        d.kill(hot, 0);
+        assert_eq!(d.heat(hot, 0), 1.0);
+        assert!(d.heat_key(0) > 0);
+        // A scar on a cell that is not there is not a scar.
+        assert!(d.scar(m.index(0, 0, 0)).is_none());
+        assert!(d.scar(n).is_none(), "and a cell only dies once");
     }
 }

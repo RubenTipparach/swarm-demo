@@ -202,10 +202,7 @@ pub(crate) fn pick_hull(
         &mut materials,
         &tex,
         which,
-        Transform::IDENTITY,
-        scene.chewers as u32,
-        0,
-        None,
+        ShipSpec::at(Transform::IDENTITY).chewers(scene.chewers as u32),
     );
     cfg.hull_radius = radius;
     info!("flagship is a {which} now, radius {radius:.2}");

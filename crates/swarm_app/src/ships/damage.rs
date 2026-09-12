@@ -41,8 +41,32 @@ fn bite_of(hull: &mut Hull, from: Vec3, n: usize, tick: u32) -> Option<Breach> {
     hull.damage.bite(&hull.model, hit.point, 9.0, tick)
 }
 
-/// The pieces a hull throws when cells come off it, as entities.
-fn throw_chunks(
+/// The cube a piece of debris is drawn as.
+///
+/// A little under a cell, so a spray of them reads as pieces rather than as
+/// a solid block, and made once per system that throws any. One function
+/// because there are two throwers now, the swarm's bite and a miner's cut,
+/// and the day the 0.9 was written in both of them is the day one of them
+/// keeps it.
+pub(crate) fn chunk_cube(
+    meshes: &mut Assets<Mesh>,
+    cache: &mut Option<Handle<Mesh>>,
+    cell: f32,
+) -> Handle<Mesh> {
+    cache
+        .get_or_insert_with(|| meshes.add(Cuboid::from_length(cell * 0.9)))
+        .clone()
+}
+
+/// The pieces a voxel model throws when cells come off it, as entities.
+///
+/// One implementation, because a chewer's bite, a miner's shaft and a
+/// salvager's cut all take cells off a voxel model and all leave the same
+/// thing behind: a cube of that cell's own colour, drifting. The materials
+/// are cached by colour, since a rock is a few colours and a hull is a
+/// dozen, and the cube comes in from the caller because how big a cell is
+/// belongs to whatever was cut.
+pub(crate) fn throw_chunks(
     chunks: Vec<Chunk>,
     xf: &Transform,
     cube: Handle<Mesh>,
@@ -125,13 +149,10 @@ pub(crate) fn chew(
             continue;
         }
         hull.breaches += breaches.len();
-        let cube = cube
-            .get_or_insert_with(|| meshes.add(Cuboid::from_length(hull.model.cell * 0.9)))
-            .clone();
         throw_chunks(
             breaches,
             xf,
-            cube,
+            chunk_cube(&mut meshes, &mut cube, hull.model.cell),
             &mut commands,
             &mut materials,
             &mut chunk_mats,
