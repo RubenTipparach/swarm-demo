@@ -1,947 +1,290 @@
 <title>Swarm Command HUD</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Share+Tech+Mono&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
 :root {
-  --void: #05080d;
-  --deep: #080d15;
-  --panel: #0c131d;
-  --plate: #111a26;
-  --edge: #1e2c3e;
-  --edge-hot: #2d4258;
-  --ink: #e6edf6;
-  --dim: #7e8ea6;
-  --faint: #55647a;
-  --gold: #e8b355;
-  --cyan: #52e0f0;
-  --viol: #a878e8;
-  --red: #ef6a4d;
-  --green: #7dc93f;
-  --ore: #d9a441;
-  --cry: #58d8c4;
-  --fuel: #6fa8ef;
-  --data: #b48ef0;
+  --void: #04070c;
+  --gold: #f5c542;
+  --gold-dim: #8a6d18;
+  --teal: #49b6c8;
+  --cyan: #6ff0ff;
+  --ink: #cfe2ee;
+  --dim: #7e94a6;
+  --faint: #4e6274;
+  --green: #63d12b;
+  --red: #e8563c;
+  color-scheme: dark;
 }
-:root:not([data-theme="light"]) { color-scheme: dark; }
-
 * { box-sizing: border-box; }
-
 body {
   margin: 0;
   background: var(--void);
   color: var(--ink);
-  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-family: "Barlow Semi Condensed", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+.wrap { max-width: 1600px; margin: 0 auto; padding-block: 24px 64px; padding-left: 16px; padding-right: 16px; }
 
-/* ---- page chrome ------------------------------------------------------ */
-
-.wrap {
-  max-width: 1240px;
-  margin: 0 auto;
-  padding-block: 28px 72px;
-  padding-left: 20px;
-  padding-right: 20px;
-}
-
-.masthead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 14px 24px;
-  border-bottom: 1px solid var(--edge);
-  padding-bottom: 16px;
-  margin-bottom: 22px;
-}
+/* ---------- page chrome ---------- */
+.masthead { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 24px; margin-bottom: 14px; }
 .masthead h1 {
-  font-family: "Chakra Petch", sans-serif;
-  font-weight: 700;
-  font-size: clamp(22px, 4vw, 31px);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin: 0;
-  line-height: 1;
+  font-size: clamp(20px, 3.4vw, 30px); font-weight: 700; margin: 0; line-height: 1;
+  letter-spacing: 0.07em; text-transform: uppercase;
 }
 .masthead h1 span { color: var(--gold); }
-.masthead p {
-  margin: 0;
-  color: var(--dim);
-  font-size: 13.5px;
-  max-width: 46ch;
-  line-height: 1.5;
+.masthead p { margin: 5px 0 0; color: var(--dim); font-size: 14px; max-width: 64ch; line-height: 1.5; }
+.masthead .sp { flex: 1 1 20px; }
+.hint {
+  font-family: "Share Tech Mono", monospace; font-size: 11.5px; color: var(--faint);
+  border: 1px solid #1c2c3a; padding: 7px 11px; line-height: 1.8;
 }
-.masthead .spacer { flex: 1 1 40px; }
+.hint b { color: var(--teal); font-weight: 400; }
 
-.toggles { display: flex; gap: 8px; flex-wrap: wrap; }
-.seg {
-  display: flex;
-  border: 1px solid var(--edge);
-  background: var(--panel);
-  border-radius: 3px;
-  overflow: hidden;
-}
-.seg button {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--dim);
-  font-family: "Chakra Petch", sans-serif;
-  font-weight: 600;
-  font-size: 11.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 8px 13px;
-  cursor: pointer;
-  border-right: 1px solid var(--edge);
-}
-.seg button:last-child { border-right: 0; }
-.seg button[aria-pressed="true"] { background: var(--gold); color: #10130c; }
-.seg button:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
-
-/* ---- the device stage ------------------------------------------------- */
-
-.stagewrap { display: flex; justify-content: center; }
-
+/* ---------- the game stage ---------- */
 .stage {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 10;
-  min-height: 520px;
-  border: 1px solid var(--edge-hot);
-  border-radius: 4px;
-  overflow: hidden;
-  background: var(--void);
-  font-family: "Chakra Petch", sans-serif;
-  user-select: none;
-  contain: paint;
+  position: relative; width: 100%; aspect-ratio: 16 / 9;
+  background: #02040a; overflow: hidden; border: 1px solid #16242f;
+  user-select: none; touch-action: none;
 }
-.stage[data-size="phone"] {
-  width: 390px;
-  max-width: 100%;
-  aspect-ratio: auto;
-  height: 780px;
-  min-height: 0;
-  border-radius: 18px;
+#world { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#hud {
+  position: absolute; left: 0; top: 0; width: 1600px; height: 900px;
+  transform-origin: 0 0; pointer-events: none; z-index: 2;
+  font-size: 13px; line-height: 1;
 }
+#hud > * { pointer-events: auto; }
+#hud button { font-family: inherit; color: inherit; cursor: pointer; padding: 0; }
+#hud button:focus-visible { outline: 1px solid var(--cyan); outline-offset: -2px; }
 
-#field { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* Nine sliced frames. The url is a 48 px texture baked at boot and the slice
+   is 16, so a corner bracket is the same size on a 24 px strip and on a 724 px
+   panel and nothing stretches that should not. */
+.nine   { border: 16px solid transparent; border-image: var(--n-panel) 16 fill / 16px stretch; }
+.nine-w { border: 12px solid transparent; border-image: var(--n-well) 16 fill / 12px stretch; }
 
-.screen { position: absolute; inset: 0; }
-.screen[hidden] { display: none !important; }
+.ru { position: absolute; right: 6px; top: 2px; width: 428px; height: 32px;
+      display: flex; align-items: center; gap: 8px; }
+.ru .t { font-weight: 600; font-size: 13px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--gold); }
+.ru .v { margin-left: auto; font-family: "Share Tech Mono", monospace; font-size: 17px; color: var(--gold); }
+.ru svg { width: 16px; height: 16px; color: var(--gold); flex: none; }
 
-/* ---- top strip -------------------------------------------------------- */
+.gt { position: absolute; left: 12px; top: 10px; font-family: "Share Tech Mono", monospace;
+      font-size: 12.5px; color: var(--ink); text-shadow: 0 0 6px #000; }
 
-.topstrip {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 10px;
-  background: linear-gradient(180deg, rgba(5,8,13,.94), rgba(5,8,13,.62) 70%, transparent);
-  z-index: 6;
-}
-.res {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 9px 4px 6px;
-  background: rgba(12,19,29,.82);
-  border: 1px solid var(--edge);
-  border-radius: 2px;
-}
-.res svg { width: 17px; height: 17px; flex: none; }
-.res b {
-  font-family: "IBM Plex Mono", monospace;
-  font-weight: 600;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
-}
-.res i {
-  font-style: normal;
-  font-size: 9.5px;
-  letter-spacing: 0.13em;
-  color: var(--faint);
-  text-transform: uppercase;
-}
-.res.ore b { color: var(--ore); }
-.res.cry b { color: var(--cry); }
-.res.fuel b { color: var(--fuel); }
-.res.data b { color: var(--data); }
+/* left roster */
+.roster { position: absolute; left: 6px; top: 34px; width: 312px; }
+.rrow { display: flex; align-items: center; gap: 6px; padding: 1px 4px; font-size: 13.5px; }
+.rrow.h { font-weight: 600; color: var(--ink); }
+.rrow.s { padding-left: 18px; color: var(--dim); font-size: 13px; }
+.rrow .n { flex: 1; }
+.rrow .c { font-family: "Share Tech Mono", monospace; font-size: 12px; color: var(--green); min-width: 48px; text-align: right; }
+.rrow .c.z { color: var(--faint); }
 
-.topstrip .gap { flex: 1; }
+/* right panel */
+.rpanel { position: absolute; right: 6px; top: 36px; width: 428px; height: 712px;
+          display: flex; flex-direction: column; }
+.phead { display: flex; align-items: center; height: 26px; margin: -8px -8px 5px;
+         background: linear-gradient(180deg,#2e2506,#15150a); border: 1px solid var(--gold-dim); padding: 0 4px; }
+.phead .t { font-weight: 700; font-size: 15px; letter-spacing: 0.1em; color: var(--gold); text-transform: uppercase; }
+.phead .x { margin-left: auto; width: 20px; height: 18px; background: #1b1a08;
+            border: 1px solid var(--gold-dim); color: var(--gold); font-size: 12px; line-height: 1; }
+.pbody { flex: 1; display: flex; flex-direction: column; gap: 4px; min-height: 0; }
 
-.tide {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 4px 11px;
-  background: rgba(12,19,29,.82);
-  border: 1px solid var(--edge);
-  border-left: 2px solid var(--viol);
-  border-radius: 2px;
-}
-.tide .lbl { font-size: 9.5px; letter-spacing: 0.14em; color: var(--faint); text-transform: uppercase; }
-.tide .clk {
-  font-family: "IBM Plex Mono", monospace;
-  font-weight: 600;
-  font-size: 15px;
-  font-variant-numeric: tabular-nums;
-  color: var(--viol);
-}
-.tidebar {
-  position: absolute;
-  left: 0; right: 0; bottom: -1px;
-  height: 2px;
-  background: var(--edge);
-}
-.tidebar span { display: block; height: 100%; background: var(--viol); width: 38%; }
+.sel1 { height: 21px; display: flex; align-items: center; padding: 0 6px;
+  background: linear-gradient(180deg,#123549,#0a1f2c); border: 1px solid #2e5f78;
+  font-size: 13.5px; font-weight: 600; color: #bfe6f5; letter-spacing: 0.04em; }
+.sel1 .ca { margin-left: auto; color: var(--gold); font-size: 9px; }
+.pstage { display: flex; align-items: stretch; gap: 4px; }
+.pstage .arw { width: 18px; background: #0d2231; border: 1px solid #2b5268; color: var(--teal); font-size: 10px; }
+.schembox { flex: 1; height: 124px; position: relative; background: #04121b; border: 1px solid #1d4459; overflow: hidden; }
+.schembox img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.hbar { height: 6px; background: #0a1a12; border: 1px solid #1c3a22; }
+.hbar span { display: block; height: 100%; background: var(--green); }
 
-/* ---- fleet rail ------------------------------------------------------- */
+.slots div { display: flex; font-size: 13.5px; padding: 1px 3px; }
+.slots div .v { margin-left: auto; font-family: "Share Tech Mono", monospace; font-size: 12.5px; color: var(--teal); }
 
-.rail {
-  position: absolute;
-  left: 10px;
-  top: 52px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  z-index: 5;
-}
-.chip {
-  appearance: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 168px;
-  padding: 5px 8px 5px 6px;
-  background: rgba(12,19,29,.86);
-  border: 1px solid var(--edge);
-  border-left: 3px solid var(--faint);
-  border-radius: 2px;
-  color: var(--ink);
-  cursor: pointer;
-  text-align: left;
-  font-family: inherit;
-}
-.chip:hover { border-color: var(--edge-hot); background: rgba(20,31,46,.9); }
-.chip:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
-.chip[aria-pressed="true"] { border-left-color: var(--cyan); background: rgba(22,46,58,.92); }
-.chip[data-role="cap"] { border-left-color: var(--gold); }
-.chip[data-role="cap"][aria-pressed="true"] { border-left-color: var(--cyan); }
-.chip svg { width: 22px; height: 22px; flex: none; color: var(--dim); }
-.chip[aria-pressed="true"] svg { color: var(--cyan); }
-.chip .nm {
-  flex: 1;
-  min-width: 0;
-  font-weight: 600;
-  font-size: 11.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.chip .hp {
-  width: 26px; height: 3px;
-  background: #22303f;
-  border-radius: 1px;
-  overflow: hidden;
-  flex: none;
-}
-.chip .hp span { display: block; height: 100%; background: var(--green); }
-.chip .hp span.warn { background: var(--gold); }
-.chip .hp span.crit { background: var(--red); }
-.chip .kb {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 10px;
-  color: var(--faint);
-  flex: none;
-}
+.wide { width: 100%; height: 21px; background: linear-gradient(180deg,#123549,#0a1f2c);
+        border: 1px solid #2e5f78; color: #7fd8ea; font-weight: 600; font-size: 12.5px;
+        letter-spacing: 0.18em; text-transform: uppercase; }
 
-/* ---- world markers ---------------------------------------------------- */
+.cats { display: flex; gap: 2px; }
+.cats button { flex: 1; height: 30px; background: #0b1e2b; border: 1px solid #26495c;
+               display: flex; align-items: center; justify-content: center; }
+.cats button svg { width: 20px; height: 20px; color: #5c8ea4; }
+.cats button[aria-pressed="true"] { background: linear-gradient(180deg,#3f3307,#191504); border-color: var(--gold); }
+.cats button[aria-pressed="true"] svg { color: var(--gold); }
 
-.markers { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
-.mk {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  width: 0; height: 0;
-}
-.mk .ring {
-  position: absolute;
-  left: 50%; top: 50%;
-  width: 42px; height: 42px;
-  margin: -21px 0 0 -21px;
-  border: 1px solid var(--cyan);
-  border-radius: 50%;
-  opacity: 0;
-  transition: opacity .15s;
-}
-.mk[data-sel="1"] .ring { opacity: .9; }
-.mk .tag {
-  position: absolute;
-  left: 26px; top: -8px;
-  white-space: nowrap;
-  font-size: 9.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-.mk[data-sel="1"] .tag { color: var(--cyan); }
-.mk .bar {
-  position: absolute;
-  left: 26px; top: 5px;
-  width: 46px; height: 3px;
-  background: #1b2634;
-  opacity: 0;
-}
-.mk[data-sel="1"] .bar { opacity: 1; }
-.mk .bar span { display: block; height: 100%; background: var(--green); }
-.mk .bar span.warn { background: var(--gold); }
-.mk .bar span.crit { background: var(--red); }
+.cathead { display: flex; align-items: center; height: 19px; padding: 0 3px;
+           background: #17160b; border-bottom: 1px solid var(--gold-dim); }
+.cathead .t { font-weight: 700; font-size: 13.5px; letter-spacing: 0.08em; color: var(--gold); text-transform: uppercase; }
+.cathead .c { margin-left: auto; font-family: "Share Tech Mono", monospace; font-size: 12.5px; color: var(--gold); }
 
-.wp {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  width: 34px; height: 34px;
-  margin: 0;
-  border: 1px solid var(--gold);
-  border-radius: 50%;
-  opacity: 0;
-  transition: opacity .2s;
-  z-index: 3;
-  pointer-events: none;
-}
-.wp::after {
-  content: "";
-  position: absolute;
-  left: 50%; top: 50%;
-  width: 5px; height: 5px;
-  margin: -2.5px 0 0 -2.5px;
-  background: var(--gold);
-  border-radius: 50%;
-}
-.wp[data-on="1"] { opacity: 1; }
+.list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
+.list::-webkit-scrollbar { width: 7px; }
+.list::-webkit-scrollbar-track { background: #071620; }
+.list::-webkit-scrollbar-thumb { background: #24485c; }
+.brow { display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 6px 0 0;
+        background: rgba(9,26,37,.72); border: 1px solid #1d3f52; width: 100%; text-align: left; }
+.brow:hover { border-color: #47869e; background: rgba(18,46,63,.82); }
+.brow[data-on="1"] { border-color: var(--gold); background: linear-gradient(180deg,rgba(62,50,7,.85),rgba(12,28,38,.85)); }
+.brow[data-poor="1"] { opacity: .4; }
+.brow .go { width: 17px; align-self: stretch; background: #0d2231; border-right: 1px solid #24485c;
+            color: var(--teal); font-size: 9px; display: flex; align-items: center; justify-content: center; }
+.brow img.ic { width: 56px; height: 34px; object-fit: contain; }
+.brow .pips { display: grid; grid-template-columns: repeat(3, 6px); gap: 2px; }
+.brow .pips i { width: 6px; height: 6px; background: #16323f; display: block; }
+.brow .pips i.on { background: var(--teal); }
+.brow .nm { margin-left: auto; text-align: right; }
+.brow .nm b { display: block; font-weight: 700; font-size: 14px; color: #7fd8ea; letter-spacing: 0.03em; }
+.brow[data-on="1"] .nm b { color: var(--gold); }
+.brow .nm i { font-style: normal; font-family: "Share Tech Mono", monospace; font-size: 13px; color: #7fd8ea; }
+.brow[data-poor="1"] .nm i { color: var(--red); }
+.empty { padding: 10px 6px; font-size: 13px; color: var(--faint); }
 
-/* ---- selection and orders --------------------------------------------- */
+.qhead { display: flex; align-items: center; height: 19px; padding: 0 2px 0 5px;
+         background: rgba(9,22,31,.82); border: 1px solid #1d3f52; font-size: 13px; color: var(--dim); }
+.qhead .b { margin-left: auto; display: flex; gap: 2px; }
+.qhead .b button { width: 17px; height: 15px; background: #123549; border: 1px solid #2e5f78;
+                   color: #7fd8ea; font-size: 8px; line-height: 1; }
+.queue { height: 104px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 3px; overflow: hidden; }
+.qslot { position: relative; width: 98px; height: 30px; background: rgba(9,26,37,.85); border: 1px solid #1d3f52;
+         display: flex; align-items: center; gap: 4px; padding: 0 3px; overflow: hidden; }
+.qslot img { width: 28px; height: 18px; object-fit: contain; flex: none; }
+.qslot .qn { font-size: 10px; line-height: 1.05; color: #9fd0e0; overflow: hidden; }
+.qslot .f { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--green); }
 
-.bottom {
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  z-index: 7;
-  display: flex;
-  flex-direction: column;
-}
-.orderbar {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  padding: 0 10px 8px;
-}
-.selcard {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 12px 7px 9px;
-  background: rgba(12,19,29,.88);
-  border: 1px solid var(--edge);
-  border-top: 2px solid var(--cyan);
-  border-radius: 2px;
-  min-width: 0;
-}
-.selcard > svg { width: 30px; height: 30px; color: var(--cyan); flex: none; }
-.selcard .who { min-width: 0; }
-.selcard .who .n {
-  font-weight: 700;
-  font-size: 13px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.selcard .who .s {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 10.5px;
-  color: var(--dim);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.selcard .who .s em { font-style: normal; color: var(--gold); }
+/* bottom rows */
+.groups { position: absolute; left: 452px; top: 752px; width: 700px; height: 22px; display: flex; gap: 1px; }
+.groups button { flex: 1; background: linear-gradient(180deg,#123549,#0a1f2c); border: 1px solid #2e5f78;
+                 font-family: "Share Tech Mono", monospace; font-size: 12px; color: #7fd8ea; }
+.groups button[aria-pressed="true"] { background: linear-gradient(180deg,#4f3f06,#231c04); border-color: var(--gold); color: var(--gold); }
 
-.orders { display: flex; gap: 5px; flex: 1; flex-wrap: wrap; align-content: flex-start; }
-.ord {
-  appearance: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  width: 58px;
-  padding: 6px 2px 5px;
-  background: rgba(12,19,29,.88);
-  border: 1px solid var(--edge);
-  border-radius: 2px;
-  color: var(--dim);
-  cursor: pointer;
-  font-family: inherit;
-}
-.ord svg { width: 19px; height: 19px; }
-.ord span {
-  font-size: 9px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  font-weight: 600;
-}
-.ord:hover { border-color: var(--edge-hot); color: var(--ink); }
-.ord:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
-.ord[aria-pressed="true"] { background: var(--gold); border-color: var(--gold); color: #10130c; }
-.ord .key {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 8.5px;
-  color: var(--faint);
-  letter-spacing: 0;
-}
-.ord[aria-pressed="true"] .key { color: rgba(16,19,12,.66); }
+.tabs { display: flex; gap: 2px; }
+.tabs button { height: 24px; background: linear-gradient(180deg,#123549,#0a1f2c);
+               border: 1px solid #2e5f78; color: #7fd8ea; font-weight: 700; font-size: 13px;
+               letter-spacing: 0.14em; text-transform: uppercase; }
+.tabs button[aria-pressed="true"] { background: linear-gradient(180deg,#4f3f06,#231c04); border-color: var(--gold); color: var(--gold); }
+.ltabs { position: absolute; left: 6px; top: 776px; }
+.ltabs button { width: 142px; }
+.mtabs { position: absolute; left: 452px; top: 776px; width: 700px; }
+.mtabs button { flex: 1; }
+.rtabs { position: absolute; right: 6px; top: 776px; }
+.rtabs button { width: 140px; }
+.rtabs button.go { background: linear-gradient(180deg,#14501e,#07260d); border-color: #2c8a3a; color: #9df06f; }
+.rtabs button.go[aria-pressed="true"] { background: linear-gradient(180deg,#1e8c2f,#0b3d14); color: #d4ffbe; }
 
-/* ---- build panel ------------------------------------------------------ */
+.brow3 { position: absolute; left: 6px; right: 6px; top: 802px; height: 92px; display: flex; gap: 6px; }
+.cmd { width: 344px; display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: repeat(2, 1fr); gap: 3px; }
+.cmd button { background: radial-gradient(circle at 50% 28%, #17415a, #071a26); border: 1px solid #2a5c74;
+              display: flex; align-items: center; justify-content: center; }
+.cmd button svg { width: 23px; height: 23px; color: #7fd8ea; }
+.cmd button[aria-pressed="true"] { border-color: var(--gold); background: radial-gradient(circle at 50% 28%, #634a10, #1c1504); }
+.cmd button[aria-pressed="true"] svg { color: var(--gold); }
 
-.build {
-  background: linear-gradient(180deg, rgba(8,13,21,.82), var(--deep) 26%);
-  border-top: 1px solid var(--edge-hot);
-}
-.buildtab {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  appearance: none;
-  background: transparent;
-  border: 0;
-  color: var(--ink);
-  padding: 0 12px;
-  height: 42px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.buildtab:focus-visible { outline: 2px solid var(--cyan); outline-offset: -3px; }
-.buildtab .t {
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-.buildtab .caret { color: var(--gold); font-size: 11px; transition: transform .18s; }
-.build[data-open="1"] .buildtab .caret { transform: rotate(180deg); }
-.buildtab .q {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
-  color: var(--dim);
-  font-variant-numeric: tabular-nums;
-}
-.buildtab .berth { color: var(--gold); }
+.unit { width: 520px; display: flex; flex-direction: column; gap: 4px; }
+.unit .kv { display: flex; gap: 10px; font-size: 15px; }
+.unit .kv .k { width: 56px; font-weight: 600; letter-spacing: 0.08em; color: var(--dim); text-transform: uppercase; font-size: 13px; padding-top: 1px; }
+.unit .kv .v { color: var(--gold); font-weight: 600; }
+.unit .kv .v.t { color: #7fd8ea; }
+.unit .stats { margin-top: auto; display: flex; gap: 4px; }
+.unit .stats div { flex: 1; height: 22px; display: flex; align-items: center; gap: 6px; padding: 0 6px;
+                   background: rgba(9,26,37,.85); border: 1px solid #1d3f52; }
+.unit .stats svg { width: 13px; height: 13px; color: var(--teal); flex: none; }
+.unit .stats b { font-family: "Share Tech Mono", monospace; font-size: 13px; font-weight: 400; color: var(--ink); }
 
-.buildbody { display: none; padding: 0 12px 12px; max-height: 250px; overflow-y: auto; }
-.build[data-open="1"] .buildbody { display: block; }
+.thumb { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.thumb .box { flex: 1; position: relative; background: #04121b; border: 1px solid #1d4459; overflow: hidden; }
+.thumb .box img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 
-.cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
-  gap: 6px;
-}
-.card {
-  appearance: none;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 8px;
-  background: var(--plate);
-  border: 1px solid var(--edge);
-  border-radius: 2px;
-  color: var(--ink);
-  cursor: pointer;
-  text-align: left;
-  font-family: inherit;
-}
-.card:hover { border-color: var(--edge-hot); }
-.card:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
-.card[data-afford="0"] { opacity: .42; }
-.card .top { display: flex; align-items: center; gap: 7px; }
-.card .top svg { width: 24px; height: 24px; color: var(--cyan); flex: none; }
-.card .nm {
-  font-weight: 600;
-  font-size: 10.5px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  line-height: 1.25;
-}
-.card .px {
-  display: flex;
-  gap: 9px;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.card .px i { font-style: normal; display: flex; align-items: center; gap: 3px; }
-.card .px svg { width: 12px; height: 12px; }
-.card .px .o { color: var(--ore); }
-.card .px .d { color: var(--data); }
-.card .note { font-size: 9.5px; letter-spacing: 0.06em; color: var(--faint); text-transform: uppercase; }
-.card[data-afford="0"] .note { color: var(--red); }
+.mods { width: 428px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
+.mods button { background: linear-gradient(180deg,#0f2d3e,#071a26); border: 1px solid #2a5c74;
+               display: flex; align-items: center; justify-content: center; }
+.mods button svg { width: 22px; height: 22px; color: #5c8ea4; }
+.mods button[aria-pressed="true"] { border-color: var(--gold); background: linear-gradient(180deg,#3f3307,#191504); }
+.mods button[aria-pressed="true"] svg { color: var(--gold); }
 
-.queue {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-  min-height: 40px;
-  align-items: stretch;
-  flex-wrap: wrap;
-}
-.qslot {
-  position: relative;
-  width: 112px;
-  padding: 6px 8px;
-  background: var(--plate);
-  border: 1px solid var(--edge);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.qslot .qn {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.qslot .qt {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 10.5px;
-  color: var(--dim);
-  font-variant-numeric: tabular-nums;
-}
-.qslot .fill {
-  position: absolute;
-  left: 0; bottom: 0;
-  height: 2px;
-  background: var(--cyan);
-}
-.qempty {
-  display: flex;
-  align-items: center;
-  color: var(--faint);
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
+.ticker { position: absolute; left: 452px; top: 726px; width: 700px; height: 20px;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 13.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold);
+          opacity: 0; transition: opacity .2s; pointer-events: none; text-shadow: 0 0 8px #000; }
+.ticker[data-on="1"] { opacity: 1; }
 
-/* ---- research --------------------------------------------------------- */
+/* ---------- workbench ---------- */
+.sect { margin-top: 42px; }
+.sect h2 {
+  font-size: 14px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--gold); margin: 0; padding-bottom: 9px; border-bottom: 1px solid #1c2c3a;
+}
+.sect .lede { margin: 12px 0 18px; color: var(--dim); font-size: 14px; line-height: 1.65; max-width: 80ch; }
+.sect code { font-family: "Share Tech Mono", monospace; color: var(--teal); font-size: 13px; }
 
-.sheet {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(170deg, #070c13 0%, #050810 60%);
-  overflow: auto;
-  padding: 52px 14px 16px;
-  z-index: 4;
-}
-.sheet h2 {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--dim);
-  margin: 0 0 3px;
-}
-.sheet .sub {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
-  color: var(--faint);
-  margin: 0 0 14px;
-  font-variant-numeric: tabular-nums;
-}
+.bench { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.bcell { border: 1px solid #1c2c3a; background: #070d14; padding: 8px; }
+.bcell .sh { width: 100%; aspect-ratio: 22/7; background: #04121b; border: 1px solid #12303f; display: block; }
+.bcell .ft { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.bcell .ft img { background: #0a141c; border: 1px solid #12303f; }
+.bcell .ft .m { margin-left: auto; text-align: right; }
+.bcell .ft .m b { display: block; font-size: 13px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+.bcell .ft .m i { font-style: normal; font-family: "Share Tech Mono", monospace; font-size: 11px; color: var(--faint); }
 
-.tree { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 12px; }
-.branch h3 {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--gold);
-  margin: 0 0 7px;
-  padding-bottom: 5px;
-  border-bottom: 1px solid var(--edge);
-}
-.nodes { display: flex; flex-direction: column; gap: 5px; }
-.node {
-  appearance: none;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 9px;
-  background: var(--plate);
-  border: 1px solid var(--edge);
-  border-left: 3px solid var(--edge-hot);
-  border-radius: 2px;
-  color: var(--ink);
-  cursor: pointer;
-  text-align: left;
-  font-family: inherit;
-  width: 100%;
-}
-.node:hover { border-color: var(--edge-hot); }
-.node:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
-.node svg { width: 22px; height: 22px; color: var(--dim); flex: none; }
-.node .nb { flex: 1; min-width: 0; }
-.node .nn {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-.node .nd { display: block; font-size: 10px; color: var(--faint); letter-spacing: 0.04em; }
-.node .cost {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11.5px;
-  color: var(--data);
-  font-variant-numeric: tabular-nums;
-  flex: none;
-}
-.node[data-state="locked"] { opacity: .4; cursor: not-allowed; }
-.node[data-state="locked"] .cost { color: var(--faint); }
-.node[data-state="poor"] { opacity: .58; }
-.node[data-state="poor"] .cost { color: var(--red); }
-.node[data-state="done"] { border-left-color: var(--green); }
-.node[data-state="done"] svg { color: var(--green); }
-.node[data-state="done"] .cost { color: var(--green); font-size: 10px; letter-spacing: 0.1em; }
-.node[data-state="open"] { border-left-color: var(--data); }
-.node[data-state="open"] svg { color: var(--data); }
+.slices { display: flex; gap: 20px; flex-wrap: wrap; }
+.slice { text-align: center; }
+.slice .img { position: relative; width: 144px; height: 144px;
+              border: 1px solid #1c2c3a;
+              background: repeating-conic-gradient(#0b1219 0 25%, #101822 0 50%) 0 0 / 18px 18px; }
+.slice .img img { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+.slice .img i { position: absolute; background: rgba(245,197,66,.5); }
+.slice .cap { margin-top: 7px; font-family: "Share Tech Mono", monospace; font-size: 11px; color: var(--faint); }
+.slice .cap b { display: block; color: var(--ink); font-family: "Barlow Semi Condensed", sans-serif;
+                font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; margin-bottom: 2px; }
 
-/* ---- upkeep ----------------------------------------------------------- */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(275px, 1fr)); gap: 18px 28px; }
+.grid2 h3 { font-size: 13px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin: 0 0 6px; }
+.grid2 p { margin: 0; font-size: 13.5px; line-height: 1.65; color: var(--dim); }
+.grid2 p + p { margin-top: 8px; }
 
-.ladder { margin-top: 16px; }
-.ladder h3 {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--gold);
-  margin: 0 0 7px;
-  padding-bottom: 5px;
-  border-bottom: 1px solid var(--edge);
-}
-.rungs { display: flex; gap: 6px; flex-wrap: wrap; }
-.rung {
-  flex: 1 1 120px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 9px;
-  background: var(--plate);
-  border: 1px solid var(--edge);
-  border-bottom: 2px solid var(--edge-hot);
-  border-radius: 2px;
-}
-.rung svg { width: 26px; height: 26px; color: var(--faint); flex: none; }
-.rung .rn { font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }
-.rung .rs {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 10px;
-  color: var(--faint);
-}
-.rung[data-at="held"] { border-bottom-color: var(--green); }
-.rung[data-at="held"] svg { color: var(--dim); }
-.rung[data-at="now"] { border-bottom-color: var(--cyan); background: rgba(22,46,58,.6); }
-.rung[data-at="now"] svg { color: var(--cyan); }
-.rung[data-at="now"] .rs { color: var(--cyan); }
-.rung[data-at="next"] { border-bottom-color: var(--data); }
-.rung[data-at="next"] svg { color: var(--data); }
-.rung[data-at="next"] .rs { color: var(--data); }
-.rung[data-at="far"] { opacity: .42; }
-
-.crew {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  margin-bottom: 12px;
-  background: rgba(125,201,63,.08);
-  border: 1px solid rgba(125,201,63,.3);
-  border-left: 3px solid var(--green);
-  border-radius: 2px;
-}
-.crew svg { width: 20px; height: 20px; color: var(--green); flex: none; }
-.crew .ct { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
-.crew .cs { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--dim); }
-
-.roster { display: flex; flex-direction: column; gap: 6px; }
-.row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
-  background: var(--plate);
-  border: 1px solid var(--edge);
-  border-radius: 2px;
-}
-.row > svg { width: 26px; height: 26px; color: var(--dim); flex: none; }
-.row .rb { flex: 1; min-width: 0; }
-.row .rn {
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.row .rn em {
-  font-style: normal;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 10px;
-  letter-spacing: 0;
-  color: var(--faint);
-  text-transform: none;
-}
-.row .track {
-  margin-top: 5px;
-  max-width: 260px;
-  height: 5px;
-  background: #1b2634;
-  border-radius: 1px;
-  overflow: hidden;
-}
-.row .track span { display: block; height: 100%; background: var(--green); transition: width .25s; }
-.row .track span.warn { background: var(--gold); }
-.row .track span.crit { background: var(--red); }
-.row .cells {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 10.5px;
-  color: var(--dim);
-  margin-top: 3px;
-  font-variant-numeric: tabular-nums;
-}
-.weld {
-  appearance: none;
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  min-width: 74px;
-  padding: 7px 9px;
-  background: transparent;
-  border: 1px solid var(--gold);
-  border-radius: 2px;
-  color: var(--gold);
-  cursor: pointer;
-  font-family: inherit;
-}
-.weld b { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
-.weld i {
-  font-style: normal;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.weld:hover { background: rgba(232,179,85,.14); }
-.weld:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
-.weld[disabled] { border-color: var(--edge); color: var(--faint); cursor: default; }
-.weld[disabled]:hover { background: transparent; }
-
-/* ---- toast ------------------------------------------------------------ */
-
-.toast {
-  position: absolute;
-  left: 50%;
-  top: 52px;
-  transform: translateX(-50%);
-  padding: 6px 14px;
-  background: rgba(232,179,85,.92);
-  color: #10130c;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  border-radius: 2px;
-  opacity: 0;
-  transition: opacity .22s;
-  z-index: 9;
-  pointer-events: none;
-  white-space: nowrap;
-}
-.toast[data-on="1"] { opacity: 1; }
-
-/* ---- phone layout ----------------------------------------------------- */
-
-.stage[data-size="phone"] .rail {
-  left: 0; right: 0;
-  top: 46px;
-  flex-direction: row;
-  gap: 5px;
-  overflow-x: auto;
-  padding: 4px 10px 5px;
-  scrollbar-width: none;
-}
-.stage[data-size="phone"] .rail::-webkit-scrollbar { display: none; }
-.stage[data-size="phone"] .chip {
-  width: auto;
-  flex: none;
-  flex-direction: column;
-  gap: 3px;
-  padding: 6px 8px 5px;
-  align-items: center;
-}
-.stage[data-size="phone"] .chip .nm { font-size: 9px; letter-spacing: 0.05em; }
-.stage[data-size="phone"] .chip .kb { display: none; }
-.stage[data-size="phone"] .chip .hp { width: 34px; }
-
-.stage[data-size="phone"] .orderbar { flex-direction: column; gap: 6px; }
-.stage[data-size="phone"] .orders { display: grid; grid-template-columns: repeat(4, 1fr); }
-.stage[data-size="phone"] .ord { width: auto; padding: 9px 2px 8px; }
-.stage[data-size="phone"] .ord .key { display: none; }
-.stage[data-size="phone"] .cards { grid-template-columns: repeat(2, 1fr); }
-.stage[data-size="phone"] .sheet { padding-top: 46px; }
-.stage[data-size="phone"] .tree { grid-template-columns: 1fr; }
-.stage[data-size="phone"] .topstrip { gap: 4px; padding: 6px 8px; }
-.stage[data-size="phone"] .res { padding: 3px 6px 3px 4px; gap: 4px; }
-.stage[data-size="phone"] .res i { display: none; }
-.stage[data-size="phone"] .res b { font-size: 12px; }
-.stage[data-size="phone"] .tide { padding: 3px 7px; gap: 5px; }
-.stage[data-size="phone"] .tide .lbl { display: none; }
-.stage[data-size="phone"] .mk .tag { display: none; }
-.stage[data-size="phone"] .weld { min-width: 62px; }
-.stage[data-size="phone"] .selcard .who .s { white-space: normal; font-size: 10px; line-height: 1.35; }
-.stage[data-size="phone"] .toast { top: 98px; }
-
-/* ---- notes ------------------------------------------------------------ */
-
-.notes { margin-top: 44px; }
-.notes h2 {
-  font-family: "Chakra Petch", sans-serif;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--gold);
-  margin: 0 0 16px;
-  padding-bottom: 9px;
-  border-bottom: 1px solid var(--edge);
-}
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
-  gap: 18px 26px;
-}
-.note-item h3 {
-  font-family: "Chakra Petch", sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  margin: 0 0 6px;
-  color: var(--ink);
-}
-.note-item p {
-  margin: 0;
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--dim);
-}
-.note-item p + p { margin-top: 8px; }
-.note-item code {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 12px;
-  color: var(--cyan);
-}
-
-figure { margin: 26px 0 0; }
-figure .scroll { overflow-x: auto; }
-figure svg { width: 100%; min-width: 620px; height: auto; }
-figcaption {
-  margin-top: 9px;
-  font-size: 12.5px;
-  color: var(--faint);
-  line-height: 1.5;
-}
-
-.foot {
-  margin-top: 40px;
-  padding-top: 16px;
-  border-top: 1px solid var(--edge);
-  font-size: 12.5px;
-  color: var(--faint);
-  line-height: 1.6;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  * { transition-duration: 0.01ms !important; }
-}
+.foot { margin-top: 34px; padding-top: 14px; border-top: 1px solid #1c2c3a;
+        font-size: 13px; color: var(--faint); line-height: 1.65; }
+@media (prefers-reduced-motion: reduce) { * { transition-duration: .01ms !important; } }
 </style>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="g-tri" viewBox="0 0 24 24"><path d="M12 4l8 15H4z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="g-sq" viewBox="0 0 24 24"><rect x="5" y="6" width="14" height="12" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="g-dia" viewBox="0 0 24 24"><path d="M12 4l8 8-8 8-8-8z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="g-trap" viewBox="0 0 24 24"><path d="M4 18h16l-3-10H7z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="g-hex" viewBox="0 0 24 24"><path d="M7 6h10l3 6-3 6H7l-3-6z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="g-pent" viewBox="0 0 24 24"><path d="M12 4l8 6-3 9H7l-3-9z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="g-cir" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="g-pill" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="4" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
 
-<symbol id="i-corvette" viewBox="0 0 24 24"><g fill="currentColor"><rect x="11" y="3" width="2" height="5"/><rect x="10" y="8" width="4" height="9"/><rect x="8" y="11" width="2" height="5"/><rect x="14" y="11" width="2" height="5"/><rect x="9" y="17" width="6" height="2"/><rect x="10" y="19" width="1.5" height="2" opacity=".5"/><rect x="12.5" y="19" width="1.5" height="2" opacity=".5"/></g></symbol>
+<symbol id="c-move" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20L18 6"/><path d="M11 6h7v7"/></g></symbol>
+<symbol id="c-attack" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></g></symbol>
+<symbol id="c-guard" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="c-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" fill="currentColor"/></symbol>
+<symbol id="c-form" viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 3l3 5H9z"/><path d="M5 13l3 5H2z"/><path d="M19 13l3 5h-6z"/></g></symbol>
+<symbol id="c-stance" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18h18"/><path d="M6 18V9M12 18V5M18 18v-6"/></g></symbol>
+<symbol id="c-dock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v11"/><path d="M7 9l5 5 5-5"/><path d="M4 20h16"/></g></symbol>
+<symbol id="c-launch" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V10"/><path d="M7 15l5-5 5 5"/><path d="M4 4h16"/></g></symbol>
+<symbol id="c-rally" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M6 21V4l12 4-12 4"/></g></symbol>
+<symbol id="c-salv" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4v6a7 7 0 0 0 14 0V4"/><path d="M12 17v4"/></g></symbol>
+<symbol id="c-hyper" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h5l3-7 3 14 3-7h4"/></g></symbol>
+<symbol id="c-scut" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M6.5 6.5l11 11"/></g></symbol>
 
-<symbol id="i-frigate" viewBox="0 0 24 24"><g fill="currentColor"><rect x="10.5" y="2" width="3" height="4"/><rect x="9" y="6" width="6" height="11"/><rect x="6" y="9" width="3" height="7"/><rect x="15" y="9" width="3" height="7"/><rect x="7" y="17" width="10" height="2"/><rect x="7.5" y="19" width="2" height="2.5" opacity=".5"/><rect x="11" y="19" width="2" height="2.5" opacity=".5"/><rect x="14.5" y="19" width="2" height="2.5" opacity=".5"/></g></symbol>
+<symbol id="m-prod" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="10"/><path d="M8 8V5h8v3"/></g></symbol>
+<symbol id="m-hangar" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18V9l9-5 9 5v9"/><path d="M9 18v-5h6v5"/></g></symbol>
+<symbol id="m-arm" viewBox="0 0 24 24"><path d="M4 7h16v5a8 8 0 0 1-16 0z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="m-eng" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="12" height="10"/><path d="M9 14l-2 6M15 14l2 6"/></g></symbol>
+<symbol id="m-sens" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></g></symbol>
+<symbol id="m-res" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></g></symbol>
 
-<symbol id="i-destroyer" viewBox="0 0 24 24"><g fill="currentColor"><rect x="10" y="1.5" width="4" height="4"/><rect x="8" y="5.5" width="8" height="12"/><rect x="4.5" y="8" width="3.5" height="8"/><rect x="16" y="8" width="3.5" height="8"/><rect x="6" y="6.5" width="2" height="2"/><rect x="16" y="6.5" width="2" height="2"/><rect x="6" y="17.5" width="12" height="2.5"/><rect x="7" y="20" width="2.5" height="2" opacity=".5"/><rect x="10.8" y="20" width="2.5" height="2" opacity=".5"/><rect x="14.6" y="20" width="2.5" height="2" opacity=".5"/></g></symbol>
-
-<symbol id="i-cruiser" viewBox="0 0 24 24"><g fill="currentColor"><rect x="9.5" y="1" width="5" height="3.5"/><rect x="7" y="4.5" width="10" height="13"/><rect x="3" y="7" width="4" height="9"/><rect x="17" y="7" width="4" height="9"/><rect x="4.5" y="5" width="2.5" height="2"/><rect x="17" y="5" width="2.5" height="2"/><rect x="9" y="9" width="6" height="2" opacity=".55"/><rect x="5" y="17.5" width="14" height="3"/><rect x="5.6" y="20.5" width="3" height="2" opacity=".5"/><rect x="10.5" y="20.5" width="3" height="2" opacity=".5"/><rect x="15.4" y="20.5" width="3" height="2" opacity=".5"/></g></symbol>
-
-<symbol id="i-wing" viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2l3 6h-6z"/><rect x="11" y="8" width="2" height="3"/><path d="M5 11l2.4 5H2.6z" opacity=".8"/><rect x="4.2" y="16" width="1.6" height="2" opacity=".8"/><path d="M19 11l2.4 5h-4.8z" opacity=".8"/><rect x="18.2" y="16" width="1.6" height="2" opacity=".8"/></g></symbol>
-
-<symbol id="i-miner" viewBox="0 0 24 24"><g fill="currentColor"><rect x="7" y="7" width="10" height="10"/><rect x="9" y="3" width="6" height="4"/><rect x="10.5" y="1" width="3" height="2"/><rect x="4" y="9" width="3" height="6" opacity=".7"/><rect x="17" y="9" width="3" height="6" opacity=".7"/><rect x="8" y="17" width="8" height="2"/><rect x="10" y="19" width="4" height="2" opacity=".5"/></g></symbol>
-
-<symbol id="i-tanker" viewBox="0 0 24 24"><g fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/><rect x="8" y="8" width="8" height="3" opacity=".5"/><rect x="8" y="13" width="8" height="3" opacity=".5"/><rect x="10" y="2" width="4" height="4"/><rect x="4" y="9" width="2" height="6" opacity=".7"/><rect x="18" y="9" width="2" height="6" opacity=".7"/><rect x="9" y="18" width="6" height="2.5" opacity=".5"/></g></symbol>
-
-<symbol id="i-salvager" viewBox="0 0 24 24"><g fill="currentColor"><rect x="7" y="8" width="10" height="10"/><rect x="5" y="2" width="2.5" height="6"/><rect x="16.5" y="2" width="2.5" height="6"/><rect x="7.5" y="4" width="9" height="2" opacity=".6"/><rect x="9" y="11" width="6" height="4" opacity=".5"/><rect x="9" y="18" width="6" height="2.5" opacity=".5"/></g></symbol>
-
-<symbol id="i-survey" viewBox="0 0 24 24"><g fill="currentColor"><rect x="7" y="9" width="10" height="9"/><path d="M12 2a6 6 0 0 1 6 6h-2.4A3.6 3.6 0 0 0 12 4.4z" opacity=".85"/><rect x="11" y="4" width="2" height="5"/><rect x="4" y="11" width="3" height="5" opacity=".7"/><rect x="17" y="11" width="3" height="5" opacity=".7"/><rect x="9" y="18" width="6" height="2.5" opacity=".5"/></g></symbol>
-
-<symbol id="i-freighter" viewBox="0 0 24 24"><g fill="currentColor"><rect x="3" y="8" width="18" height="9"/><rect x="4.5" y="4" width="4" height="4" opacity=".75"/><rect x="9.5" y="4" width="4" height="4" opacity=".55"/><rect x="14.5" y="4" width="4" height="4" opacity=".75"/><rect x="9" y="1.5" width="6" height="2.5" opacity=".4"/><rect x="5" y="17" width="14" height="2"/><rect x="8" y="19" width="8" height="2" opacity=".5"/></g></symbol>
-
-<symbol id="i-tender" viewBox="0 0 24 24"><g fill="currentColor"><rect x="6" y="7" width="12" height="11"/><rect x="10.5" y="9" width="3" height="7"/><rect x="8" y="11.5" width="8" height="3"/><rect x="10" y="3" width="4" height="4" opacity=".8"/><rect x="3.5" y="10" width="2.5" height="5" opacity=".7"/><rect x="18" y="10" width="2.5" height="5" opacity=".7"/><rect x="9" y="18" width="6" height="2.5" opacity=".5"/></g></symbol>
-
-<symbol id="i-ore" viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2l9 5v10l-9 5-9-5V7z" opacity=".28"/><path d="M12 2l9 5-9 5-9-5z"/><path d="M12 12l9-5v10l-9 5z" opacity=".62"/></g></symbol>
-
-<symbol id="i-crystal" viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 1l6 7-6 15-6-15z" opacity=".35"/><path d="M12 1l6 7h-6z"/><path d="M12 1L6 8h6z" opacity=".7"/><path d="M12 8h6l-6 15z" opacity=".55"/></g></symbol>
-
-<symbol id="i-fuel" viewBox="0 0 24 24"><g fill="currentColor"><rect x="5" y="4" width="14" height="16" rx="2" opacity=".3"/><rect x="7" y="11" width="10" height="7" rx="1"/><rect x="7" y="7" width="10" height="3" rx="1" opacity=".6"/><rect x="9.5" y="1.5" width="5" height="2.5"/></g></symbol>
-
-<symbol id="i-data" viewBox="0 0 24 24"><g fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1" opacity=".35"/><rect x="9" y="9" width="6" height="6"/><rect x="11" y="1.5" width="2" height="4.5"/><rect x="11" y="18" width="2" height="4.5"/><rect x="1.5" y="11" width="4.5" height="2"/><rect x="18" y="11" width="4.5" height="2"/></g></symbol>
-
-<symbol id="i-move" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="17" r="4.4"/><path d="M12 12V3"/><path d="M8.4 6.2L12 2.6l3.6 3.6"/></g></symbol>
-
-<symbol id="i-attack" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="7"/><path d="M12 1.6v4M12 18.4v4M1.6 12h4M18.4 12h4"/></g><circle cx="12" cy="12" r="2" fill="currentColor"/></symbol>
-
-<symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor"/></symbol>
-
-<symbol id="i-patrol" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="12" rx="9" ry="6"/></g><rect x="19" y="9.5" width="4" height="4" transform="rotate(45 21 11.5)" fill="currentColor"/></symbol>
-
-<symbol id="i-escort" viewBox="0 0 24 24"><path d="M12 2l8 3v7c0 5-3.4 8.3-8 10-4.6-1.7-8-5-8-10V5z" fill="currentColor" opacity=".38"/><path d="M12 2l8 3v7c0 5-3.4 8.3-8 10z" fill="currentColor"/></symbol>
-
-<symbol id="i-recall" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 21V8"/><path d="M7.5 12.5L12 8l4.5 4.5"/><path d="M4 4h16"/></g></symbol>
-
-<symbol id="i-hull" viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2l9 4v8c0 1-9 8-9 8s-9-7-9-8V6z" opacity=".3"/><rect x="7" y="8" width="10" height="3"/><rect x="7" y="13" width="6" height="3"/></g></symbol>
-
-<symbol id="i-beam" viewBox="0 0 24 24"><g fill="currentColor"><rect x="10" y="2" width="4" height="12" opacity=".5"/><rect x="11" y="2" width="2" height="12"/><rect x="7" y="14" width="10" height="4"/><rect x="5" y="18" width="14" height="3"/></g></symbol>
-
-<symbol id="i-shield" viewBox="0 0 24 24"><g fill="currentColor"><rect x="2" y="10" width="4" height="8" opacity=".55"/><rect x="8" y="6" width="4" height="12" opacity=".8"/><rect x="14" y="2" width="4" height="16"/><rect x="19" y="12" width="3" height="6" opacity=".4"/></g></symbol>
-
-<symbol id="i-wrench" viewBox="0 0 24 24"><g fill="currentColor"><rect x="10.5" y="8" width="3" height="14" transform="rotate(-30 12 15)"/><path d="M17 2a5 5 0 0 0-5.6 6.8l-1.5 2.6 3 1.7 1.5-2.6A5 5 0 0 0 20.4 4.6l-2.6 1.5-2.6-1.5V1.6z"/></g></symbol>
-
-<symbol id="i-check" viewBox="0 0 24 24"><path d="M4 12.5l5.5 5.5L20 6.5" fill="none" stroke="currentColor" stroke-width="2.6"/></symbol>
-
+<symbol id="s-speed" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18L18 6"/><path d="M11 6h7v7"/></g></symbol>
+<symbol id="s-gun" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><path d="M12 3v3"/></g></symbol>
+<symbol id="s-arm" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="s-ru" viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2l9 5-9 5-9-5z"/><path d="M12 12l9-5v10l-9 5z" opacity=".6"/><path d="M12 12v10l-9-5V7z" opacity=".35"/></g></symbol>
 </defs></svg>
 
 <div class="wrap">
@@ -949,212 +292,155 @@ figcaption {
   <header class="masthead">
     <div>
       <h1>Swarm <span>Command</span></h1>
-      <p>The skirmish HUD, proposed. Resources and the tide on top, your capitals down the side, orders on the thumb, and the yard in a drawer that is shut until you want it.</p>
+      <p>The skirmish HUD in Homeworld's own shape: nine sliced translucent frames over the live field, with every ship schematic and build icon baked off the voxel model itself. Everything on it works.</p>
     </div>
-    <div class="spacer"></div>
-    <div class="toggles">
-      <div class="seg" role="group" aria-label="Screen">
-        <button type="button" data-screen="battle" aria-pressed="true">Battle</button>
-        <button type="button" data-screen="research" aria-pressed="false">Research</button>
-        <button type="button" data-screen="upkeep" aria-pressed="false">Upkeep</button>
-      </div>
-      <div class="seg" role="group" aria-label="Frame size">
-        <button type="button" data-size="wide" aria-pressed="true">Desktop</button>
-        <button type="button" data-size="phone" aria-pressed="false">Phone</button>
-      </div>
+    <div class="sp"></div>
+    <div class="hint">
+      <b>drag</b> orbit &nbsp;&nbsp;<b>wheel</b> zoom &nbsp;&nbsp;<b>click a hull</b> select<br>
+      <b>build row</b> queue it &nbsp;&nbsp;<b>1..0</b> control group &nbsp;&nbsp;<b>tabs</b> build, research, launch
     </div>
   </header>
 
-  <div class="stagewrap">
-  <div class="stage" id="stage" data-size="wide">
+  <div class="stage" id="stage">
+    <canvas id="world"></canvas>
+    <div id="hud">
+      <div class="gt" id="gt">Game Time: 0: 0:00</div>
 
-    <canvas id="field"></canvas>
+      <div class="ru nine">
+        <svg aria-hidden="true"><use href="#s-ru"></use></svg>
+        <span class="t">Resource Units</span>
+        <span class="v" id="ru">3000</span>
+      </div>
 
-    <!-- ---------------- battle ---------------- -->
-    <div class="screen" id="s-battle">
+      <div class="roster nine" id="roster"></div>
 
-      <div class="markers" id="markers"></div>
-      <div class="wp" id="waypoint" style="left:68%;top:42%"></div>
+      <div class="rpanel nine">
+        <div class="phead"><span class="t" id="ptitle">Build Menu</span><button class="x" type="button" title="Close">X</button></div>
+        <div class="pbody">
+          <div class="sel1"><span id="prodname">Carrier</span><span class="ca">&#9660;</span></div>
+          <div class="pstage">
+            <button class="arw" type="button" data-prod="-1">&#9664;</button>
+            <div class="schembox"><img id="prodschem" alt="Producing ship schematic"></div>
+            <button class="arw" type="button" data-prod="1">&#9654;</button>
+          </div>
+          <div class="hbar"><span id="prodhp" style="width:96%"></span></div>
+          <div class="slots" id="slots"></div>
+          <button class="wide" type="button" id="showall">Show All</button>
+          <div class="cats" id="cats"></div>
+          <div class="cathead"><span class="t" id="catname">Fighter</span><span class="c" id="catcount">0 / 18</span></div>
+          <div class="list" id="list"></div>
+          <div class="qhead"><span id="qsubtxt">Subsystem Queue (Empty)</span><span class="b"><button type="button">&#10074;&#10074;</button><button type="button">+</button></span></div>
+          <div class="qhead"><span id="qshiptxt">Ship Queue (Empty)</span><span class="b"><button type="button">&#10074;&#10074;</button><button type="button">&minus;</button></span></div>
+          <div class="queue nine-w" id="queue"></div>
+        </div>
+      </div>
 
-      <div class="rail" id="rail" role="group" aria-label="Fleet"></div>
+      <div class="ticker" id="ticker"></div>
+      <div class="groups" id="groups"></div>
 
-      <div class="bottom">
-      <div class="orderbar">
-        <div class="selcard">
-          <svg id="sel-icon"><use href="#i-frigate"></use></svg>
-          <div class="who">
-            <div class="n" id="sel-name">Vanguard</div>
-            <div class="s" id="sel-stat">Terran frigate &middot; reactor <em>96%</em> &middot; 3 guns</div>
+      <div class="tabs ltabs" id="ltabs">
+        <button type="button" aria-pressed="true">Fleet</button>
+        <button type="button" aria-pressed="false">Strike</button>
+        <button type="button" aria-pressed="false">Tactics</button>
+      </div>
+      <div class="tabs mtabs" id="mtabs">
+        <button type="button" aria-pressed="false">Events</button>
+        <button type="button" aria-pressed="false">Sensors</button>
+        <button type="button" aria-pressed="false">Menu</button>
+      </div>
+      <div class="tabs rtabs" id="rtabs">
+        <button type="button" data-tab="build" aria-pressed="true">Build</button>
+        <button type="button" data-tab="research" aria-pressed="false">Research</button>
+        <button type="button" data-tab="launch" class="go" aria-pressed="false">Launch</button>
+      </div>
+
+      <div class="brow3">
+        <div class="cmd" id="cmd"></div>
+        <div class="unit nine">
+          <div class="kv"><span class="k">Unit</span><span class="v" id="uname">Carrier</span></div>
+          <div class="kv"><span class="k">Role</span><span class="v t" id="urole">Ship Production</span></div>
+          <div class="stats">
+            <div><svg aria-hidden="true"><use href="#s-speed"></use></svg><b id="uspd">75</b></div>
+            <div><svg aria-hidden="true"><use href="#s-gun"></use></svg><b id="ugun">40</b></div>
+            <div><svg aria-hidden="true"><use href="#s-arm"></use></svg><b id="uarm">55000</b></div>
           </div>
         </div>
-        <div class="orders" id="orders"></div>
-      </div>
-
-      <div class="build" id="build" data-open="0">
-        <button class="buildtab" id="buildtab" type="button" aria-expanded="false" aria-controls="buildbody">
-          <span class="caret" aria-hidden="true">&#9650;</span>
-          <span class="t">Yard</span>
-          <span class="q">
-            <span id="q-count">2 building</span>
-            <span class="berth" id="q-berth">Berths 4 / 5</span>
-          </span>
-        </button>
-        <div class="buildbody" id="buildbody">
-          <div class="cards" id="cards"></div>
-          <div class="queue" id="queue"></div>
+        <div class="thumb">
+          <div class="box"><img id="uschem" alt="Selected ship schematic"></div>
+          <div class="hbar"><span id="uhp" style="width:96%"></span></div>
         </div>
-      </div>
-      </div>
-
-      <div class="toast" id="toast"></div>
-    </div>
-
-    <!-- ---------------- research ---------------- -->
-    <div class="screen" id="s-research" hidden>
-      <div class="sheet">
-        <h2>Research</h2>
-        <p class="sub" id="r-bank">Data 210 &middot; every rung is read off the fleet manifest</p>
-        <div class="tree" id="tree"></div>
-        <div class="ladder">
-          <h3>Command ship</h3>
-          <div class="rungs" id="rungs"></div>
-        </div>
+        <div class="mods" id="mods"></div>
       </div>
     </div>
-
-    <!-- ---------------- upkeep ---------------- -->
-    <div class="screen" id="s-upkeep" hidden>
-      <div class="sheet">
-        <h2>Maintenance</h2>
-        <p class="sub" id="u-bank">Materials 1240 &middot; 1 per cell welded</p>
-        <div class="crew">
-          <svg aria-hidden="true"><use href="#i-wrench"></use></svg>
-          <div>
-            <div class="ct">2 tender crews aboard</div>
-            <div class="cs">Yard welding at 50% off. A third crew is the cap.</div>
-          </div>
-        </div>
-        <div class="roster" id="roster"></div>
-      </div>
-    </div>
-
-    <!-- the top strip sits over every screen -->
-    <div class="topstrip">
-      <div class="res ore"><svg aria-hidden="true"><use href="#i-ore"></use></svg><b id="t-ore">1240</b><i>mat</i></div>
-      <div class="res cry"><svg aria-hidden="true"><use href="#i-crystal"></use></svg><b id="t-cry">380</b><i>vol</i></div>
-      <div class="res fuel"><svg aria-hidden="true"><use href="#i-fuel"></use></svg><b id="t-fuel">250</b><i>fuel</i></div>
-      <div class="res data"><svg aria-hidden="true"><use href="#i-data"></use></svg><b id="t-data">210</b><i>data</i></div>
-      <div class="gap"></div>
-      <div class="tide">
-        <span class="lbl">Swarm fleet</span>
-        <span class="clk" id="t-clock">3:42</span>
-        <span class="tidebar"><span style="width:38%"></span></span>
-      </div>
-    </div>
-
-  </div>
   </div>
 
-  <section class="notes">
-    <h2>What each part is for</h2>
-    <div class="grid">
+  <section class="sect">
+    <h2>Baking the assets off the voxel model</h2>
+    <p class="lede">
+      Both pictures in that HUD are generated, not drawn. One function meshes a model with the same greedy pass
+      the battlefield uses, renders it to an offscreen target under an orthographic camera, reads the pixels back
+      and runs one rim pass over the alpha. The palette and the camera are the only difference between a schematic
+      and an icon, which is why there is one baker and not two. On the Rust side this is the
+      <code>ship_export</code> example writing PNGs beside the hulls, off <code>greedy_mesh</code> and the
+      <code>purpose</code> byte the export already carries.
+    </p>
+    <div class="bench" id="bench"></div>
+  </section>
 
-      <div class="note-item">
-        <h3>Nothing explains itself</h3>
-        <p>Every label is a noun or a verb and no control carries a sentence. The reinforcements button and its paragraph of bindings go back to the sandbox, which is where a button that exists to be tested belongs.</p>
+  <section class="sect">
+    <h2>The frames are nine sliced</h2>
+    <p class="lede">
+      Every panel and well is one 48 pixel texture with a 16 pixel slice, so a corner bracket is the same size on
+      the resource strip and on the build menu and nothing stretches that should not. These are baked at boot on a
+      2D canvas. In Bevy they are an <code>ImageNode</code> with <code>ImageScaleMode::Sliced</code> and the same
+      four numbers; the checker behind them is the transparency, since a HUD that was opaque would be a HUD that
+      took the field away.
+    </p>
+    <div class="slices" id="slices"></div>
+  </section>
+
+  <section class="sect">
+    <h2>What each decision is</h2>
+    <div class="grid2">
+      <div>
+        <h3>One layer at a fixed design size</h3>
+        <p>The HUD is authored at 1600 by 900 and scaled to whatever the viewport is, which is how a game does it
+        and why every hairline stays a hairline. Nothing reflows, so a screenshot at one size is a screenshot at
+        all of them.</p>
       </div>
-
-      <div class="note-item">
-        <h3>The rail is how you find a ship</h3>
-        <p>One button per capital, in the order they were built, with a reactor sliver on each. Clicking one selects it and eases the camera onto it; the number keys are the same action asked for twice, exactly as R and the old button were.</p>
-        <p>Support hulls are on it too, dimmer, because a miner you cannot find is a miner you cannot redirect.</p>
+      <div>
+        <h3>A schematic is two materials, not a render</h3>
+        <p>Hull quads fill dark and outline cyan; any cell with a purpose (propulsion, gun, ordnance, command)
+        fills and outlines orange. That is the export's own byte, so a ship says what it is made of without
+        anybody labelling it, and a hull shot to pieces will read as one.</p>
       </div>
-
-      <div class="note-item">
-        <h3>Orders are a mode, not a drag</h3>
-        <p>The order row changes with what is selected: a capital gets move, attack and hold, a wing gets patrol, escort and recall. Arming one puts <code>OrderMode</code> where the existing nav disc already reads it, so a left click is a commit and never a selection.</p>
+      <div>
+        <h3>An icon is the same bake, smaller and lit</h3>
+        <p>Side on, orthographic, shaded grey, with a dark rim added in the pixel pass. A silhouette survives
+        being 56 pixels wide. A lit render with panel lines in it does not.</p>
       </div>
-
-      <div class="note-item">
-        <h3>The yard is a drawer</h3>
-        <p>Shut by default, one row of state on its tab: what is building and how many berths are left. A card the bank cannot afford is dim rather than absent, and the reason is on the card, because "no berth" and "not enough" are two different things to do next.</p>
+      <div>
+        <h3>The greedy mesher is what draws the panel lines</h3>
+        <p>Every quad's own border is a line segment, so a big plate is one rectangle and a greebled stern is
+        dozens. The schematic gets its detail from the mesher rather than from an artist, which is the only way
+        twenty seven hulls get one.</p>
       </div>
-
-      <div class="note-item">
-        <h3>Research buys the right to buy</h3>
-        <p>Data unlocks a role or the next rung of your own navy, and the ladder is read off the fleet manifest rather than typed. A locked node shows what it needs first, so the tree is a plan rather than a wall.</p>
+      <div>
+        <h3>Queueing is real</h3>
+        <p>A row costs resource units, lands in the ship queue with a bar, and when it finishes the hull is
+        spawned into the field and the roster count on the left goes up. A row you cannot afford is dim with its
+        price in red, and the producer's production slots are the cap.</p>
       </div>
-
-      <div class="note-item">
-        <h3>Upkeep is per cell</h3>
-        <p>A bar per hull against its reactor, the open cells counted beside it, and one button that welds them at a material a cell. Tender crews take the price down and the banner says by how much, since a discount nobody sees is a discount nobody plans around.</p>
+      <div>
+        <h3>Selection drives three places at once</h3>
+        <p>Clicking a hull draws the bracket and its integrity bar on it in screen space, fills the unit readout,
+        and swaps the schematic in the bottom bar. One selection, one source, three readers.</p>
       </div>
-
     </div>
-
-    <figure>
-      <div class="scroll">
-      <svg viewBox="0 0 860 250" role="img" aria-label="The phone layout stacks the same five regions down one column: tide and resources at the top, the fleet rail as a horizontal scroller under it, the battlefield in the middle, the order row above the thumb, and the yard drawer along the bottom edge.">
-        <defs>
-          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M0 0L10 5L0 10z" fill="currentColor"/>
-          </marker>
-        </defs>
-        <g fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55">
-          <rect x="30" y="24" width="330" height="200"/>
-          <rect x="560" y="14" width="120" height="222" rx="10"/>
-        </g>
-        <g font-family="Chakra Petch, sans-serif" font-size="11" letter-spacing="1.4" fill="currentColor">
-          <text x="30" y="16" opacity=".7">DESKTOP</text>
-          <text x="560" y="8" opacity=".7">PHONE 390</text>
-        </g>
-        <!-- desktop regions -->
-        <g stroke="currentColor" stroke-width="1" fill="none">
-          <rect x="30" y="24" width="330" height="24" fill="currentColor" fill-opacity=".13"/>
-          <rect x="30" y="48" width="88" height="118" fill="currentColor" fill-opacity=".09"/>
-          <rect x="30" y="166" width="330" height="28" fill="currentColor" fill-opacity=".09"/>
-          <rect x="30" y="194" width="330" height="30" fill="#e8b355" fill-opacity=".18" stroke="#e8b355"/>
-        </g>
-        <g font-family="IBM Plex Sans, sans-serif" font-size="10.5" fill="currentColor">
-          <text x="38" y="40">tide and resources</text>
-          <text x="38" y="112" opacity=".85">rail</text>
-          <text x="130" y="112" opacity=".55">battlefield</text>
-          <text x="38" y="184">orders</text>
-          <text x="38" y="213" fill="#e8b355">yard drawer</text>
-        </g>
-        <!-- phone regions -->
-        <g stroke="currentColor" stroke-width="1" fill="none">
-          <rect x="560" y="14" width="120" height="22" fill="currentColor" fill-opacity=".13"/>
-          <rect x="560" y="36" width="120" height="22" fill="currentColor" fill-opacity=".09"/>
-          <rect x="560" y="168" width="120" height="42" fill="currentColor" fill-opacity=".09"/>
-          <rect x="560" y="210" width="120" height="26" fill="#e8b355" fill-opacity=".18" stroke="#e8b355"/>
-        </g>
-        <g font-family="IBM Plex Sans, sans-serif" font-size="9" fill="currentColor">
-          <text x="566" y="29">resources</text>
-          <text x="566" y="51">rail scrolls</text>
-          <text x="566" y="116" opacity=".55">battlefield</text>
-          <text x="566" y="194">orders, 4 up</text>
-          <text x="566" y="227" fill="#e8b355">yard</text>
-        </g>
-        <g stroke="currentColor" stroke-width="1.2" opacity=".6" marker-end="url(#ar)" fill="none">
-          <path d="M374 36h172"/>
-          <path d="M374 106q90 0 170 12"/>
-          <path d="M374 180q86 0 170 8"/>
-          <path d="M374 209h172"/>
-        </g>
-        <g font-family="IBM Plex Sans, sans-serif" font-size="9.5" fill="currentColor" opacity=".65">
-          <text x="400" y="32">same region</text>
-          <text x="400" y="102">rail turns sideways</text>
-          <text x="400" y="176">orders get bigger</text>
-          <text x="400" y="205">drawer unchanged</text>
-        </g>
-      </svg>
-      </div>
-      <figcaption>Five regions, one order, both sizes. What the phone changes is the rail's axis and the order row's cell size; nothing is hidden behind a tab that only a phone has, because a control only a phone has is a control the desktop cannot be checked against.</figcaption>
-    </figure>
-
     <p class="foot">
-      Mockup only. Numbers on it are the ones already in the code (an ore cube lands 120 materials, a crystal cube 50 volatiles, a data cube 30, an escort is two ore cubes, welding is one material a cell, three tender crews cap the discount at half). Nothing here is wired to the game yet: approve it and it becomes the HUD.
+      Placeholder hulls, generated in the page from a voxel lattice on the same material and purpose codes the
+      game uses. The real fleet is twenty three stock hulls and four alien archetypes; the baker reads the hull
+      directory rather than a list, so they arrive without anything here changing.
     </p>
   </section>
 
@@ -1164,534 +450,898 @@ figcaption {
 (function () {
   "use strict";
 
-  // ---- the fleet this mockup stands on. Classes are real hull keys. -----
-  var FLEET = [
-    { id: "van",  name: "Vanguard",  cls: "Terran frigate",   icon: "i-frigate",   role: "cap", hull: 0.96, cells: 214, x: 0.46, y: 0.52, key: "1" },
-    { id: "lash", name: "Lash",      cls: "Terran corvette",  icon: "i-corvette",  role: "cap", hull: 0.71, cells: 688, x: 0.38, y: 0.40, key: "2" },
-    { id: "keel", name: "Keel",      cls: "Terran corvette",  icon: "i-corvette",  role: "cap", hull: 0.34, cells: 1902, x: 0.57, y: 0.62, key: "3" },
-    { id: "wing", name: "Wing",      cls: "12 fighters",      icon: "i-wing",      role: "wing", hull: 0.82, cells: 0, x: 0.63, y: 0.34, key: "4" },
-    { id: "pick", name: "Pickaxe",   cls: "Civil miner",      icon: "i-miner",     role: "sup", hull: 1.00, cells: 0, x: 0.22, y: 0.68, key: "5" },
-    { id: "stil", name: "Still",     cls: "Civil tanker",     icon: "i-tanker",    role: "sup", hull: 0.93, cells: 41, x: 0.17, y: 0.44, key: "6" },
-    { id: "rake", name: "Rake",      cls: "Civil hauler",     icon: "i-salvager",  role: "sup", hull: 0.88, cells: 77, x: 0.74, y: 0.71, key: "7" }
-  ];
-
-  var ORDERS = {
-    cap:  [["move","Move","i-move","M"],["attack","Attack","i-attack","A"],["stop","Hold","i-stop","H"]],
-    wing: [["patrol","Patrol","i-patrol","P"],["escort","Escort","i-escort","E"],["attack","Attack","i-attack","A"],["recall","Recall","i-recall","R"]],
-    sup:  [["move","Move","i-move","M"],["work","Work","i-wrench","W"],["recall","Recall","i-recall","R"]]
+  // ===================================================================
+  // 1. The voxel model, in the lattice the game keeps.
+  // ===================================================================
+  var MAT = { EMPTY: 0, PLATE: 1, FRAME: 2, GLASS: 3, DRIVE: 4, GUN: 5, ORD: 6, CMD: 7 };
+  // Anything with a PURPOSE is a subsystem, and a subsystem is what a
+  // schematic picks out in orange. Straight off the export's own byte.
+  var SUBS = { 4: 1, 5: 1, 6: 1, 7: 1 };
+  var PAINT = {
+    1: [0.50, 0.53, 0.57], 2: [0.32, 0.35, 0.38], 3: [0.30, 0.70, 0.86],
+    4: [0.92, 0.48, 0.16], 5: [0.60, 0.28, 0.26], 6: [0.72, 0.60, 0.22], 7: [0.28, 0.62, 0.74]
   };
 
-  var YARD = [
-    { id: "corv", name: "Corvette",  icon: "i-corvette",  ore: 120, data: 0, berth: 1, secs: 22 },
-    { id: "frig", name: "Frigate",   icon: "i-frigate",   ore: 240, data: 0, berth: 1, secs: 38 },
-    { id: "dest", name: "Destroyer", icon: "i-destroyer", ore: 480, data: 60, berth: 1, secs: 64, need: "dest" },
-    { id: "wing", name: "Fighters",  icon: "i-wing",      ore: 120, data: 0, berth: 0, secs: 14, note: "Rides the flagship" },
-    { id: "mine", name: "Miner",     icon: "i-miner",     ore: 120, data: 0, berth: 1, secs: 20 },
-    { id: "tank", name: "Tanker",    icon: "i-tanker",    ore: 120, data: 0, berth: 1, secs: 20 },
-    { id: "salv", name: "Salvager",  icon: "i-salvager",  ore: 120, data: 0, berth: 1, secs: 20, need: "salv" },
-    { id: "surv", name: "Survey",    icon: "i-survey",    ore: 120, data: 0, berth: 1, secs: 18, need: "surv" },
-    { id: "frei", name: "Freighter", icon: "i-freighter", ore: 120, data: 0, berth: 0, secs: 26, note: "+2 berths", gives: 2 },
-    { id: "tend", name: "Tender",    icon: "i-tender",    ore: 120, data: 0, berth: 1, secs: 20, need: "tend" }
+  function newModel(nx, ny, nz) { return { nx: nx, ny: ny, nz: nz, g: new Uint8Array(nx * ny * nz) }; }
+  function idx(m, x, y, z) { return (z * m.ny + y) * m.nx + x; }
+  function get(m, x, y, z) {
+    if (x < 0 || y < 0 || z < 0 || x >= m.nx || y >= m.ny || z >= m.nz) { return 0; }
+    return m.g[idx(m, x, y, z)];
+  }
+  function box(m, x0, x1, y0, y1, z0, z1, v) {
+    for (var z = Math.max(0, z0); z <= Math.min(m.nz - 1, z1); z++) {
+      for (var y = Math.max(0, y0); y <= Math.min(m.ny - 1, y1); y++) {
+        for (var x = Math.max(0, x0); x <= Math.min(m.nx - 1, x1); x++) { m.g[idx(m, x, y, z)] = v; }
+      }
+    }
+  }
+  // Every hull is symmetric about x, so half is authored and half is a copy.
+  function mirror(m) {
+    for (var z = 0; z < m.nz; z++) {
+      for (var y = 0; y < m.ny; y++) {
+        for (var x = 0; x < m.nx >> 1; x++) { m.g[idx(m, m.nx - 1 - x, y, z)] = m.g[idx(m, x, y, z)]; }
+      }
+    }
+  }
+
+  // One builder, parameterised. A class is a row of numbers, never a branch.
+  function buildHull(p) {
+    var m = newModel(p.nx, p.ny, p.nz);
+    var cx = (p.nx >> 1) - 1, cy = p.ny >> 1, z, t, prof, hw, hh;
+    for (z = 0; z < p.nz; z++) {
+      t = z / (p.nz - 1);
+      prof = Math.pow(Math.sin(Math.PI * Math.min(0.995, 0.09 + t * 0.87)), p.full);
+      hw = Math.round(p.beam * 0.5 * prof);
+      hh = Math.round(p.depth * 0.5 * prof);
+      if (hw < 1 || hh < 1) { continue; }
+      box(m, cx - hw, cx + hw, cy - hh, cy + hh, z, z, MAT.PLATE);
+    }
+    var halfD = Math.round(p.depth * 0.5), halfB = Math.round(p.beam * 0.5);
+    if (p.spine) {
+      box(m, cx - p.spine, cx + p.spine, cy + halfD - 1, cy + halfD + 1,
+        Math.round(p.nz * 0.20), Math.round(p.nz * 0.64), MAT.FRAME);
+    }
+    if (p.sponson) {
+      box(m, cx - halfB - p.sponson, cx - halfB + 1, cy - 1, cy + 1,
+        Math.round(p.nz * 0.30), Math.round(p.nz * 0.54), MAT.FRAME);
+    }
+    var bw = Math.max(1, Math.round(p.beam / (p.bells * 2 + 2)));
+    for (var b = 0; b < p.bells; b++) {
+      var bx = cx - Math.round(p.beam * 0.30) +
+        Math.round(b * p.beam * 0.60 / Math.max(1, p.bells - 1));
+      box(m, bx - bw, bx + bw, cy - bw, cy + bw, 0, Math.round(p.nz * 0.08), MAT.DRIVE);
+    }
+    for (var i = 0; i < p.guns; i++) {
+      var gz = Math.round(p.nz * (0.30 + 0.44 * (p.guns === 1 ? 0.5 : i / (p.guns - 1))));
+      box(m, cx - 2, cx + 2, cy + halfD - 1, cy + halfD + 2, gz - 2, gz + 2, MAT.GUN);
+      if (p.ventral) { box(m, cx - 2, cx + 2, cy - halfD - 2, cy - halfD + 1, gz - 2, gz + 2, MAT.GUN); }
+    }
+    box(m, cx - 2, cx + 2, cy + 1, cy + Math.max(2, Math.round(p.depth * 0.42)),
+      Math.round(p.nz * 0.72), Math.round(p.nz * 0.79), MAT.CMD);
+    box(m, cx - 3, cx + 3, cy - 2, cy + 2, Math.round(p.nz * 0.42), Math.round(p.nz * 0.52), MAT.ORD);
+    // Windows down the flanks, which is where redux-tribes puts them: never
+    // on the deck and never on the keel.
+    for (z = Math.round(p.nz * 0.22); z < Math.round(p.nz * 0.78); z += 3) {
+      for (var y2 = cy - 1; y2 <= cy + 1; y2 += 2) {
+        for (var x2 = 0; x2 < p.nx; x2++) {
+          if (get(m, x2, y2, z) === MAT.PLATE && get(m, x2 - 1, y2, z) === 0) {
+            m.g[idx(m, x2, y2, z)] = MAT.GLASS; break;
+          }
+        }
+      }
+    }
+    mirror(m);
+    return m;
+  }
+
+  // ===================================================================
+  // 2. The greedy mesher, the pass the battlefield already draws with.
+  //    It is also what gives a schematic its panel lines: a big plate is
+  //    one quad and one outline, a greebled stern is dozens.
+  // ===================================================================
+  function greedy(m) {
+    var dims = [m.nx, m.ny, m.nz];
+    var pos = [], col = [], nor = [], sub = [], lin = [], lsub = [];
+    var d, u, v, i, j, k, l, n, w, h, c, stop, x = [0, 0, 0], q;
+
+    function emit(o, du, dv, dd, front, mat) {
+      var p0 = [o[0], o[1], o[2]];
+      var p1 = [o[0] + du[0], o[1] + du[1], o[2] + du[2]];
+      var p2 = [o[0] + du[0] + dv[0], o[1] + du[1] + dv[1], o[2] + du[2] + dv[2]];
+      var p3 = [o[0] + dv[0], o[1] + dv[1], o[2] + dv[2]];
+      var nv = [0, 0, 0]; nv[dd] = front ? 1 : -1;
+      var ord = front ? [p0, p1, p2, p0, p2, p3] : [p0, p2, p1, p0, p3, p2];
+      var rgb = PAINT[mat] || [0.5, 0.5, 0.5];
+      var s = SUBS[mat] ? 1 : 0;
+      for (var t = 0; t < 6; t++) {
+        pos.push(ord[t][0], ord[t][1], ord[t][2]);
+        nor.push(nv[0], nv[1], nv[2]);
+        col.push(rgb[0], rgb[1], rgb[2]);
+        sub.push(s);
+      }
+      var ring = [p0, p1, p2, p3];
+      for (var e = 0; e < 4; e++) {
+        var A = ring[e], B = ring[(e + 1) % 4];
+        lin.push(A[0], A[1], A[2], B[0], B[1], B[2]);
+        lsub.push(s, s);
+      }
+    }
+
+    for (d = 0; d < 3; d++) {
+      u = (d + 1) % 3; v = (d + 2) % 3;
+      q = [0, 0, 0]; q[d] = 1;
+      var mask = new Int32Array(dims[u] * dims[v]);
+      for (x[d] = -1; x[d] < dims[d];) {
+        n = 0;
+        for (x[v] = 0; x[v] < dims[v]; x[v]++) {
+          for (x[u] = 0; x[u] < dims[u]; x[u]++) {
+            var a = x[d] >= 0 ? get(m, x[0], x[1], x[2]) : 0;
+            var b = x[d] < dims[d] - 1 ? get(m, x[0] + q[0], x[1] + q[1], x[2] + q[2]) : 0;
+            mask[n++] = (a !== 0) === (b !== 0) ? 0 : (a !== 0 ? a : -b);
+          }
+        }
+        x[d]++;
+        n = 0;
+        for (j = 0; j < dims[v]; j++) {
+          for (i = 0; i < dims[u];) {
+            c = mask[n];
+            if (!c) { i++; n++; continue; }
+            w = 1;
+            while (i + w < dims[u] && mask[n + w] === c) { w++; }
+            h = 1; stop = false;
+            for (; j + h < dims[v]; h++) {
+              for (k = 0; k < w; k++) { if (mask[n + k + h * dims[u]] !== c) { stop = true; break; } }
+              if (stop) { break; }
+            }
+            x[u] = i; x[v] = j;
+            var du = [0, 0, 0]; du[u] = w;
+            var dv = [0, 0, 0]; dv[v] = h;
+            emit(x, du, dv, d, c > 0, Math.abs(c));
+            for (l = 0; l < h; l++) { for (k = 0; k < w; k++) { mask[n + k + l * dims[u]] = 0; } }
+            i += w; n += w;
+          }
+        }
+      }
+    }
+    return {
+      pos: new Float32Array(pos), col: new Float32Array(col), nor: new Float32Array(nor),
+      sub: new Float32Array(sub), lin: new Float32Array(lin), lsub: new Float32Array(lsub),
+      quads: pos.length / 18
+    };
+  }
+
+  function geomOf(mesh, m) {
+    var g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(mesh.pos, 3));
+    g.setAttribute("color", new THREE.BufferAttribute(mesh.col, 3));
+    g.setAttribute("normal", new THREE.BufferAttribute(mesh.nor, 3));
+    g.setAttribute("sub", new THREE.BufferAttribute(mesh.sub, 1));
+    g.translate(-m.nx / 2, -m.ny / 2, -m.nz / 2);
+    return g;
+  }
+  function lineGeomOf(mesh, m) {
+    var g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(mesh.lin, 3));
+    g.setAttribute("sub", new THREE.BufferAttribute(mesh.lsub, 1));
+    g.translate(-m.nx / 2, -m.ny / 2, -m.nz / 2);
+    return g;
+  }
+
+  // ===================================================================
+  // 3. The baker. A schematic and an icon are ONE function: same mesh,
+  //    same orthographic frame, different palette and camera.
+  // ===================================================================
+  var SCHEM_VS =
+    "attribute float sub; varying float vS; varying vec3 vN;" +
+    "void main(){ vS=sub; vN=normalize(normalMatrix*normal);" +
+    "gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
+  var SCHEM_FS =
+    "varying float vS; varying vec3 vN; uniform vec3 hull; uniform vec3 subs;" +
+    "void main(){ float f=0.42+0.58*max(0.0,dot(vN,normalize(vec3(0.35,0.78,0.52))));" +
+    "gl_FragColor=vec4(mix(hull,subs,step(0.5,vS))*f,1.0); }";
+  var LINE_VS =
+    "attribute float sub; varying float vS;" +
+    "void main(){ vS=sub; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
+  var LINE_FS =
+    "varying float vS; uniform vec3 hull; uniform vec3 subs;" +
+    "void main(){ gl_FragColor=vec4(mix(hull,subs,step(0.5,vS)),1.0); }";
+
+  var baker = null;
+  function bakerInit() {
+    if (baker) { return baker; }
+    var r = new THREE.WebGLRenderer({ canvas: document.createElement("canvas"), antialias: true, alpha: true });
+    r.setPixelRatio(1);
+    var sc = new THREE.Scene();
+    var key = new THREE.DirectionalLight(0xffffff, 1.0); key.position.set(0.45, 0.85, 0.55);
+    var fill = new THREE.DirectionalLight(0x8fb6d8, 0.4); fill.position.set(-0.6, -0.3, -0.5);
+    sc.add(key, fill, new THREE.AmbientLight(0x46525e, 0.7));
+    baker = { r: r, scene: sc, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, -500, 500) };
+    return baker;
+  }
+
+  // Frame the model orthographically. A schematic that cropped a bow would be
+  // a schematic nobody could hold against another one.
+  function frame(cam, m, yaw, pitch, w, h, pad) {
+    var r = Math.sqrt(m.nx * m.nx + m.ny * m.ny + m.nz * m.nz) * 0.5 * pad;
+    var asp = w / h;
+    cam.left = -r * asp; cam.right = r * asp; cam.top = r; cam.bottom = -r;
+    cam.near = -r * 4; cam.far = r * 4;
+    cam.position.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch))
+      .multiplyScalar(r * 2);
+    cam.lookAt(0, 0, 0);
+    cam.updateProjectionMatrix();
+  }
+
+  // Grow a rim outward from any opaque pixel. This is the one honest way to
+  // get a hard outline off a voxel silhouette in a BAKE: a shader would want
+  // the depth buffer, and a bake already has the pixels in hand.
+  function rim(img, w, h, colour, rings) {
+    if (!colour) { return; }
+    var a = new Uint8Array(w * h), i, x, y;
+    for (i = 0; i < w * h; i++) { a[i] = img.data[i * 4 + 3] > 8 ? 1 : 0; }
+    var cur = a;
+    for (var pass = 0; pass < rings; pass++) {
+      var next = new Uint8Array(cur);
+      var al = pass === 0 ? 1 : 0.34;
+      for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+          i = y * w + x;
+          if (cur[i]) { continue; }
+          if ((x > 0 && cur[i - 1]) || (x < w - 1 && cur[i + 1]) ||
+              (y > 0 && cur[i - w]) || (y < h - 1 && cur[i + w])) {
+            img.data[i * 4] = colour[0]; img.data[i * 4 + 1] = colour[1];
+            img.data[i * 4 + 2] = colour[2]; img.data[i * 4 + 3] = Math.round(255 * al);
+            next[i] = 1;
+          }
+        }
+      }
+      cur = next;
+    }
+  }
+
+  function bake(model, mesh, o) {
+    var B = bakerInit(), w = o.w, h = o.h;
+    var rt = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat
+    });
+    var grp = new THREE.Group();
+    var geo = geomOf(mesh, model);
+    if (o.mode === "schematic") {
+      grp.add(new THREE.Mesh(geo, new THREE.ShaderMaterial({
+        vertexShader: SCHEM_VS, fragmentShader: SCHEM_FS,
+        uniforms: { hull: { value: new THREE.Color(0x0d3a52) }, subs: { value: new THREE.Color(0x8e3d05) } }
+      })));
+      grp.add(new THREE.LineSegments(lineGeomOf(mesh, model), new THREE.ShaderMaterial({
+        vertexShader: LINE_VS, fragmentShader: LINE_FS,
+        uniforms: { hull: { value: new THREE.Color(0x3fc8e8) }, subs: { value: new THREE.Color(0xff9a3c) } }
+      })));
+    } else {
+      grp.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0xbcd0de })));
+    }
+    B.scene.add(grp);
+    frame(B.cam, model, o.yaw, o.pitch, w, h, o.pad);
+    B.r.setSize(w, h, false);
+    B.r.setRenderTarget(rt);
+    B.r.setClearColor(0x000000, 0);
+    B.r.clear();
+    B.r.render(B.scene, B.cam);
+    var buf = new Uint8Array(w * h * 4);
+    B.r.readRenderTargetPixels(rt, 0, 0, w, h, buf);
+    B.r.setRenderTarget(null);
+    B.scene.remove(grp);
+    geo.dispose(); rt.dispose();
+
+    var cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    var g = cv.getContext("2d");
+    var img = g.createImageData(w, h);
+    var y, xx, s, t;
+    for (y = 0; y < h; y++) {
+      for (xx = 0; xx < w; xx++) {
+        s = ((h - 1 - y) * w + xx) * 4; t = (y * w + xx) * 4;
+        img.data[t] = buf[s]; img.data[t + 1] = buf[s + 1];
+        img.data[t + 2] = buf[s + 2]; img.data[t + 3] = buf[s + 3];
+      }
+    }
+    rim(img, w, h, o.rim, o.rings);
+    g.putImageData(img, 0, 0);
+    if (o.mode === "schematic") {
+      // Scanlines: what says "a readout of a ship" rather than "a picture
+      // of one". Cheap, and it survives being 120 px wide.
+      g.globalAlpha = 0.17; g.fillStyle = "#000";
+      for (y = 0; y < h; y += 3) { g.fillRect(0, y, w, 1); }
+      g.globalAlpha = 1;
+    }
+    return cv;
+  }
+
+  // ===================================================================
+  // 4. The fleet. A class is a row, so one added tomorrow is on the build
+  //    menu tomorrow, which is the rule the setup form already keeps.
+  // ===================================================================
+  var SHIPS = [
+    { key: "scout", name: "Survey Scout", cat: "fighter", cost: 350, role: "Reconnaissance",
+      spd: 320, gun: 2, arm: 900, slots: 1, build: 7,
+      p: { nx: 12, ny: 8, nz: 18, beam: 8, depth: 5, full: 0.7, bells: 2, guns: 1, spine: 0, sponson: 0, ventral: 0 } },
+    { key: "lance", name: "Lance Fighter", cat: "fighter", cost: 500, role: "Interceptor",
+      spd: 300, gun: 8, arm: 1100, slots: 1, build: 9,
+      p: { nx: 14, ny: 8, nz: 20, beam: 10, depth: 5, full: 0.55, bells: 2, guns: 2, spine: 0, sponson: 1, ventral: 0 } },
+    { key: "bomber", name: "Bomber", cat: "fighter", cost: 550, role: "Anti capital strike",
+      spd: 240, gun: 14, arm: 1600, slots: 1, build: 11,
+      p: { nx: 16, ny: 9, nz: 22, beam: 12, depth: 6, full: 0.6, bells: 2, guns: 2, spine: 1, sponson: 1, ventral: 1 } },
+    { key: "pulsar", name: "Pulsar Corvette", cat: "corvette", cost: 625, role: "Anti fighter screen",
+      spd: 190, gun: 18, arm: 3400, slots: 1, build: 13,
+      p: { nx: 18, ny: 10, nz: 30, beam: 13, depth: 7, full: 0.7, bells: 3, guns: 2, spine: 1, sponson: 2, ventral: 0 } },
+    { key: "minelayer", name: "Minelayer Corvette", cat: "corvette", cost: 700, role: "Area denial",
+      spd: 170, gun: 8, arm: 3800, slots: 1, build: 15,
+      p: { nx: 20, ny: 11, nz: 32, beam: 15, depth: 9, full: 0.85, bells: 3, guns: 1, spine: 1, sponson: 2, ventral: 1 } },
+    { key: "ion", name: "Ion Cannon Frigate", cat: "frigate", cost: 1000, role: "Anti capital line",
+      spd: 120, gun: 34, arm: 14800, slots: 2, build: 21,
+      p: { nx: 22, ny: 13, nz: 46, beam: 16, depth: 10, full: 0.75, bells: 3, guns: 3, spine: 2, sponson: 2, ventral: 1 } },
+    { key: "flak", name: "Flak Frigate", cat: "frigate", cost: 900, role: "Point defence",
+      spd: 130, gun: 28, arm: 13200, slots: 2, build: 19,
+      p: { nx: 22, ny: 14, nz: 42, beam: 17, depth: 11, full: 0.95, bells: 4, guns: 4, spine: 2, sponson: 3, ventral: 1 } },
+    { key: "destroyer", name: "Destroyer", cat: "capital", cost: 2200, role: "Line of battle",
+      spd: 95, gun: 62, arm: 42000, slots: 3, build: 34,
+      p: { nx: 28, ny: 17, nz: 64, beam: 21, depth: 13, full: 0.8, bells: 4, guns: 4, spine: 3, sponson: 3, ventral: 1 } },
+    { key: "carrier", name: "Carrier", cat: "capital", cost: 3500, role: "Ship Production",
+      spd: 75, gun: 40, arm: 55000, slots: 4, build: 46,
+      p: { nx: 32, ny: 20, nz: 76, beam: 25, depth: 16, full: 0.9, bells: 5, guns: 3, spine: 4, sponson: 4, ventral: 1 } },
+    { key: "collector", name: "Resource Collector", cat: "utility", cost: 400, role: "Harvesting",
+      spd: 110, gun: 0, arm: 5200, slots: 1, build: 11,
+      p: { nx: 18, ny: 14, nz: 26, beam: 14, depth: 12, full: 1.3, bells: 2, guns: 0, spine: 1, sponson: 2, ventral: 0 } },
+    { key: "refinery", name: "Mobile Refinery", cat: "utility", cost: 800, role: "Processing",
+      spd: 80, gun: 4, arm: 12000, slots: 2, build: 23,
+      p: { nx: 24, ny: 18, nz: 36, beam: 19, depth: 16, full: 1.4, bells: 3, guns: 1, spine: 2, sponson: 3, ventral: 0 } },
+    { key: "probe", name: "Probe", cat: "utility", cost: 150, role: "Sensor picket",
+      spd: 400, gun: 0, arm: 400, slots: 1, build: 5,
+      p: { nx: 10, ny: 10, nz: 12, beam: 8, depth: 8, full: 1.5, bells: 1, guns: 0, spine: 0, sponson: 0, ventral: 0 } }
   ];
-
-  var TREE = [
-    { title: "Hulls", nodes: [
-      { id: "dest", name: "Destroyer", desc: "Next rung, Terran", cost: 60, icon: "i-destroyer", needs: null },
-      { id: "cruz", name: "Heavy cruiser", desc: "Needs the destroyer", cost: 150, icon: "i-cruiser", needs: "dest" }
-    ]},
-    { title: "Roles", nodes: [
-      { id: "salv", name: "Salvager", desc: "Cuts a wreck for parts", cost: 30, icon: "i-salvager", needs: null, done: true },
-      { id: "surv", name: "Survey", desc: "Scans, takes nothing off", cost: 60, icon: "i-survey", needs: null },
-      { id: "tend", name: "Tender", desc: "Mends a hull in the field", cost: 90, icon: "i-tender", needs: "surv" }
-    ]},
-    { title: "Systems", nodes: [
-      { id: "belt", name: "Belt plating", desc: "Armour up one grade", cost: 60, icon: "i-hull", needs: null },
-      { id: "swep", name: "Sweep optics", desc: "Beams travel further", cost: 90, icon: "i-beam", needs: "belt" },
-      { id: "scrn", name: "Picket screen", desc: "Flak walks wider", cost: 120, icon: "i-shield", needs: "swep" }
-    ]}
+  var CATS = [
+    { id: "fighter", icon: "g-tri", label: "Fighter (Alt+F)", cap: 18 },
+    { id: "corvette", icon: "g-sq", label: "Corvette (Alt+C)", cap: 12 },
+    { id: "frigate", icon: "g-dia", label: "Frigate (Alt+R)", cap: 21 },
+    { id: "capital", icon: "g-trap", label: "Capital (Alt+P)", cap: 15 },
+    { id: "utility", icon: "g-pent", label: "Utility (Alt+T)", cap: 50 },
+    { id: "platform", icon: "g-hex", label: "Platform (Alt+L)", cap: 20 },
+    { id: "module", icon: "g-cir", label: "Module (Alt+M)", cap: 8 },
+    { id: "sensor", icon: "g-pill", label: "Sensors (Alt+S)", cap: 10 }
   ];
+  var byKey = {};
+  SHIPS.forEach(function (s) { byKey[s.key] = s; });
 
-  var bank = { ore: 1240, cry: 380, fuel: 250, data: 210 };
-  var done = { salv: true };
-  var berths = 9;
-  var sel = FLEET[0];
-  var order = null;
-  var queue = [
-    { name: "Corvette", secs: 22, left: 9 },
-    { name: "Miner", secs: 20, left: 17 }
+  SHIPS.forEach(function (s) {
+    s.model = buildHull(s.p);
+    s.mesh = greedy(s.model);
+    s.cells = 0;
+    for (var i = 0; i < s.model.g.length; i++) { if (s.model.g[i]) { s.cells++; } }
+    s.schem = bake(s.model, s.mesh, {
+      mode: "schematic", w: 440, h: 140, yaw: -0.72, pitch: 0.26, pad: 1.02,
+      rim: [126, 234, 255], rings: 2
+    }).toDataURL();
+    s.icon = bake(s.model, s.mesh, {
+      mode: "icon", w: 112, h: 70, yaw: -1.30, pitch: 0.18, pad: 1.02,
+      rim: [10, 22, 32], rings: 1
+    }).toDataURL();
+  });
+
+  // ===================================================================
+  // 5. Nine slice textures, baked the way an atlas would be.
+  // ===================================================================
+  function sliceTex(o) {
+    var s = 48, c = document.createElement("canvas");
+    c.width = c.height = s;
+    var g = c.getContext("2d");
+    if (o.grad) {
+      var lg = g.createLinearGradient(0, 0, 0, s);
+      lg.addColorStop(0, o.grad[0]); lg.addColorStop(1, o.grad[1]);
+      g.fillStyle = lg;
+    } else { g.fillStyle = o.fill; }
+    g.fillRect(0, 0, s, s);
+    g.strokeStyle = o.line; g.lineWidth = 1;
+    g.strokeRect(0.5, 0.5, s - 1, s - 1);
+    if (o.inner) { g.strokeStyle = o.inner; g.strokeRect(3.5, 3.5, s - 7, s - 7); }
+    g.strokeStyle = o.corner; g.lineWidth = 2;
+    var L = 11;
+    [[1, 1, 1, 1], [s - 1, 1, -1, 1], [1, s - 1, 1, -1], [s - 1, s - 1, -1, -1]].forEach(function (k) {
+      g.beginPath();
+      g.moveTo(k[0], k[1] + k[3] * L);
+      g.lineTo(k[0], k[1]);
+      g.lineTo(k[0] + k[2] * L, k[1]);
+      g.stroke();
+    });
+    return c.toDataURL();
+  }
+  var SLICES = [
+    { id: "panel", name: "Panel", fill: "rgba(5,16,26,0.88)", line: "rgba(96,158,188,0.42)",
+      inner: "rgba(96,158,188,0.16)", corner: "#f5c542" },
+    { id: "well", name: "Well", fill: "rgba(2,9,15,0.86)", line: "rgba(60,112,142,0.36)",
+      inner: null, corner: "rgba(73,182,200,0.55)" },
+    { id: "btn", name: "Button", grad: ["rgba(22,64,86,0.9)", "rgba(7,24,35,0.9)"],
+      line: "rgba(120,200,220,0.5)", inner: null, corner: "rgba(140,224,244,0.75)" },
+    { id: "hot", name: "Button armed", grad: ["rgba(96,76,10,0.92)", "rgba(30,23,4,0.92)"],
+      line: "rgba(245,197,66,0.7)", inner: null, corner: "#ffd964" }
   ];
+  var sliceUrl = {};
+  SLICES.forEach(function (s) {
+    sliceUrl[s.id] = sliceTex(s);
+    document.documentElement.style.setProperty("--n-" + s.id, "url(" + sliceUrl[s.id] + ")");
+  });
 
-  var $ = function (id) { return document.getElementById(id); };
-  var svgUse = function (id, cls) {
-    return '<svg' + (cls ? ' class="' + cls + '"' : '') + ' aria-hidden="true"><use href="#' + id + '"></use></svg>';
-  };
-  var band = function (f) { return f > 0.6 ? "" : (f > 0.3 ? "warn" : "crit"); };
+  // ===================================================================
+  // 6. The field.
+  // ===================================================================
+  var stage = document.getElementById("stage");
+  var cv = document.getElementById("world");
+  var renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(46, 16 / 9, 1, 8000);
+  var orbit = { yaw: 0.62, pitch: 0.28, dist: 300, focus: new THREE.Vector3() };
 
-  // ---- toast -----------------------------------------------------------
-  var toastTimer = null;
+  scene.add(new THREE.AmbientLight(0x2b3d4e, 1.0));
+  var sun = new THREE.DirectionalLight(0xffe6c4, 1.3); sun.position.set(0.5, 0.7, 0.35); scene.add(sun);
+  var back = new THREE.DirectionalLight(0x4b7fb5, 0.55); back.position.set(-0.6, -0.2, -0.7); scene.add(back);
+
+  (function backdrop() {
+    var c = document.createElement("canvas");
+    c.width = 1024; c.height = 512;
+    var g = c.getContext("2d");
+    g.fillStyle = "#03060b"; g.fillRect(0, 0, 1024, 512);
+    [[0.24, 0.34, 320, "rgba(28,78,98,0.55)"], [0.66, 0.62, 380, "rgba(56,36,92,0.45)"],
+     [0.86, 0.26, 260, "rgba(20,68,58,0.40)"]].forEach(function (k) {
+      var rg = g.createRadialGradient(k[0] * 1024, k[1] * 512, 0, k[0] * 1024, k[1] * 512, k[2]);
+      rg.addColorStop(0, k[3]); rg.addColorStop(1, "rgba(3,6,11,0)");
+      g.fillStyle = rg; g.fillRect(0, 0, 1024, 512);
+    });
+    var tex = new THREE.CanvasTexture(c);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    scene.background = tex;
+    var sp = [];
+    for (var i = 0; i < 1600; i++) {
+      var th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1), r = 3200;
+      sp.push(r * Math.sin(ph) * Math.cos(th), r * Math.cos(ph), r * Math.sin(ph) * Math.sin(th));
+    }
+    var sg = new THREE.BufferGeometry();
+    sg.setAttribute("position", new THREE.Float32BufferAttribute(sp, 3));
+    scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xc6dcef, size: 2, sizeAttenuation: false })));
+  })();
+
+  var hulls = [], cache = {};
+  function meshFor(spec) {
+    if (!cache[spec.key]) {
+      cache[spec.key] = {
+        geo: geomOf(spec.mesh, spec.model),
+        mat: new THREE.MeshLambertMaterial({ vertexColors: true })
+      };
+    }
+    return new THREE.Mesh(cache[spec.key].geo, cache[spec.key].mat);
+  }
+  function spawn(key, x, y, z, yaw) {
+    var spec = byKey[key];
+    var mesh = meshFor(spec);
+    mesh.position.set(x, y, z);
+    mesh.rotation.y = yaw;
+    var h = {
+      spec: spec, mesh: mesh, hp: 0.55 + Math.random() * 0.45,
+      drift: new THREE.Vector3((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.14, (Math.random() - 0.5) * 0.5),
+      spin: (Math.random() - 0.5) * 0.0011
+    };
+    mesh.userData.h = h;
+    scene.add(mesh);
+    hulls.push(h);
+    return h;
+  }
+  spawn("carrier", 0, 0, 0, 0.42);
+  spawn("destroyer", -140, 16, 70, 1.1);
+  spawn("ion", 110, -20, -46, -0.5);
+  spawn("flak", 146, 12, 34, 2.2);
+  spawn("collector", -80, -30, -80, 0.9);
+  spawn("collector", -110, -20, -50, 1.6);
+  spawn("lance", 56, 34, 96, 0.2);
+  spawn("lance", 72, 38, 104, 0.3);
+  spawn("scout", -46, 46, -126, 2.8);
+
+  (function rock() {
+    var g = new THREE.IcosahedronGeometry(44, 2);
+    var p = g.attributes.position;
+    for (var i = 0; i < p.count; i++) {
+      var vx = p.getX(i), vy = p.getY(i), vz = p.getZ(i);
+      var k = 1 + 0.24 * Math.sin(vx * 0.15) * Math.cos(vy * 0.12) + 0.15 * Math.sin(vz * 0.2);
+      p.setXYZ(i, vx * k, vy * k, vz * k);
+    }
+    g.computeVertexNormals();
+    var r = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0x4d443a, flatShading: true }));
+    r.position.set(-160, -40, -120);
+    scene.add(r);
+  })();
+
+  var sel = hulls[0];
+
+  // ---- camera and picking ----
+  var drag = null;
+  cv.addEventListener("pointerdown", function (e) {
+    drag = { x: e.clientX, y: e.clientY, moved: 0 };
+    cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener("pointermove", function (e) {
+    if (!drag) { return; }
+    var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.moved += Math.abs(dx) + Math.abs(dy);
+    drag.x = e.clientX; drag.y = e.clientY;
+    // Clamped, because one event carrying a whole desk of travel is what
+    // throws a camera across the map.
+    orbit.yaw -= Math.max(-60, Math.min(60, dx)) * 0.006;
+    orbit.pitch = Math.max(-1.3, Math.min(1.3, orbit.pitch + Math.max(-60, Math.min(60, dy)) * 0.005));
+  });
+  cv.addEventListener("pointerup", function (e) {
+    if (drag && drag.moved < 6) { pick(e); }
+    drag = null;
+  });
+  cv.addEventListener("pointercancel", function () { drag = null; });
+  stage.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    // exp, because a wheel reporting pixels hands over a hundred a notch and
+    // a linear factor takes the distance negative.
+    var unit = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? 400 : 1);
+    orbit.dist = Math.max(70, Math.min(1100, orbit.dist * Math.exp(e.deltaY * unit * 0.0012)));
+  }, { passive: false });
+
+  var ray = new THREE.Raycaster();
+  function pick(e) {
+    var r = cv.getBoundingClientRect();
+    var nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1,
+      -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(nd, camera);
+    var hit = ray.intersectObjects(hulls.map(function (h) { return h.mesh; }), false);
+    if (hit.length) { select(hit[0].object.userData.h); }
+  }
+
+  function hpColour(f) { return f > 0.6 ? "#63d12b" : f > 0.3 ? "#f5c542" : "#e8563c"; }
+
+  function select(h) {
+    sel = h;
+    document.getElementById("uname").textContent = h.spec.name;
+    document.getElementById("urole").textContent = h.spec.role;
+    document.getElementById("uspd").textContent = h.spec.spd;
+    document.getElementById("ugun").textContent = h.spec.gun;
+    document.getElementById("uarm").textContent = h.spec.arm;
+    document.getElementById("uschem").src = h.spec.schem;
+    var bar = document.getElementById("uhp");
+    bar.style.width = Math.round(h.hp * 100) + "%";
+    bar.style.background = hpColour(h.hp);
+  }
+
+  // Brackets in SCREEN space, the way a game draws them: a bar has to be the
+  // same number of pixels tall at every range.
+  var brk = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  brk.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1";
+  stage.appendChild(brk);
+  function drawBrackets() {
+    var w = stage.clientWidth, h = stage.clientHeight;
+    brk.setAttribute("viewBox", "0 0 " + w + " " + h);
+    var out = "";
+    hulls.forEach(function (hh) {
+      var v = hh.mesh.position.clone().project(camera);
+      if (v.z > 1) { return; }
+      var x = (v.x * 0.5 + 0.5) * w, y = (-v.y * 0.5 + 0.5) * h;
+      var d = Math.max(50, hh.mesh.position.distanceTo(camera.position));
+      var a = Math.max(10, Math.min(180, 34 * hh.spec.p.nz * w / (d * 16)));
+      if (hh === sel) {
+        var b = a * 0.4;
+        out += '<g stroke="#6ff0ff" stroke-width="1.5" fill="none">' +
+          '<path d="M' + (x - a) + ' ' + (y - a + b) + 'V' + (y - a) + 'H' + (x - a + b) + '"/>' +
+          '<path d="M' + (x + a - b) + ' ' + (y - a) + 'H' + (x + a) + 'V' + (y - a + b) + '"/>' +
+          '<path d="M' + (x - a) + ' ' + (y + a - b) + 'V' + (y + a) + 'H' + (x - a + b) + '"/>' +
+          '<path d="M' + (x + a - b) + ' ' + (y + a) + 'H' + (x + a) + 'V' + (y + a - b) + '"/></g>' +
+          '<rect x="' + (x - a) + '" y="' + (y + a + 5) + '" width="' + (2 * a) + '" height="3" fill="#0a1a12"/>' +
+          '<rect x="' + (x - a) + '" y="' + (y + a + 5) + '" width="' + (2 * a * hh.hp) +
+          '" height="3" fill="' + hpColour(hh.hp) + '"/>';
+      } else {
+        out += '<circle cx="' + x + '" cy="' + y + '" r="' + (a * 0.55) +
+          '" fill="none" stroke="rgba(108,214,168,.45)" stroke-width="1"/>';
+      }
+    });
+    brk.innerHTML = out;
+  }
+
+  // ===================================================================
+  // 7. The HUD, wired.
+  // ===================================================================
+  var hud = document.getElementById("hud");
+  function fit() {
+    var w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    hud.style.transform = "scale(" + (w / 1600) + ")";
+  }
+  window.addEventListener("resize", fit);
+
+  var ru = 3000, tab = "build", cat = "fighter";
+  var producers = ["carrier", "destroyer"], prodAt = 0;
+  var queue = [], tickerT = null;
+
   function say(msg) {
-    var t = $("toast");
+    var t = document.getElementById("ticker");
     t.textContent = msg;
     t.setAttribute("data-on", "1");
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { t.setAttribute("data-on", "0"); }, 1500);
+    clearTimeout(tickerT);
+    tickerT = setTimeout(function () { t.setAttribute("data-on", "0"); }, 1800);
   }
 
-  // ---- the rail --------------------------------------------------------
-  function drawRail() {
-    $("rail").innerHTML = FLEET.map(function (s) {
-      return '<button class="chip" type="button" data-id="' + s.id + '" data-role="' +
-        (s.role === "cap" ? "cap" : "sup") + '" aria-pressed="' + (s === sel) + '">' +
-        svgUse(s.icon) +
-        '<span class="nm">' + s.name + '</span>' +
-        '<span class="hp"><span class="' + band(s.hull) + '" style="width:' + (s.hull * 100) + '%"></span></span>' +
-        '<span class="kb">' + s.key + '</span>' +
-      '</button>';
+  var ROSTER = [
+    { h: "Fighter Squadrons", cat: "fighter", cap: 18 },
+    { s: "Survey Scouts", key: "scout", cap: 8 },
+    { s: "Lance Fighters", key: "lance", cap: 10 },
+    { h: "Corvette Squadrons", cat: "corvette", cap: 12 },
+    { s: "Minelayer Corvettes", key: "minelayer", cap: 5 },
+    { h: "Frigates", cat: "frigate", cap: 21 },
+    { s: "Ion Cannon Frigates", key: "ion", cap: 12 },
+    { h: "Capital Ships", cat: "capital", cap: 15 },
+    { s: "Destroyers", key: "destroyer", cap: 5 },
+    { s: "Carriers", key: "carrier", cap: 6 },
+    { h: "Utility Ships", cat: "utility", cap: 50 },
+    { s: "Resource Collectors", key: "collector", cap: 20 },
+    { s: "Mobile Refineries", key: "refinery", cap: 4 },
+    { s: "Probes", key: "probe", cap: 10 }
+  ];
+  function countOf(r) {
+    var n = 0;
+    hulls.forEach(function (h) { if (r.key ? h.spec.key === r.key : h.spec.cat === r.cat) { n++; } });
+    return n;
+  }
+  function drawRoster() {
+    document.getElementById("roster").innerHTML = ROSTER.map(function (r) {
+      var n = countOf(r);
+      return '<div class="rrow ' + (r.h ? "h" : "s") + '"><span class="n">' + (r.h || r.s) +
+        '</span><span class="c' + (n ? "" : " z") + '">' + n + " / " + r.cap + "</span></div>";
     }).join("");
   }
 
-  // ---- the markers over the field --------------------------------------
-  function drawMarkers() {
-    $("markers").innerHTML = FLEET.map(function (s) {
-      return '<div class="mk" data-id="' + s.id + '" data-sel="' + (s === sel ? 1 : 0) +
-        '" style="left:' + (s.x * 100) + '%;top:' + (s.y * 100) + '%">' +
-        '<span class="ring"></span>' +
-        '<span class="tag">' + s.name + '</span>' +
-        '<span class="bar"><span class="' + band(s.hull) + '" style="width:' + (s.hull * 100) + '%"></span></span>' +
-      '</div>';
+  function drawCats() {
+    document.getElementById("cats").innerHTML = CATS.map(function (c) {
+      return '<button type="button" data-cat="' + c.id + '" aria-pressed="' + (c.id === cat) +
+        '" title="' + c.label + '"><svg aria-hidden="true"><use href="#' + c.icon + '"></use></svg></button>';
     }).join("");
   }
 
-  // ---- the selection card and its orders --------------------------------
-  function drawSelection() {
-    $("sel-icon").innerHTML = '<use href="#' + sel.icon + '"></use>';
-    $("sel-name").textContent = sel.name;
-    var tail = sel.role === "wing"
-      ? "strength " + Math.round(sel.hull * 12) + " of 12"
-      : "reactor <em>" + Math.round(sel.hull * 100) + "%</em>" + (sel.cells ? " &middot; " + sel.cells + " cells open" : " &middot; no damage");
-    $("sel-stat").innerHTML = sel.cls + " &middot; " + tail;
+  var RESEARCH = [
+    { name: "Fighter Chassis", cost: 400 }, { name: "Corvette Drive", cost: 550 },
+    { name: "Capital Ship Drive", cost: 1200 }, { name: "Ion Cannons", cost: 900 },
+    { name: "Plasma Bomb", cost: 750 }, { name: "Defence Field", cost: 1400 }
+  ];
 
-    var set = ORDERS[sel.role] || ORDERS.cap;
-    $("orders").innerHTML = set.map(function (o) {
-      return '<button class="ord" type="button" data-order="' + o[0] + '" aria-pressed="' +
-        (order === o[0]) + '">' + svgUse(o[2]) +
-        '<span>' + o[1] + '</span><span class="key">' + o[3] + '</span></button>';
-    }).join("");
-
-    document.querySelectorAll(".chip").forEach(function (c) {
-      c.setAttribute("aria-pressed", String(c.dataset.id === sel.id));
-    });
-    document.querySelectorAll(".mk").forEach(function (m) {
-      m.setAttribute("data-sel", m.dataset.id === sel.id ? "1" : "0");
-    });
+  function pips(n, of) {
+    var s = "";
+    for (var i = 0; i < of; i++) { s += '<i class="' + (i < n ? "on" : "") + '"></i>'; }
+    return '<span class="pips">' + s + "</span>";
   }
 
-  function pick(id) {
-    var s = FLEET.filter(function (f) { return f.id === id; })[0];
-    if (!s) { return; }
-    sel = s;
-    order = null;
-    drawSelection();
+  function drawList() {
+    var host = document.getElementById("list");
+    var head = document.getElementById("catname");
+    var count = document.getElementById("catcount");
+    if (tab === "research") {
+      head.textContent = "Research";
+      count.textContent = "0 / " + RESEARCH.length;
+      host.innerHTML = RESEARCH.map(function (r, i) {
+        return '<button class="brow" type="button" data-res="' + i + '" data-poor="' + (ru < r.cost ? 1 : 0) +
+          '"><span class="go">&#9654;</span>' + pips(2, 3) +
+          '<span class="nm"><b>' + r.name + "</b><i>" + r.cost + "</i></span></button>";
+      }).join("");
+      return;
+    }
+    if (tab === "launch") {
+      head.textContent = "Docked Craft";
+      var docked = hulls.filter(function (h) { return h.spec.cat === "fighter"; });
+      count.textContent = docked.length + " / 18";
+      host.innerHTML = docked.length ? docked.map(function (h, i) {
+        return '<button class="brow" type="button" data-launch="' + i + '">' +
+          '<span class="go">&#9650;</span><img class="ic" src="' + h.spec.icon + '" alt="">' + pips(1, 3) +
+          '<span class="nm"><b>' + h.spec.name + "</b><i>ready</i></span></button>";
+      }).join("") : '<div class="empty">No craft docked</div>';
+      return;
+    }
+    var c = CATS.filter(function (k) { return k.id === cat; })[0];
+    head.textContent = c.label;
+    count.textContent = countOf({ cat: cat }) + " / " + c.cap;
+    var rows = SHIPS.filter(function (s) { return s.cat === cat; });
+    host.innerHTML = rows.length ? rows.map(function (s) {
+      var on = queue.some(function (q) { return q.key === s.key; });
+      return '<button class="brow" type="button" data-buy="' + s.key + '" data-poor="' + (ru < s.cost ? 1 : 0) +
+        '" data-on="' + (on ? 1 : 0) + '"><span class="go">&#9654;</span>' +
+        '<img class="ic" src="' + s.icon + '" alt="">' + pips(s.slots, 3) +
+        '<span class="nm"><b>' + s.name + "</b><i>" + s.cost + "</i></span></button>";
+    }).join("") : '<div class="empty">Nothing in this class yet</div>';
   }
 
-  // ---- the yard --------------------------------------------------------
-  // Berths are the hulls standing plus the hulls on the slip. A fleet is
-  // built ON its freighters, so the cap moves when one lands rather than
-  // being a number typed anywhere.
-  function used() {
-    var standing = FLEET.filter(function (f) { return f.role !== "wing"; }).length;
-    return standing + queue.reduce(function (a, q) { return a + (q.berth || 0); }, 0);
-  }
-  function drawYard() {
-    $("cards").innerHTML = YARD.map(function (b) {
-      var locked = b.need && !done[b.need];
-      var poor = bank.ore < b.ore || bank.data < b.data;
-      var full = b.berth > 0 && used() + b.berth > berths;
-      var note = locked ? "Research first"
-        : full ? "No berth: build a freighter"
-        : poor ? "Bank short"
-        : (b.note || "1 berth");
-      return '<button class="card" type="button" data-build="' + b.id + '" data-afford="' +
-        (locked || poor || full ? 0 : 1) + '">' +
-        '<span class="top">' + svgUse(b.icon) + '<span class="nm">' + b.name + '</span></span>' +
-        '<span class="px"><i class="o">' + svgUse("i-ore") + b.ore + '</i>' +
-        (b.data ? '<i class="d">' + svgUse("i-data") + b.data + '</i>' : '') + '</span>' +
-        '<span class="note">' + note + '</span>' +
-      '</button>';
-    }).join("");
-    drawQueue();
-    $("q-count").textContent = queue.length ? queue.length + " building" : "yard idle";
-    $("q-berth").textContent = "Berths " + used() + " / " + berths;
+  function drawProducer() {
+    var s = byKey[producers[prodAt]];
+    document.getElementById("prodname").textContent = s.name;
+    document.getElementById("prodschem").src = s.schem;
+    document.getElementById("slots").innerHTML =
+      '<div><span>Production Slots</span><span class="v">' + queue.length + " / " + s.slots + "</span></div>" +
+      '<div><span>Module Slots</span><span class="v">1 / ' + Math.max(1, s.slots - 1) + "</span></div>" +
+      '<div><span>Sensors Slot</span><span class="v">0 / 1</span></div>';
   }
 
   function drawQueue() {
-    if (!queue.length) {
-      $("queue").innerHTML = '<div class="qempty">Queue empty</div>';
-      return;
+    document.getElementById("queue").innerHTML = queue.map(function (q) {
+      var s = byKey[q.key];
+      return '<div class="qslot"><img src="' + s.icon + '" alt=""><span class="qn">' + s.name +
+        '</span><span class="f" style="width:' + ((1 - q.left / q.secs) * 100) + '%"></span></div>';
+    }).join("");
+    document.getElementById("qshiptxt").textContent =
+      queue.length ? "Ship Queue (" + queue.length + ")" : "Ship Queue (Empty)";
+  }
+
+  function drawRU() { document.getElementById("ru").textContent = ru; }
+
+  function drawBars() {
+    var C = [["c-move", "Move"], ["c-attack", "Attack"], ["c-guard", "Guard"], ["c-stop", "Hold"],
+             ["c-form", "Formation"], ["c-stance", "Stance"], ["c-dock", "Dock"], ["c-launch", "Launch"],
+             ["c-rally", "Rally point"], ["c-salv", "Salvage"], ["c-hyper", "Hyperspace"], ["c-scut", "Scuttle"]];
+    document.getElementById("cmd").innerHTML = C.map(function (k, i) {
+      return '<button type="button" data-cmd="' + i + '" aria-pressed="false" title="' + k[1] +
+        '"><svg aria-hidden="true"><use href="#' + k[0] + '"></use></svg></button>';
+    }).join("");
+    var M = [["m-prod", "Production"], ["m-hangar", "Hangar"], ["m-arm", "Armour"],
+             ["m-eng", "Engines"], ["m-sens", "Sensors"], ["m-res", "Refinery"]];
+    document.getElementById("mods").innerHTML = M.map(function (k, i) {
+      return '<button type="button" data-mod="' + i + '" aria-pressed="' + (i < 2) + '" title="' + k[1] +
+        '"><svg aria-hidden="true"><use href="#' + k[0] + '"></use></svg></button>';
+    }).join("");
+    var g = "";
+    for (var n = 1; n <= 10; n++) {
+      g += '<button type="button" data-grp="' + n + '" aria-pressed="' + (n === 6) + '">' + (n === 10 ? 0 : n) + "</button>";
     }
-    $("queue").innerHTML = queue.map(function (q) {
-      var pc = (1 - q.left / q.secs) * 100;
-      return '<div class="qslot"><div class="qn">' + q.name + '</div>' +
-        '<div class="qt">' + Math.ceil(q.left) + 's</div>' +
-        '<span class="fill" style="width:' + pc + '%"></span></div>';
-    }).join("");
+    document.getElementById("groups").innerHTML = g;
   }
 
-  // ---- research --------------------------------------------------------
-  function drawTree() {
-    $("tree").innerHTML = TREE.map(function (br) {
-      return '<div class="branch"><h3>' + br.title + '</h3><div class="nodes">' +
-        br.nodes.map(function (n) {
-          var state = done[n.id] ? "done"
-            : (n.needs && !done[n.needs]) ? "locked"
-            : (bank.data < n.cost) ? "poor" : "open";
-          var cost = state === "done" ? "Held" : n.cost;
-          return '<button class="node" type="button" data-node="' + n.id + '" data-state="' + state + '">' +
-            svgUse(state === "done" ? "i-check" : n.icon) +
-            '<span class="nb"><span class="nn">' + n.name + '</span>' +
-            '<span class="nd">' + (state === "locked" ? "Needs " + n.needs : n.desc) + '</span></span>' +
-            '<span class="cost">' + cost + '</span>' +
-          '</button>';
-        }).join("") + '</div></div>';
-    }).join("");
-    $("r-bank").innerHTML = "Data " + bank.data + " &middot; every rung is read off the fleet manifest";
+  function syncTabs() {
+    document.querySelectorAll("#rtabs button").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.tab === tab));
+    });
+    document.getElementById("ptitle").textContent =
+      tab === "build" ? "Build Menu" : tab === "research" ? "Research Menu" : "Launch Manager";
   }
 
-  var LADDER = [
-    { id: "corv", name: "Corvette",      icon: "i-corvette",  at: "held" },
-    { id: "frig", name: "Frigate",       icon: "i-frigate",   at: "now" },
-    { id: "dest", name: "Destroyer",     icon: "i-destroyer", at: "next" },
-    { id: "cruz", name: "Heavy cruiser", icon: "i-cruiser",   at: "far" }
-  ];
-
-  function drawLadder() {
-    $("rungs").innerHTML = LADDER.map(function (r) {
-      var at = r.at === "next" && done.dest ? "held"
-        : r.at === "far" && done.cruz ? "held" : r.at;
-      var word = at === "now" ? "Flying" : at === "held" ? "Unlocked"
-        : at === "next" ? "Researchable" : "Locked";
-      return '<div class="rung" data-at="' + at + '">' + svgUse(r.icon) +
-        '<div><div class="rn">' + r.name + '</div><div class="rs">' + word + '</div></div></div>';
-    }).join("");
-  }
-
-  // ---- upkeep ----------------------------------------------------------
-  var TENDERS = 2;
-  var DISCOUNT = Math.min(0.5, 0.25 * TENDERS);
-  function priceOf(s) { return Math.round(s.cells * (1 - DISCOUNT)); }
-
-  function drawRoster() {
-    $("roster").innerHTML = FLEET.filter(function (s) { return s.role !== "wing"; }).map(function (s) {
-      var price = priceOf(s);
-      var can = s.cells > 0 && bank.ore >= price;
-      return '<div class="row" data-row="' + s.id + '">' + svgUse(s.icon) +
-        '<div class="rb"><div class="rn">' + s.name + ' <em>' + s.cls + '</em></div>' +
-        '<div class="track"><span class="' + band(s.hull) + '" style="width:' + (s.hull * 100) + '%"></span></div>' +
-        '<div class="cells">' + (s.cells ? s.cells + " cells open" : "no damage") + '</div></div>' +
-        '<button class="weld" type="button" data-weld="' + s.id + '"' + (can ? "" : " disabled") + '>' +
-          '<b>' + (s.cells ? "Weld" : "Whole") + '</b><i>' + (s.cells ? price : "0") + '</i>' +
-        '</button></div>';
-    }).join("") + totalRow();
-    $("u-bank").innerHTML = "Materials " + bank.ore + " &middot; 1 per cell welded, " +
-      Math.round(DISCOUNT * 100) + "% off";
-  }
-
-  function totalRow() {
-    var open = FLEET.filter(function (s) { return s.role !== "wing"; })
-      .reduce(function (a, s) { return a + s.cells; }, 0);
-    var price = Math.round(open * (1 - DISCOUNT));
-    return '<div class="row"><svg aria-hidden="true"><use href="#i-wrench"></use></svg>' +
-      '<div class="rb"><div class="rn">Weld everything</div>' +
-      '<div class="cells">' + open + ' cells open across the fleet</div></div>' +
-      '<button class="weld" type="button" data-weld="all"' +
-      (open && bank.ore >= price ? "" : " disabled") + '><b>Weld all</b><i>' + price + '</i></button></div>';
-  }
-
-  function drawBank() {
-    $("t-ore").textContent = bank.ore;
-    $("t-cry").textContent = bank.cry;
-    $("t-fuel").textContent = bank.fuel;
-    $("t-data").textContent = bank.data;
-  }
-
-  // ---- input -----------------------------------------------------------
-  document.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-screen],[data-size],[data-id],[data-order],[data-build],[data-node],[data-weld],#buildtab");
+  // One click handler, and what the target carries decides what it meant.
+  hud.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-cat],[data-buy],[data-res],[data-tab],[data-cmd],[data-mod],[data-grp],[data-prod],[data-launch],#showall");
     if (!t) { return; }
 
-    if (t.dataset.screen) {
-      document.querySelectorAll("[data-screen]").forEach(function (b) {
-        b.setAttribute("aria-pressed", String(b === t));
-      });
-      ["battle", "research", "upkeep"].forEach(function (k) {
-        $("s-" + k).hidden = k !== t.dataset.screen;
-      });
+    if (t.dataset.cat) {
+      cat = t.dataset.cat;
+      if (tab !== "build") { tab = "build"; syncTabs(); }
+      drawCats(); drawList();
       return;
     }
-
-    if (t.dataset.size) {
-      document.querySelectorAll("[data-size][aria-pressed]").forEach(function (b) {
-        b.setAttribute("aria-pressed", String(b === t));
-      });
-      $("stage").dataset.size = t.dataset.size;
-      sizeCanvas();
+    if (t.id === "showall") { cat = "capital"; drawCats(); drawList(); say("All classes"); return; }
+    if (t.dataset.tab) { tab = t.dataset.tab; syncTabs(); drawList(); return; }
+    if (t.dataset.prod) {
+      prodAt = (prodAt + (t.dataset.prod === "1" ? 1 : producers.length - 1)) % producers.length;
+      drawProducer();
       return;
     }
-
-    if (t.id === "buildtab") {
-      var b = $("build");
-      var open = b.dataset.open === "1" ? "0" : "1";
-      b.dataset.open = open;
-      t.setAttribute("aria-expanded", open === "1" ? "true" : "false");
+    if (t.dataset.buy) {
+      var s = byKey[t.dataset.buy];
+      if (queue.length >= byKey[producers[prodAt]].slots) { say("Production slots full"); return; }
+      if (ru < s.cost) { say("Insufficient resource units"); return; }
+      ru -= s.cost;
+      queue.push({ key: s.key, secs: s.build, left: s.build });
+      drawRU(); drawQueue(); drawProducer(); drawList();
+      say(s.name + " laid down");
       return;
     }
-
-    if (t.dataset.id) { pick(t.dataset.id); return; }
-
-    if (t.dataset.order) {
-      order = order === t.dataset.order ? null : t.dataset.order;
-      drawSelection();
-      if (order === "move") {
-        $("waypoint").setAttribute("data-on", "1");
-        say("Move: click the field");
-      } else {
-        $("waypoint").setAttribute("data-on", "0");
-        if (order) { say(sel.name + ": " + order); }
-      }
+    if (t.dataset.res) {
+      var r = RESEARCH[+t.dataset.res];
+      if (ru < r.cost) { say("Insufficient resource units"); return; }
+      ru -= r.cost; drawRU(); drawList(); say(r.name + " researching");
       return;
     }
-
-    if (t.dataset.build) {
-      var spec = YARD.filter(function (y) { return y.id === t.dataset.build; })[0];
-      if (spec.need && !done[spec.need]) { say("Research " + spec.name + " first"); return; }
-      if (spec.berth > 0 && used() + spec.berth > berths) { say("No berth: build a freighter"); return; }
-      if (bank.ore < spec.ore || bank.data < spec.data) { say("Bank short"); return; }
-      bank.ore -= spec.ore;
-      bank.data -= spec.data;
-      if (spec.gives) { berths += spec.gives; }
-      queue.push({ name: spec.name, secs: spec.secs, left: spec.secs, berth: spec.berth });
-      drawBank(); drawYard(); say(spec.name + " laid down");
+    if (t.dataset.launch) { say("Launching strike craft"); return; }
+    if (t.dataset.cmd !== undefined) {
+      var on = t.getAttribute("aria-pressed") === "true";
+      document.querySelectorAll("[data-cmd]").forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
+      t.setAttribute("aria-pressed", on ? "false" : "true");
+      if (!on) { say(t.title + ": pick a point"); }
       return;
     }
-
-    if (t.dataset.node) {
-      if (t.dataset.state !== "open") { return; }
-      var node = null;
-      TREE.forEach(function (br) {
-        br.nodes.forEach(function (n) { if (n.id === t.dataset.node) { node = n; } });
-      });
-      bank.data -= node.cost;
-      done[node.id] = true;
-      drawBank(); drawTree(); drawLadder(); drawYard();
+    if (t.dataset.mod !== undefined) {
+      t.setAttribute("aria-pressed", t.getAttribute("aria-pressed") === "true" ? "false" : "true");
       return;
     }
-
-    if (t.dataset.weld) {
-      var hurt = t.dataset.weld === "all"
-        ? FLEET.filter(function (f) { return f.role !== "wing" && f.cells > 0; })
-        : FLEET.filter(function (f) { return f.id === t.dataset.weld; });
-      var price = hurt.reduce(function (a, f) { return a + priceOf(f); }, 0);
-      if (!price || bank.ore < price) { return; }
-      bank.ore -= price;
-      hurt.forEach(function (f) { f.cells = 0; f.hull = Math.min(1, f.hull + 0.22); });
-      drawBank(); drawRoster(); drawRail(); drawMarkers(); drawSelection();
-      return;
+    if (t.dataset.grp) {
+      document.querySelectorAll("[data-grp]").forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
+      t.setAttribute("aria-pressed", "true");
+      say("Control group " + t.dataset.grp);
     }
   });
 
-  // Clicking the field commits an armed move order, which is the one place
-  // this mockup copies the game's own rule: a left click is read by exactly
-  // one thing, and the mode decides which.
-  $("field").addEventListener("click", function (e) {
-    if (order !== "move") { return; }
-    var r = this.getBoundingClientRect();
-    var wp = $("waypoint");
-    wp.style.left = ((e.clientX - r.left) / r.width * 100) + "%";
-    wp.style.top = ((e.clientY - r.top) / r.height * 100) + "%";
-    wp.setAttribute("data-on", "1");
-    order = null;
-    drawSelection();
-    say(sel.name + " under way");
+  ["ltabs", "mtabs"].forEach(function (id) {
+    document.getElementById(id).addEventListener("click", function (e) {
+      var b = e.target.closest("button");
+      if (!b) { return; }
+      this.querySelectorAll("button").forEach(function (o) { o.setAttribute("aria-pressed", "false"); });
+      b.setAttribute("aria-pressed", "true");
+      say(b.textContent);
+    });
   });
 
-  document.addEventListener("keydown", function (e) {
+  window.addEventListener("keydown", function (e) {
     if (e.metaKey || e.ctrlKey || e.altKey) { return; }
-    if (/^[1-9]$/.test(e.key)) {
-      var s = FLEET.filter(function (f) { return f.key === e.key; })[0];
-      if (s) { pick(s.id); }
+    if (/^[0-9]$/.test(e.key)) {
+      var b = document.querySelector('[data-grp="' + (e.key === "0" ? 10 : +e.key) + '"]');
+      if (b) { b.click(); }
     }
   });
 
-  // ---- the field itself ------------------------------------------------
-  var cv = $("field"), cx = cv.getContext("2d");
-  var W = 0, H = 0, stars = [], motes = [], rocks = [];
+  // ===================================================================
+  // 8. The loop.
+  // ===================================================================
+  var t0 = performance.now(), last = t0;
+  function loop(now) {
+    var dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
 
-  function seedWorld() {
-    stars = [];
-    for (var i = 0; i < 260; i++) {
-      stars.push({ x: Math.random(), y: Math.random(), r: Math.random() * 0.9 + 0.25, a: Math.random() * 0.6 + 0.18 });
+    var landed = false;
+    for (var i = queue.length - 1; i >= 0; i--) {
+      queue[i].left -= dt;
+      if (queue[i].left <= 0) {
+        var k = queue[i].key;
+        queue.splice(i, 1);
+        var ang = Math.random() * Math.PI * 2;
+        spawn(k, Math.cos(ang) * 150, (Math.random() - 0.5) * 60, Math.sin(ang) * 150, ang);
+        landed = true;
+      }
     }
-    motes = [];
-    for (var j = 0; j < 420; j++) {
-      motes.push({
-        cx: 0.46 + (Math.random() - 0.5) * 0.06,
-        cy: 0.52 + (Math.random() - 0.5) * 0.06,
-        rad: 0.04 + Math.random() * 0.10,
-        ang: Math.random() * Math.PI * 2,
-        spd: (0.16 + Math.random() * 0.3) * (Math.random() < 0.5 ? -1 : 1),
-        sq: 0.45 + Math.random() * 0.5
-      });
-    }
-    rocks = [
-      { x: 0.20, y: 0.70, r: 0.055, s: 1.0 },
-      { x: 0.80, y: 0.26, r: 0.038, s: 0.7 },
-      { x: 0.88, y: 0.66, r: 0.030, s: 1.4 }
-    ];
-  }
+    if (landed) { drawRoster(); drawList(); drawProducer(); say("Ship complete"); }
+    drawQueue();
 
-  function sizeCanvas() {
-    var r = cv.getBoundingClientRect();
-    var dpr = Math.min(2, window.devicePixelRatio || 1);
-    W = Math.max(1, Math.round(r.width));
-    H = Math.max(1, Math.round(r.height));
-    cv.width = Math.round(W * dpr);
-    cv.height = Math.round(H * dpr);
-    cx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    paint(0);
-  }
-
-  function lump(x, y, rr, seed) {
-    cx.beginPath();
-    for (var a = 0; a <= 24; a++) {
-      var t = a / 24 * Math.PI * 2;
-      var k = rr * (0.82 + 0.2 * Math.sin(t * 3 + seed) + 0.1 * Math.sin(t * 5 - seed * 2));
-      var px = x + Math.cos(t) * k, py = y + Math.sin(t) * k * 0.86;
-      if (a === 0) { cx.moveTo(px, py); } else { cx.lineTo(px, py); }
-    }
-    cx.closePath();
-  }
-
-  function ship(s, t) {
-    var x = s.x * W, y = s.y * H;
-    var n = Math.min(W, H);
-    var L = (s.role === "cap" ? 0.030 : s.role === "wing" ? 0.014 : 0.024) * n;
-    cx.save();
-    cx.translate(x, y);
-    cx.rotate(Math.sin(t * 0.14 + s.x * 9) * 0.16 - 0.5);
-    cx.fillStyle = s.role === "sup" ? "#8fa6bd" : "#cfe3f2";
-    cx.fillRect(-L * 0.28, -L * 0.5, L * 0.56, L);
-    cx.fillStyle = "#6f8499";
-    cx.fillRect(-L * 0.62, -L * 0.12, L * 0.34, L * 0.5);
-    cx.fillRect(L * 0.28, -L * 0.12, L * 0.34, L * 0.5);
-    cx.fillStyle = "rgba(110,190,255,.9)";
-    cx.fillRect(-L * 0.16, L * 0.44, L * 0.32, L * 0.3);
-    cx.restore();
-  }
-
-  function paint(t) {
-    cx.clearRect(0, 0, W, H);
-
-    // ground and nebula
-    cx.fillStyle = "#05080d";
-    cx.fillRect(0, 0, W, H);
-    var g1 = cx.createRadialGradient(W * 0.7, H * 0.2, 0, W * 0.7, H * 0.2, W * 0.66);
-    g1.addColorStop(0, "rgba(40,88,74,.30)");
-    g1.addColorStop(1, "rgba(5,8,13,0)");
-    cx.fillStyle = g1; cx.fillRect(0, 0, W, H);
-    var g2 = cx.createRadialGradient(W * 0.2, H * 0.85, 0, W * 0.2, H * 0.85, W * 0.5);
-    g2.addColorStop(0, "rgba(58,40,92,.26)");
-    g2.addColorStop(1, "rgba(5,8,13,0)");
-    cx.fillStyle = g2; cx.fillRect(0, 0, W, H);
-
-    // stars
-    for (var i = 0; i < stars.length; i++) {
-      var s = stars[i];
-      cx.fillStyle = "rgba(206,226,246," + s.a + ")";
-      cx.fillRect(s.x * W, s.y * H, s.r, s.r);
-    }
-
-    // rocks
-    for (var k = 0; k < rocks.length; k++) {
-      var r = rocks[k];
-      var rr = r.r * Math.min(W, H);
-      lump(r.x * W, r.y * H, rr, r.s * 3);
-      cx.fillStyle = "#1b222c"; cx.fill();
-      cx.strokeStyle = "rgba(150,176,200,.28)"; cx.lineWidth = 1; cx.stroke();
-      lump(r.x * W - rr * 0.18, r.y * H - rr * 0.2, rr * 0.42, r.s * 7);
-      cx.fillStyle = "rgba(217,164,65,.42)"; cx.fill();
-    }
-
-    // the swarm, a ring round the flagship
-    for (var m = 0; m < motes.length; m++) {
-      var p = motes[m];
-      var a = p.ang + t * p.spd;
-      var px = (p.cx + Math.cos(a) * p.rad) * W;
-      var py = (p.cy + Math.sin(a) * p.rad * 0.62) * H;
-      cx.fillStyle = "rgba(168,120,232," + (0.30 + p.sq * 0.45) + ")";
-      cx.fillRect(px, py, 1.7, 1.7);
-    }
-
-    // carriers, well out
-    [[0.90, 0.12], [0.06, 0.16]].forEach(function (c) {
-      var n = Math.min(W, H) * 0.030;
-      cx.fillStyle = "#3a2b52";
-      cx.fillRect(c[0] * W - n, c[1] * H - n * 0.6, n * 2, n * 1.2);
-      cx.fillStyle = "rgba(168,120,232,.85)";
-      cx.fillRect(c[0] * W - n * 0.3, c[1] * H + n * 0.6, n * 0.6, n * 0.2);
+    hulls.forEach(function (h) {
+      h.mesh.position.addScaledVector(h.drift, dt * 8);
+      h.mesh.rotation.y += h.spin;
     });
 
-    // the fleet
-    for (var f = 0; f < FLEET.length; f++) { ship(FLEET[f], t); }
+    if (sel) { orbit.focus.lerp(sel.mesh.position, 0.05); }
+    camera.position.set(
+      orbit.focus.x + Math.sin(orbit.yaw) * Math.cos(orbit.pitch) * orbit.dist,
+      orbit.focus.y + Math.sin(orbit.pitch) * orbit.dist,
+      orbit.focus.z + Math.cos(orbit.yaw) * Math.cos(orbit.pitch) * orbit.dist
+    );
+    camera.lookAt(orbit.focus);
+    renderer.render(scene, camera);
+    drawBrackets();
+
+    var s = Math.floor((now - t0) / 1000);
+    document.getElementById("gt").textContent = "Game Time: " + Math.floor(s / 3600) + ": " +
+      Math.floor((s % 3600) / 60) + ":" + String(s % 60).padStart(2, "0");
+    requestAnimationFrame(loop);
   }
 
-  var t0 = null, running = true;
-  function frame(ts) {
-    if (t0 === null) { t0 = ts; }
-    var t = (ts - t0) / 1000;
-    if (running) {
-      paint(t);
-      // the yard ticks so the queue is a thing that finishes
-      var landed = false;
-      for (var i = queue.length - 1; i >= 0; i--) {
-        queue[i].left -= 1 / 60;
-        if (queue[i].left <= 0) { queue.splice(i, 1); landed = true; }
-      }
-      if (Math.floor(t * 4) % 2 === 0) { drawQueue(); }
-      if (landed) { drawYard(); }
-    }
-    requestAnimationFrame(frame);
-  }
+  // ===================================================================
+  // 9. The workbench under the stage: the assets themselves.
+  // ===================================================================
+  document.getElementById("bench").innerHTML = SHIPS.map(function (s) {
+    return '<div class="bcell"><img class="sh" src="' + s.schem + '" alt="' + s.name + ' schematic">' +
+      '<div class="ft"><img src="' + s.icon + '" width="56" height="35" alt="">' +
+      '<img src="' + s.icon + '" width="32" height="20" alt="">' +
+      '<span class="m"><b>' + s.name + "</b><i>" + s.cells + " cells &middot; " + s.mesh.quads +
+      " quads</i></span></div></div>";
+  }).join("");
 
-  var clock = 222;
-  setInterval(function () {
-    clock = clock > 0 ? clock - 1 : 0;
-    $("t-clock").textContent = Math.floor(clock / 60) + ":" + String(clock % 60).padStart(2, "0");
-    document.querySelector(".tidebar span").style.width = (100 - clock / 222 * 62) + "%";
-  }, 1000);
+  document.getElementById("slices").innerHTML = SLICES.map(function (s) {
+    return '<div class="slice"><div class="img"><img src="' + sliceUrl[s.id] + '" alt="' + s.name + ' nine slice">' +
+      '<i style="left:0;right:0;top:48px;height:1px"></i><i style="left:0;right:0;top:96px;height:1px"></i>' +
+      '<i style="top:0;bottom:0;left:48px;width:1px"></i><i style="top:0;bottom:0;left:96px;width:1px"></i></div>' +
+      '<div class="cap"><b>' + s.name + "</b>48 px, slice 16</div></div>";
+  }).join("");
 
-  // A narrow page IS a phone, whatever the toggle says: one rule set, and
-  // the toggle is only there so a desktop can look at the other one.
-  function autoSize() {
-    if (window.innerWidth < 780) {
-      $("stage").dataset.size = "phone";
-      document.querySelectorAll("[data-size][aria-pressed]").forEach(function (b) {
-        b.setAttribute("aria-pressed", String(b.dataset.size === "phone"));
-      });
-    }
-    sizeCanvas();
-  }
-
-  seedWorld();
-  drawRail();
-  drawMarkers();
-  drawSelection();
-  drawYard();
-  drawTree();
-  drawLadder();
-  drawRoster();
-  drawBank();
-  autoSize();
-  window.addEventListener("resize", autoSize);
-  requestAnimationFrame(frame);
+  // ---- go ----
+  drawCats(); drawRoster(); drawList(); drawProducer(); drawQueue(); drawRU(); drawBars();
+  syncTabs(); select(hulls[0]); fit();
+  requestAnimationFrame(loop);
 })();
 </script>
