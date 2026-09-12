@@ -214,19 +214,22 @@ pub(crate) fn spawn_ship(
         }
     }
 
-    // Chewers stand on random exposed cells, one cell out along the open face.
+    // Chewers come in from every SIDE, spread over the sphere by the same
+    // golden angle spiral the carriers stand on: whatever the count, no two of
+    // them end up on the same bearing and none of the hull is out of reach.
+    //
+    // They used to start on a random exposed quad, which is not a random part
+    // of a ship at all. See `Chewer`: it ate every hull from the stern
+    // forward, because the stern is where the small quads are.
     if chewers > 0 {
-        let whole = greedy_mesh(&hull.model, None).skin_all();
-        let mut rng = Rng::new(7 + seed as u64);
         hull.chewers = (0..chewers)
             .map(|n| {
-                let q = rng.int(0, whole.quads() as i32 - 1) as usize;
-                let cell = whole.quad_cell[q] as usize;
-                let nrm = whole.normals[q * 4];
-                let c = hull.model.centre_of(cell);
-                let cs = hull.model.cell;
+                let t = (n as f32 + 0.5) / chewers as f32;
+                let y = 1.0 - 2.0 * t;
+                let r = (1.0 - y * y).max(0.0).sqrt();
+                let a = n as f32 * 2.399_963_2;
                 Chewer {
-                    at: Vec3::new(c[0] + nrm[0] * cs, c[1] + nrm[1] * cs, c[2] + nrm[2] * cs),
+                    from: Vec3::new(r * a.cos(), y, r * a.sin()),
                     next: (n * 7) % 40,
                 }
             })
