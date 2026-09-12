@@ -12,28 +12,41 @@ use crate::*;
 /// cut face that glows and cools on the same ramp a wound does. It is born
 /// `inert`, so everything that skips a dead hull skips it: the swarm's
 /// targets, the guns, the bars, the orders and the reactor rule.
+///
+/// It does NOT carry its flavour, and that is the crystal rule paying off: a
+/// flavour is how the generator laid the seams, and once they are laid every
+/// question anybody asks is answered by the cells themselves.
 #[derive(Component)]
 pub(crate) struct Rock {
-    pub(crate) flavour: Flavour,
-    /// Seam cells STILL in it, counted down as a cutter takes them. The rock
-    /// is what knows this: a readout that walked every cell of every rock to
-    /// answer "is there anything left in this system" would be asking a
-    /// hundred and fifty thousand cells a frame for a number that changes
-    /// once every ten ticks.
-    pub(crate) seam: u32,
+    /// Ore and crystal STILL in it, counted down as a cutter takes them. The
+    /// rock is what knows this: a readout that walked every cell of every
+    /// rock to answer "is there anything left in this system" would be
+    /// asking a hundred and fifty thousand cells a frame for a number that
+    /// changes once every ten ticks.
+    pub(crate) ore: u32,
+    pub(crate) crystal: u32,
+}
+
+impl Rock {
+    /// Whether it is worth cutting at all. Either seam will do: a miner sent
+    /// for metal comes back with fuel as well, because the crystal grows on
+    /// the ore.
+    pub(crate) fn worth_cutting(&self) -> bool {
+        self.ore + self.crystal > 0
+    }
 }
 
 /// Which flavour the nth rock of a field is.
 ///
 /// The field LEANS and never commits: two in three go the way the node says
 /// and the rest go the other way, and the second rock always goes against
-/// the lean, so even a field of two carries both. A system with no ice is a
-/// system that strands a run, and that is a map rule this keeps on the
-/// field's side as well.
+/// the lean, so even a field of two carries both. Since the crystal grows on
+/// the ore, neither flavour can strand a run on its own; what the lean moves
+/// is how long it takes to fill a tank.
 pub(crate) fn flavour_at(n: usize, lean: Flavour) -> Flavour {
     let other = match lean {
-        Flavour::Ice => Flavour::Ore,
-        _ => Flavour::Ice,
+        Flavour::Crystal => Flavour::Ore,
+        _ => Flavour::Crystal,
     };
     if n == 1 || n % 3 == 2 {
         other

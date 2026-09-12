@@ -3,9 +3,61 @@
 
 use crate::*;
 
-/// What one jump costs, in refined fuel. Two ice rocks' seams and the time
-/// to refine them, which is the shape of a system: gather, or leave.
-pub(crate) const JUMP_FUEL: f32 = 60.0;
+/// What the DRIVE itself costs to spin up, in refined fuel, and what every
+/// other hull in the field adds to that.
+///
+/// A jump moves a FLEET, so it is priced by the fleet: the command ship
+/// carries the drive and costs the most, and every hull standing inside the
+/// field when it goes costs its own rung. That is what makes calling in an
+/// escort a decision with two sides to it, because the ship that helps you
+/// hold a system is the ship you then have to pay to take out of it.
+///
+/// The two the owner set are the command ship at 250 and a frigate at 50;
+/// the rest is the rung ladder those two imply, doubling a rung. A civil
+/// trade is frigate sized and is priced there.
+pub(crate) const DRIVE_COST: u32 = 250;
+
+pub(crate) fn rung_cost(class: &str) -> u32 {
+    match class.rsplit_once('_').map(|(_, rung)| rung) {
+        Some("corvette") => 25,
+        Some("destroyer") => 100,
+        Some("cruiser") => 200,
+        _ => 50,
+    }
+}
+
+/// What it costs to take what is actually in the field out of it.
+///
+/// Counted off the LIVE ships rather than off the run's roster, so an escort
+/// that died is an escort you no longer pay for, and a player watching the
+/// number drop as a ship goes is being told exactly what a jump is.
+pub(crate) fn jump_cost(run: &RunState, ships: &Query<JumpShip, JumpFilter>) -> u32 {
+    let mut cost = 0;
+    for (_, _, hull, support, flag) in ships.iter() {
+        if hull.dead_hull {
+            continue;
+        }
+        cost += match (flag.is_some(), support) {
+            (true, _) => DRIVE_COST,
+            (false, Some(s)) => rung_cost(s.role.hull()),
+            // An escort is a copy of the flagship's class by construction.
+            (false, None) => rung_cost(&run.flagship),
+        };
+    }
+    cost
+}
+
+/// The ships a jump takes and prices: everything of the fleet's that is not
+/// a carrier, a rock or a wreck. Named once, because the cost and the jump
+/// itself have to ask the same question of the same set.
+pub(crate) type JumpShip<'a> = (
+    Entity,
+    &'a Transform,
+    &'a Hull,
+    Option<&'a Support>,
+    Option<&'a Flagship>,
+);
+pub(crate) type JumpFilter = (Without<Hive>, Without<Rock>, Without<Wreck>);
 
 /// How long the drive spools, in ticks. Thirty seconds, which is long
 /// enough to be a decision and short enough to be a relief.
@@ -15,11 +67,11 @@ pub(crate) const SPOOL_TICKS: u32 = 30 * 60;
 /// Everything inside goes. Everything outside is left in the system.
 pub(crate) const JUMP_FIELD: f32 = 14.0;
 
-/// How often the tanker turns one cell of ice into one unit of fuel, in
-/// ticks. Two a second, so a full tank is half a minute of refining after
-/// the ice is aboard, and that delay is the whole reason fuel is not simply
-/// a second pile of materials: it starts when the first ice is landed, so
-/// mining the ice EARLY is worth doing.
+/// How often the tanker turns one unit of volatiles into one of fuel, in
+/// ticks. Ten a second, so a fleet's four hundred is most of a minute of
+/// refining after the crystal is landed, and that delay is the whole reason
+/// fuel is not simply a second pile of materials: it starts when the first
+/// cube is landed, so mining the crystal EARLY is what opens the window.
 ///
 /// A whole cell on a cadence rather than a rate times the frame's step,
 /// which is what this was and was wrong: at a fiftieth of a cell a frame,
@@ -27,14 +79,23 @@ pub(crate) const JUMP_FIELD: f32 = 14.0;
 /// anyway, so the tank filled itself out of a pile of ice that never
 /// shrank. A rate in a resource counted in whole cells needs somewhere to
 /// keep the remainder, and a cadence needs none.
-pub(crate) const REFINE_TICKS: u32 = 30;
+pub(crate) const REFINE_TICKS: u32 = 6;
 
-/// The command ship's own tank, which is what stops one bad minute from
-/// ending a good run: enough for one hop, and never enough for two.
-pub(crate) const RESERVE: f32 = 18.0;
+/// What the command ship arrives with in its own tank: most of the drive's
+/// own cost and none of the fleet's, so a run that loses everything can
+/// still leave and a run that wants to keep its ships has to mine.
+pub(crate) const RESERVE: f32 = 180.0;
 
 #[derive(Resource, Default, Debug)]
 pub(crate) struct JumpDrive {
+    /// What it would cost to take the fleet that is standing here out of
+    /// this system, in refined fuel.
+    ///
+    /// Worked out once a frame by `price_jump` rather than at each of the
+    /// three places that want it (the panel, the button and the jump), which
+    /// is the same rule the one clock keeps: a number three systems compute
+    /// for themselves is a number two of them will compute differently.
+    pub(crate) cost: u32,
     /// The tick the spool completes, once it has started.
     pub(crate) ready_at: Option<u32>,
     /// Ships left behind by the last jump, for the screen that says so.
@@ -46,6 +107,15 @@ impl JumpDrive {
     pub(crate) fn spooling(&self) -> bool {
         self.ready_at.is_some()
     }
+}
+
+/// What the fleet in this system would cost to jump out, every frame.
+pub(crate) fn price_jump(
+    run: Res<RunState>,
+    ships: Query<JumpShip, JumpFilter>,
+    mut drive: ResMut<JumpDrive>,
+) {
+    drive.cost = jump_cost(&run, &ships);
 }
 
 /// The tanker at work. No tanker, no refining: a hold of volatiles with
@@ -81,10 +151,13 @@ pub(crate) fn jump_input(
     if !asked {
         return;
     }
-    if bank.fuel < JUMP_FUEL {
+    let cost = drive.cost;
+    if (bank.fuel as u32) < cost {
+        let short = cost - bank.fuel as u32;
         ack.text = format!(
-            "not enough fuel to jump: {:.0} of {JUMP_FUEL:.0}",
-            bank.fuel
+            "not enough fuel to take the fleet out: {:.0} of {cost}, which is {} more crystal cubes",
+            bank.fuel,
+            short.div_ceil(swarm_core::economy::CRYSTAL_CUBE)
         );
         ack.left = ACK_LIFE * 2.0;
         return;
@@ -134,16 +207,7 @@ pub(crate) fn jump_spool(
     cfg: Res<SwarmConfig>,
     mut drive: ResMut<JumpDrive>,
     mut bank: ResMut<Bank>,
-    ships: Query<
-        (
-            Entity,
-            &Transform,
-            &Hull,
-            Option<&Support>,
-            Option<&Flagship>,
-        ),
-        (Without<Hive>, Without<Rock>, Without<Wreck>),
-    >,
+    ships: Query<JumpShip, JumpFilter>,
     mut run: ResMut<RunState>,
     mut fx: ResMut<LiveFx>,
     mut outcome: ResMut<Outcome>,
@@ -154,6 +218,7 @@ pub(crate) fn jump_spool(
     if tick.tick < at {
         return;
     }
+    let cost = drive.cost;
     let reach = cfg.hull_radius * JUMP_FIELD;
     let mut went = Vec::new();
     let mut escorts = 0;
@@ -186,7 +251,7 @@ pub(crate) fn jump_spool(
     // hangs there for ever with nothing at the end of it.
     fx.beams.clear();
     fx.blasts.clear();
-    bank.fuel = (bank.fuel - JUMP_FUEL).max(0.0);
+    bank.fuel = (bank.fuel - cost as f32).max(0.0);
     drive.ready_at = None;
     drive.jumped = true;
     drive.left = left;

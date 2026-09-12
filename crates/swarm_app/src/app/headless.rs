@@ -21,15 +21,13 @@ fn retreat_line(scene: &SceneSpec, bank: &Bank, rocks: &Query<&Rock>) -> Option<
     if !scene.retreat {
         return None;
     }
-    let (mut ore, mut ice) = (0, 0);
+    let (mut ore, mut crystal) = (0, 0);
     for r in rocks.iter() {
-        match r.flavour {
-            Flavour::Ice => ice += r.seam,
-            _ => ore += r.seam,
-        }
+        ore += r.ore;
+        crystal += r.crystal;
     }
     Some(format!(
-        "retreat: {} rocks with {ore} ore and {ice} ice left in them; banked {} materials, {} volatiles, {} data, {:.1} fuel of {JUMP_FUEL:.0}",
+        "retreat: {} rocks with {ore} ore and {crystal} crystal left in them; banked {} materials, {} volatiles, {} data, {:.1} fuel",
         rocks.iter().len(),
         bank.materials,
         bank.volatiles,

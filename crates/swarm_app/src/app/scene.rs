@@ -450,9 +450,10 @@ fn spawn_rocks(
     let mut rocks: Vec<Vec4> = Vec::new();
     let mut rng = Rng::new(scene.seed);
     for n in 0..scene.rocks.min(swarm::MAX_ROCKS) {
-        // A skirmish's rocks are all ore, which is the colour they have
-        // always been drawn in; a retreat's field leans the way its node
-        // says and always carries some of both.
+        // A skirmish's rocks lean to ore, which is what they have always
+        // been; a retreat's field leans the way its node says. Either way
+        // both seams are in every rock, because the crystal grows on the
+        // ore: the lean is how much of it there is, never whether.
         let flavour = if scene.retreat {
             flavour_at(n, scene.lean)
         } else {
@@ -465,9 +466,8 @@ fn spawn_rocks(
             flavour,
         );
         let rr = m.volume_radius();
-        let seam = (0..m.len())
-            .filter(|&c| m.grid[c] == swarm_core::mat::ACCENT)
-            .count() as u32;
+        let count = |what: u8| (0..m.len()).filter(|&c| m.grid[c] == what).count() as u32;
+        let (ore, crystal) = (count(swarm_core::mat::ACCENT), count(swarm_core::mat::GLOW));
         // Strewn between the ship and the carriers, off the plane, so they
         // are cover on the way out rather than scenery at the edge.
         let t = (n as f32 + 0.5) / scene.rocks.max(1) as f32;
@@ -481,7 +481,12 @@ fn spawn_rocks(
         // One material per surface, so the seam keeps its own finish instead
         // of wearing the stone's, and through the SHIP builder, so the rock
         // has a damage grid and bricks and a miner has something to cut.
-        let mats = surface_materials(&m, tex, materials);
+        let mut mats = surface_materials(&m, tex, materials);
+        // And the crystal gets the one material in the game with depth in
+        // it. Overridden here rather than described in the core, the same
+        // way a carrier's drives are: what a surface is made OF is the
+        // model's business and how it is drawn is the picture's.
+        mats[rock::CRYSTAL_SURF as usize] = crystal_material(tex, materials);
         let xf = Transform::from_translation(at).with_rotation(Quat::from_euler(
             EulerRot::YXZ,
             rng.range(0.0, std::f32::consts::TAU),
@@ -498,7 +503,7 @@ fn spawn_rocks(
             Vec::new(),
             ShipSpec::at(xf).seed(0x0CE4 ^ n as u32).inert(),
         );
-        commands.entity(rock).insert(Rock { flavour, seam });
+        commands.entity(rock).insert(Rock { ore, crystal });
         // The sphere the swarm is told about, and it is the VOLUME radius,
         // not the bounding one. `radius()` measures to the furthest corner of
         // the furthest cell, so on a rock stretched half again on one axis it

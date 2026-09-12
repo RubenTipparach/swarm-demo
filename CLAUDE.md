@@ -1688,11 +1688,58 @@ to be paid for.
 **A cut is the slug's bored column with a different thing on the end of it.**
 `DamageGrid::bore` serves the range's slug, a miner's shaft and a salvager's
 cut; `economy::yield_of` reads the cell that came off and answers what it was
-worth. Only a seam cell is worth anything on a rock (ore to materials, ice to
-volatiles, and a barren rock has none), and on a hull it is the machinery
-that is worth DATA and the plating that is worth materials. A hold counts
-every cell cut, spoil included, because a hold holds ROCK: that is what makes
-the trip home a real cost and what the freighter is for.
+worth. Only a seam cell is worth anything on a rock, and on a hull it is the
+machinery that is worth DATA and the plating that is worth materials.
+
+**The fuel is CRYSTAL, and it grows on the ore.** Ice rocks were a second
+flavour of asteroid, so a field had metal rocks and fuel rocks and a miner
+had to be sent to the right one. Crystal is `mat::GLOW` seeded against the
+ore seam instead (`seed_crystal`, a second pass because "near the ore" is not
+knowable while the ore is still being placed), so every rock worth cutting
+carries both and one rock is one decision rather than two. What a node's tag
+moves is how MUCH: measured, an ordinary rock is 1015 cells with 32 of ore
+and 32 of crystal in it, and a field that leans to crystal carries three
+times the crystal on the same ore.
+
+That also took the flavour out of the yield. `Cut::Rock` carries nothing now,
+because the CELL says what it is worth: ore to materials, crystal to
+volatiles, and nothing upstream can hand a cutter the wrong answer.
+
+**And the crystal has DEPTH.** It is the one material in the game that is not
+flat: `tools/make_crystal_texture.py` writes a colour map, a normal map and a
+DEPTH map of jittered facets at two scales, and Bevy's own parallax mapping
+walks the view ray through it per fragment. That is the "parallax ice" trick
+the owner asked for, done by the engine rather than by a shader of ours.
+Three things make it read as opal rather than as blue glass: facets at
+different depths, so the parallax has layers to move against; a hue per facet
+off a green through cyan to violet arc, with the same map as the EMISSIVE, so
+a facet's own colour is what glows out of a shaft; and a rim, so a facet has
+a border rather than reading as noise. The first cut had the height field the
+wrong way up and the maps said so immediately: a depth map whose cell WALLS
+are white is one where the walls are the bottom.
+
+**A harvester carries CUBES, and they come off the rock.** The bank used to
+go up the moment a cutter got home, which is an economy with nothing in the
+world to look at. Eight cells of one seam pack into a cube (`Cube::packed`,
+the one place cells become cargo), the cube is spawned at the shaft, pulled
+in by the ship that cut it, and rides in a line behind that ship all the way
+back. A miner killed on the way home is carrying something a player can watch
+it lose, and a cube whose ship is gone goes LOOSE where it died rather than
+vanishing.
+
+An ore cube lands 120 materials and a crystal cube 50 of volatiles, which are
+the owner's numbers, and a data cube off a wreck lands 30. Every price in the
+yard is written as a multiple of those, because "two cubes" is a thing a
+player can count in the field and a price in bare materials is a number
+nothing in the world corresponds to.
+
+**A jump is priced by the FLEET.** The drive costs 250 to spin up and every
+other hull standing inside the field adds its own rung: 25 for a corvette,
+50 for a frigate or a civil trade, 100 for a destroyer, 200 for a cruiser.
+So calling in an escort is a decision with two sides to it, because the ship
+that helps you hold a system is the ship you then pay to take out of it. It
+is counted off the LIVE ships rather than off the run's roster, so an escort
+that died is an escort you no longer pay for.
 
 **Where a cutter stands is written in the AVOIDANCE's terms.** `fly_hull`
 holds every ship off a rock by the rock's own navigation sphere plus its own
@@ -1721,11 +1768,11 @@ system starts with. The fleet is despawned on the way out, because the result
 screen sits over the field and a fleet still standing in it under the word
 JUMPED is the one picture this must not leave behind.
 
-**Fuel is not a second pile of materials.** A miner cuts ICE, and the tanker
-turns one cell of it into one unit of fuel every half second, so a full tank
-is half a minute of refining AFTER the ice is landed and mining the ice early
-is worth doing. No tanker, no refining: a hold of volatiles with nothing to
-process it is a hold of rock. It is a cadence and not a rate times the
+**Fuel is not a second pile of materials.** A crystal cube lands as
+volatiles, and the tanker turns those into fuel ten a second, so a fleet's
+four hundred is most of a minute of refining AFTER the cube is landed and
+mining the crystal early is what opens the window. No tanker, no refining: a
+hold of volatiles with nothing to process it is a hold of rock. It is a cadence and not a rate times the
 frame's step, and that is a bug this had: at a fiftieth of a cell a frame,
 `volatiles -= take.floor()` took nothing for ever while the fuel went up
 anyway, so the tank filled itself out of a pile of ice that never shrank. A
@@ -1786,21 +1833,21 @@ three runs of this were three different reasons for a bank that stayed at
 nought.
 
 Measured, headless, one miner on a field of eight rocks: the shaft reaches
-the surface at tick 240, the hold fills at 156 cells, the miner unloads 27
-volatiles at tick 860, and the ice in that rock goes 83 to 59. A run played
+the surface at tick 240 and the seam under it a few cuts later. A run played
 straight through with `--onward` crosses three systems in 420 frames and the
 flagship arrives in the third with 257 cells still open.
 
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 83, the core
+cargo test -p swarm_core                                   # 85, the core
 cargo test -p swarm_app                                    # 5, the run's own economy
 python3 tools/shape.py --check                             # no file over 900 lines, no function over 100
 cargo fmt --all -- --check                                 # the format
 cargo clippy -p swarm_core -- -D warnings                  # the core's lints
 python3 tools/pngdiff.py before.png after.png --grid       # a refactor's pictures, against the scene's own floor
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
+python3 tools/make_crystal_texture.py --check              # nor the crystal's three maps
 cargo run --release -p swarm_core --example hull_stats -- assets/hulls   # what makes a hull tough
 cargo run --release -p swarm_core --example rock_stats                   # what a rock is worth, and how buried its ore is
 cargo build --release -p swarm_app

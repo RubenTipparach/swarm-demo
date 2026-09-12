@@ -9,7 +9,7 @@
 //! The tag BIASES a system rather than defining it. Every field carries some
 //! of both flavours of rock, so no route can strand a run with no way to
 //! make fuel: an ore system is one where the ore is worth the time, not one
-//! where there is no ice.
+//! where there is no crystal.
 
 use crate::rng::Rng;
 use crate::rock::Flavour;
@@ -20,8 +20,12 @@ pub enum Tag {
     /// Where a run begins: thin, quiet, and the same every time, because a
     /// run needs one place to teach the loop.
     Start,
+    /// Ore heavy: a miner cuts it mostly for materials.
     Ore,
-    Ice,
+    /// The same rocks run through with crystal, which is where jump fuel
+    /// comes from. Both seams are in every field; a tag is which way it
+    /// leans.
+    Crystal,
     /// A dead hull to cut, worth data and materials.
     Derelict,
     /// Somewhere to spend materials on something you did not research.
@@ -39,7 +43,7 @@ impl Tag {
         match self {
             Tag::Start => "start",
             Tag::Ore => "ore",
-            Tag::Ice => "ice",
+            Tag::Crystal => "crystal",
             Tag::Derelict => "derelict",
             Tag::Cache => "cache",
             Tag::Quiet => "quiet",
@@ -51,7 +55,7 @@ impl Tag {
     /// Which flavour the field leans toward. Both are always present.
     pub fn leans(self) -> Flavour {
         match self {
-            Tag::Ice => Flavour::Ice,
+            Tag::Crystal => Flavour::Crystal,
             _ => Flavour::Ore,
         }
     }
@@ -99,14 +103,14 @@ impl Map {
     }
 }
 
-/// The tags a middle column may draw from. Ore and ice are twice as likely
+/// The tags a middle column may draw from. Ore and crystal are twice as likely
 /// as the rest between them, because gathering is what a system is FOR and
 /// the others are the texture round it.
 const DRAW: [Tag; 8] = [
     Tag::Ore,
-    Tag::Ice,
+    Tag::Crystal,
     Tag::Ore,
-    Tag::Ice,
+    Tag::Crystal,
     Tag::Derelict,
     Tag::Cache,
     Tag::Quiet,
@@ -145,12 +149,15 @@ pub fn generate(seed: u64, acts: u8, depth: u8) -> Map {
                 });
                 column.push(id);
             }
-            // Ice is never more than one column away: a run that had to
+            // Crystal is never more than one column away: a run that had to
             // cross three ore systems to find fuel would be a run the map
             // killed rather than the swarm.
-            if !column.iter().any(|&c| nodes[c as usize].tag == Tag::Ice) {
+            if !column
+                .iter()
+                .any(|&c| nodes[c as usize].tag == Tag::Crystal)
+            {
                 let pick = column[rng.int(0, column.len() as i32 - 1) as usize];
-                nodes[pick as usize].tag = Tag::Ice;
+                nodes[pick as usize].tag = Tag::Crystal;
             }
             link(&mut nodes, &previous, &column, &mut rng);
             previous = column;
@@ -260,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn ice_is_never_more_than_one_jump_away() {
+    fn crystal_is_never_more_than_one_jump_away() {
         for seed in 1..24u64 {
             let map = generate(seed, 3, 3);
             let depth = map.nodes.iter().map(|n| (n.act, n.depth)).max().unwrap().1;
@@ -276,8 +283,8 @@ mod tests {
                         continue;
                     }
                     assert!(
-                        column.iter().any(|n| n.tag == Tag::Ice),
-                        "seed {seed} act {act} column {d} has no ice"
+                        column.iter().any(|n| n.tag == Tag::Crystal),
+                        "seed {seed} act {act} column {d} has no crystal"
                     );
                 }
             }

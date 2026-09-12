@@ -64,7 +64,7 @@ use swarm_core::{
     alien::{generate, Archetype},
     body::Body,
     damage::{chunk_for, Breach, Chunk, DamageGrid, Vent},
-    economy::{yield_of, Cut, Yield},
+    economy::{yield_of, Cube, Cut, Yield, DATA_CUBE, ORE_CUBE},
     fx::{
         blast_sparks, breach_sparks, engine_clusters, engines_of, gun_clusters, guns_of,
         muzzle_sparks, reactor_of, shatter, Beam, Blast, Gun, Spark, SparkKind,
@@ -697,6 +697,8 @@ fn main() {
                     (
                         size_holds,
                         apply_scars,
+                        price_jump,
+                        haul_cargo,
                         script_jobs,
                         script_jump,
                         work_jobs,

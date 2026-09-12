@@ -7,13 +7,20 @@ use crate::*;
 #[derive(Component, Clone, Copy)]
 pub(crate) enum RetreatStat {
     Tide,
-    /// Seam cells still in the field's rocks, which is the one number that
-    /// answers "is there anything left here worth staying for".
-    Seam,
+    /// What is still in the field's rocks, which is the pair of numbers that
+    /// answers "is there anything left here worth staying for". Two rows and
+    /// not one, because they are not interchangeable: the crystal is the way
+    /// out and the ore is everything after it.
+    Ore,
+    Crystal,
     Materials,
     Volatiles,
     Fuel,
     Data,
+    /// Cubes riding on the support ships, which is what is not in the bank
+    /// YET: a full miner a long way from home is a hold a player should be
+    /// able to see before the swarm gets to it.
+    Cargo,
     Crews,
 }
 
@@ -61,11 +68,13 @@ pub(crate) fn build_retreat_panel(mut commands: Commands, run: Res<RunState>) {
                 ..default()
             });
             for (stat, label) in [
-                (RetreatStat::Seam, "seam in the field"),
+                (RetreatStat::Ore, "ore in the field"),
+                (RetreatStat::Crystal, "crystal in the field"),
                 (RetreatStat::Materials, "materials"),
                 (RetreatStat::Volatiles, "volatiles"),
                 (RetreatStat::Fuel, "jump fuel"),
                 (RetreatStat::Data, "data"),
+                (RetreatStat::Cargo, "cubes aboard"),
             ] {
                 row(p, label, move |r| {
                     r.spawn((
@@ -108,7 +117,11 @@ pub(crate) fn retreat_readouts(
     rocks: Query<&Rock>,
     mut stats: Query<(&RetreatStat, &mut Text, &mut TextColor)>,
 ) {
-    let seam: u32 = rocks.iter().map(|r| r.seam).sum();
+    // What it would cost to take the fleet that is actually standing here
+    // out of the system, which is the number the button is judged against.
+    let cost = drive.cost;
+    let ore: u32 = rocks.iter().map(|r| r.ore).sum();
+    let crystal: u32 = rocks.iter().map(|r| r.crystal).sum();
     let left = scene.tide.until_fleet(tick.tick);
     let phase = scene.tide.phase_at(tick.tick);
     for (stat, mut t, mut colour) in &mut stats {
@@ -126,11 +139,18 @@ pub(crate) fn retreat_readouts(
                     (left / 60) % 60
                 ),
             },
-            RetreatStat::Seam => seam.to_string(),
+            RetreatStat::Ore => ore.to_string(),
+            RetreatStat::Crystal => crystal.to_string(),
             RetreatStat::Materials => bank.materials.to_string(),
             RetreatStat::Volatiles => bank.volatiles.to_string(),
-            RetreatStat::Fuel => format!("{:.0} of {JUMP_FUEL:.0}", bank.fuel),
+            RetreatStat::Fuel => format!("{:.0} of {cost}", bank.fuel),
             RetreatStat::Data => bank.data.to_string(),
+            RetreatStat::Cargo => {
+                let (aboard, room): (u32, u32) = crews
+                    .iter()
+                    .fold((0, 0), |(a, r), (_, _, h, _)| (a + h.carrying, r + h.cap));
+                format!("{aboard} of {room}")
+            }
             RetreatStat::Crews => crews
                 .iter()
                 .map(|(s, j, h, hull)| {
@@ -166,7 +186,11 @@ pub(crate) fn retreat_readouts(
             }
         }
         if matches!(stat, RetreatStat::Fuel) {
-            let want = if bank.fuel >= JUMP_FUEL { GREEN } else { TEXT };
+            let want = if bank.fuel as u32 >= cost {
+                GREEN
+            } else {
+                TEXT
+            };
             if colour.0 != want {
                 colour.0 = want;
             }

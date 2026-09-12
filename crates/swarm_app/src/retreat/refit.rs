@@ -35,15 +35,22 @@ pub(crate) enum Buy {
 
 /// What one costs, as (materials, data).
 ///
-/// Tuning numbers, which is why they are here beside the one system that
-/// reads them and not inside it. A system is worth a few hundred materials
-/// if it is worked hard, so an escort is most of a good system and a repair
-/// is a fraction of one.
+/// Written in CUBES, because a cube is what a player actually carries home
+/// and "two cubes" is a thing they can count in the field: a price in bare
+/// materials would be a number nothing in the world corresponds to. Tuning
+/// numbers, so they live here beside the one system that reads them.
+///
+/// A rock gives up three or four ore cubes, so an escort is most of a rock
+/// and a support ship is a third of one.
+pub(crate) const ESCORT_COST: u32 = 2 * ORE_CUBE;
+pub(crate) const SHIP_COST: u32 = ORE_CUBE;
+pub(crate) const RESEARCH_COST: u32 = DATA_CUBE;
+pub(crate) const REFIT_COST: (u32, u32) = (4 * ORE_CUBE, 2 * DATA_CUBE);
+
+/// A repair is priced by the CELL rather than by the cube, because that is
+/// what it is: a hole is so many cells and welding one shut costs what it
+/// costs. A ship half eaten therefore costs about a cube.
 pub(crate) const REPAIR_PER_CELL: u32 = 1;
-pub(crate) const ESCORT_COST: u32 = 240;
-pub(crate) const SHIP_COST: u32 = 160;
-pub(crate) const RESEARCH_COST: u32 = 12;
-pub(crate) const REFIT_COST: (u32, u32) = (420, 20);
 
 impl Buy {
     pub(crate) fn price(&self, run: &RunState) -> (u32, u32) {

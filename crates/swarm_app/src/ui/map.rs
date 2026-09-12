@@ -177,7 +177,7 @@ fn tag_says(tag: Tag) -> &'static str {
         Tag::Start => "where the retreat began",
         Tag::Quiet => "thin rocks, and a slow tide",
         Tag::Ore => "metal, and the swarm knows it",
-        Tag::Ice => "volatiles: fuel for two jumps",
+        Tag::Crystal => "crystal in every seam: fuel for two jumps",
         Tag::Derelict => "a dead hull: data, and metal, for a salvager",
         Tag::Cache => "a yard, for what you never researched",
         Tag::Nest => "carriers standing close from the first second",

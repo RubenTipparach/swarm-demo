@@ -6,12 +6,14 @@
 //! what job it has been given, and the bank that everything it cuts ends up
 //! in.
 
+mod cargo;
 mod jump;
 mod refit;
 mod run;
 mod tide;
 mod work;
 
+pub(crate) use cargo::*;
 pub(crate) use jump::*;
 pub(crate) use refit::*;
 pub(crate) use run::*;
@@ -114,29 +116,31 @@ pub(crate) struct Support {
     pub(crate) station: Vec3,
 }
 
-/// What a hold has in it, in cells.
+/// What a hold has in it, in CUBES.
 ///
-/// `cells` counts everything cut, spoil included, because a hold holds ROCK:
-/// the stone comes back with the ore and the command ship's refinery is what
-/// separates them. That is what makes a trip a trip, and it is why the
-/// freighter exists.
+/// `carrying` is what is aboard and `loose` is the cells cut since the last
+/// cube popped, which is the remainder rather than cargo: a cutter that
+/// dropped its part cube every bite would take twice as long for nothing
+/// anybody could see. The cubes themselves are entities and are not in here,
+/// because a cube is a thing in the world and this is only the count that
+/// says when a hold is full.
 #[derive(Component, Default)]
 pub(crate) struct Hold {
-    pub(crate) got: Yield,
-    pub(crate) cells: u32,
+    pub(crate) loose: Yield,
+    pub(crate) carrying: u32,
     pub(crate) cap: u32,
 }
 
 impl Hold {
     pub(crate) fn full(&self) -> bool {
-        self.cells >= self.cap
+        self.carrying >= self.cap
     }
 
     pub(crate) fn share(&self) -> f32 {
         if self.cap == 0 {
             0.0
         } else {
-            self.cells as f32 / self.cap as f32
+            self.carrying as f32 / self.cap as f32
         }
     }
 }
@@ -152,11 +156,11 @@ pub(crate) enum Job {
     Unload(Option<Entity>),
 }
 
-/// How much of its own hull a support ship can carry as cargo, as a share of
-/// its cells. A twentieth, which is about half a minute of cutting: long
-/// enough that the trip home is a real cost and short enough that the bank
-/// moves while a player is watching it.
-pub(crate) const HOLD_SHARE: f32 = 0.05;
+/// How many cells of hull a support ship needs per CUBE it can carry. A
+/// miner comes out at four and a freighter at more, which is what makes the
+/// freighter worth building: the trip home is the cost, so the ship that
+/// makes fewer of them is the ship that gathers faster.
+pub(crate) const CELLS_PER_SLOT: u32 = 2200;
 
 /// How often a cutter takes a bite, in ticks, and how deep it bores, in
 /// cells. A cut is a SHAFT: the ore is buried under ninety five percent of a
@@ -222,7 +226,7 @@ pub(crate) fn spawn_support(
 pub(crate) fn size_holds(mut q: Query<(&Hull, &mut Hold), Added<Hull>>) {
     for (hull, mut hold) in &mut q {
         if hold.cap == 0 {
-            hold.cap = (hull.cells as f32 * HOLD_SHARE).max(1.0) as u32;
+            hold.cap = (hull.cells as u32 / CELLS_PER_SLOT).max(1);
         }
     }
 }
