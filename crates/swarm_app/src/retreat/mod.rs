@@ -10,6 +10,8 @@ mod cargo;
 mod jump;
 mod refit;
 mod run;
+mod salvage;
+mod tender;
 mod tide;
 mod work;
 
@@ -17,6 +19,8 @@ pub(crate) use cargo::*;
 pub(crate) use jump::*;
 pub(crate) use refit::*;
 pub(crate) use run::*;
+pub(crate) use salvage::*;
+pub(crate) use tender::*;
 pub(crate) use tide::*;
 pub(crate) use work::*;
 
@@ -81,14 +85,29 @@ impl Role {
     }
 
     /// Whether this role can work the thing under the cursor. A miner cuts
-    /// rocks and a salvager cuts hulls, and neither does the other's job,
-    /// which is what makes losing one of them hurt.
+    /// rocks, a salvager cuts hulls, a survey ship SCANS either and takes
+    /// nothing off it, and none of them does another's job, which is what
+    /// makes losing one of them hurt.
     pub(crate) fn cuts_rock(self) -> bool {
-        matches!(self, Role::Miner)
+        matches!(self, Role::Miner | Role::Survey)
     }
 
     pub(crate) fn cuts_wreck(self) -> bool {
-        matches!(self, Role::Salvager)
+        matches!(self, Role::Salvager | Role::Survey)
+    }
+
+    /// A survey ship reads a body rather than cutting it: the same job, the
+    /// same standoff and the same trip home, and what it fills its hold with
+    /// is DATA. A body can only be learned once, which is what stops a run
+    /// parking one survey ship on one rock for ever.
+    pub(crate) fn scans(self) -> bool {
+        matches!(self, Role::Survey)
+    }
+
+    /// What a tender does, which is the only thing in this game that mends
+    /// rather than breaks.
+    pub(crate) fn mends(self) -> bool {
+        matches!(self, Role::Tender)
     }
 
     pub(crate) fn parse(s: &str) -> Option<Role> {
@@ -168,6 +187,16 @@ pub(crate) const CELLS_PER_SLOT: u32 = 2200;
 pub(crate) const CUT_TICKS: u32 = 10;
 pub(crate) const CUT_DEPTH: f32 = 3.0;
 
+/// How wide a SALVAGE cut is, in cells of radius.
+///
+/// A salvager is not drilling for a seam, it is lifting a hulk apart, so
+/// what it takes is a section rather than a column. Two cells of radius is
+/// about thirty cells a cut, which at `CUT_TICKS` is two hundred a second
+/// and puts a whole frigate's wreckage inside one system's clock. A bore
+/// took three, which is fifty times slower and would have made every tier of
+/// a rebuild unreachable while looking exactly like a salvager at work.
+pub(crate) const SALVAGE_CUT: f32 = 2.0;
+
 /// Where a cutter stands and how far it cuts, both as multiples of the
 /// nearest the SHIP's own avoidance will let it get (`work_jobs` computes
 /// that from the same two numbers `fly_hull` uses). Just outside, so it
@@ -175,6 +204,27 @@ pub(crate) const CUT_DEPTH: f32 = 3.0;
 /// slack on the reach, because an order is arrived at approximately.
 pub(crate) const WORK_STANDOFF: f32 = 1.05;
 pub(crate) const WORK_REACH: f32 = 1.35;
+
+/// What a survey ship learns per pass, in cells of data, and how much of a
+/// body there is to learn: a quarter of what is IN it, which on an ordinary
+/// rock is a couple of data cubes and two unlocks. A body is scanned once
+/// and then known, so a survey ship's work is going and looking rather than
+/// standing still.
+pub(crate) const SCAN_RATE: u32 = 4;
+pub(crate) const SCAN_SHARE: u32 = 4;
+
+/// What each freighter adds to everything landed, as a share of it. The
+/// freighter cuts nothing: what it does is make every other ship's trip
+/// worth more, so the first one is worth building the moment two cutters are
+/// working.
+pub(crate) const FREIGHT_SHARE: f32 = 0.25;
+
+/// How many ships a fleet may field beyond the command ship, and what a
+/// freighter adds to that. Berths are the freighter's other job and the
+/// reason a fleet cannot simply grow: a run opens able to field the three it
+/// starts with, and every hull after that needs somewhere to put it.
+pub(crate) const BASE_BERTHS: u32 = 3;
+pub(crate) const FREIGHT_BERTHS: u32 = 2;
 
 /// How far round a body a cutter steps when a shaft breaks through, in
 /// radians. A fifth of a turn, so it reaches a fresh face in one move and

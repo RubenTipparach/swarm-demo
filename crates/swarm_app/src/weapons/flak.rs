@@ -71,9 +71,11 @@ pub(crate) fn fly_tracers(
 pub(crate) fn fire_flak(
     tick: Res<Tick>,
     scene: Res<SceneSpec>,
-    // Not the carriers, which are hulls now: a mothership does not
-    // carry the fleet's guns and would otherwise open fire on its own side.
-    hulls: Query<(&Hull, &Transform), (Without<Hive>, Without<Dummy>)>,
+    // Not the carriers, which are hulls now: a mothership does not carry the
+    // fleet's guns and would otherwise open fire on its own side. And not
+    // the support ships, which are unarmed: a miner that could keep the
+    // swarm off itself is a miner nobody has to escort.
+    hulls: Query<(&Hull, &Transform), (Without<Hive>, Without<Dummy>, Without<Support>)>,
     mut fx: ResMut<LiveFx>,
     mut sparks: ResMut<SparkQueue>,
 ) {

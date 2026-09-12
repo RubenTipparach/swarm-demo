@@ -48,11 +48,21 @@ pub(crate) const WRECK_SPIN: (f32, f32) = (0.25, 0.6);
 pub(crate) const WRECK_TICKS: u32 = 3600;
 
 /// The wreck drifts. A piece keeps the way it was thrown and turns about its
-/// own middle, and after a minute it is gone.
+/// own middle, and after a minute it is gone unless somebody is working it.
+///
+/// A piece ages out because ten carriers' wrecks are ten thousand bricks of
+/// mesh, and that is a cost argument rather than a rule about wrecks. A
+/// piece a salvager is standing on is one a player has DECIDED to keep, and
+/// taking it away mid cut is the harness deleting the thing under test:
+/// measured, two salvagers strip about thirty cells a second off a wreck,
+/// and half a frigate is four and a half thousand of them. A minute is not
+/// enough for any tier of a rebuild, and nothing in the picture would have
+/// said why.
 pub(crate) fn drift_wrecks(
     time: Res<Time>,
     scene: Res<SceneSpec>,
     tick: Res<Tick>,
+    jobs: Query<&Job>,
     mut commands: Commands,
     mut q: Query<(Entity, &mut Transform, &mut Wreck)>,
 ) {
@@ -62,9 +72,13 @@ pub(crate) fn drift_wrecks(
         w.pivot += step;
         xf.rotation = (Quat::from_scaled_axis(w.spin * dt) * xf.rotation).normalize();
         xf.translation = w.pivot - xf.rotation * (w.centroid * xf.scale);
-        if tick.tick.saturating_sub(w.born) > WRECK_TICKS {
-            commands.entity(e).despawn();
+        if tick.tick.saturating_sub(w.born) <= WRECK_TICKS {
+            continue;
         }
+        if jobs.iter().any(|j| matches!(j, Job::Work(t) if *t == e)) {
+            continue;
+        }
+        commands.entity(e).despawn();
     }
 }
 
@@ -100,6 +114,40 @@ pub(crate) fn fly_chunks(
 /// getting to it means chewing a hole all the way through, and half of it is
 /// what it takes.
 pub(crate) const REACTOR_LOSS: f32 = 0.50;
+
+/// An escort of the fleet's, which is a hull that is neither a support ship
+/// nor a carrier. The filter IS the interface, as every query here.
+pub(crate) type LiveEscort = (With<Escort>, Without<Support>, Without<Hive>);
+
+/// Take the reactor out of ONE escort, for a harness that needs a wreck.
+///
+/// The headless equivalent of the one thing a player cannot script: a ship
+/// dying. `--explode` takes every hull at once, which is a picture of a
+/// fireball and no fleet left to salvage with, so this kills one escort's
+/// reactor cells and lets `go_critical` take the ship on its OWN rule the
+/// tick after. One death path, not two: the wreck a salvager works is the
+/// wreck the swarm would have made.
+pub(crate) fn script_wreck(
+    tick: Res<Tick>,
+    scene: Res<SceneSpec>,
+    mut hulls: Query<&mut Hull, LiveEscort>,
+) {
+    if scene.wreck == 0 || tick.tick != scene.wreck {
+        return;
+    }
+    let Some(mut hull) = hulls.iter_mut().find(|h| !h.dead_hull) else {
+        return;
+    };
+    let hull = &mut *hull;
+    let core = hull.reactor.clone();
+    for c in core {
+        hull.damage.kill(c, tick.tick);
+    }
+    info!(
+        "the harness took an escort's reactor out at tick {}",
+        tick.tick
+    );
+}
 
 pub(crate) fn go_critical(
     tick: Res<Tick>,
@@ -257,6 +305,10 @@ pub(crate) fn go_critical(
                 .sum::<Vec3>()
                 / piece.len() as f32;
             let mut wreck = Hull {
+                // A piece remembers what ship it came off, which is what a
+                // salvager is working toward: you cannot rebuild a frigate
+                // out of wreckage that has forgotten it was one.
+                class: hull.class.clone(),
                 model: hull.model.clone(),
                 bricks: (0..damage.brick_count())
                     .map(|_| Brick::default())
@@ -310,6 +362,18 @@ pub(crate) fn go_critical(
                 rng.range(-0.08, 0.08),
             );
             sizes.push(piece.len());
+            // What it came off, for the salvager. Only a ship of the
+            // fleet's: a carrier has no class and cannot be rebuilt, which
+            // is the rule falling out of the data rather than being written.
+            if let Some(class) = hull.class.clone() {
+                commands.entity(wreck_e).insert(Remains {
+                    ship: hull.seed,
+                    class,
+                    whole: hull.cells as u32,
+                    got: 0,
+                    banked: 0,
+                });
+            }
             commands.entity(wreck_e).insert((
                 wreck,
                 Wreck {

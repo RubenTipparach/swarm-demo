@@ -28,6 +28,7 @@ use bevy::{
     app::{AppExit, ScheduleRunnerPlugin},
     asset::{LoadState, RenderAssetUsages},
     camera::RenderTarget,
+    ecs::system::SystemParam,
     image::{
         ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler,
         ImageSamplerDescriptor,
@@ -64,7 +65,7 @@ use swarm_core::{
     alien::{generate, Archetype},
     body::Body,
     damage::{chunk_for, Breach, Chunk, DamageGrid, Vent},
-    economy::{yield_of, Cube, Cut, Yield, DATA_CUBE, ORE_CUBE},
+    economy::{yield_of, Cube, Cut, Pack, Yield, DATA_CUBE, ORE_CUBE},
     fx::{
         blast_sparks, breach_sparks, engine_clusters, engines_of, gun_clusters, guns_of,
         muzzle_sparks, reactor_of, shatter, Beam, Blast, Gun, Spark, SparkKind,
@@ -135,6 +136,7 @@ struct Args {
     /// Force the reactor at this tick. Nought leaves it to the hull's own
     /// state, which goes critical once enough of it is gone.
     explode: u32,
+    wreck: u32,
     /// Ticks between one gun firing and the next. Nought silences them.
     cadence: u32,
     /// How many motherships the swarm flies from.
@@ -218,6 +220,7 @@ fn parse_args() -> Args {
         zoom: 4.6,
         target: Vec3::ZERO,
         explode: 0,
+        wreck: 0,
         cadence: 70,
         hives: 10,
         order: None,
@@ -284,6 +287,10 @@ fn parse_args() -> Args {
             }
             "--chewers" => {
                 a.chewers = next().parse().expect("--chewers N");
+                i += 1;
+            }
+            "--wreck" => {
+                a.wreck = next().parse().expect("--wreck TICK");
                 i += 1;
             }
             "--explode" => {
@@ -450,6 +457,7 @@ fn main() {
         zoom: args.zoom,
         target: args.target,
         explode: args.explode,
+        wreck: args.wreck,
         cadence: args.cadence,
         hives: args.hives.min(swarm::MAX_HIVES),
         order: args.order,
@@ -569,6 +577,7 @@ fn main() {
                     (toggle_pause, select_input, sandbox_input, assign_work)
                         .chain()
                         .before(nav_input),
+                    rebuild_input,
                     jump_input,
                     (range_input, sandbox_fire).after(nav_input),
                     sandbox_readouts,
@@ -690,7 +699,12 @@ fn main() {
                     (fire_guns, fire_flak).chain(),
                     (launch_fighters, fly_fighters, fighters_fire, wear_fighters).chain(),
                     resolve_beams,
-                    (chew, vent_smoke, go_critical, bleed_hives),
+                    (
+                        chew,
+                        vent_smoke,
+                        (script_wreck, go_critical).chain(),
+                        bleed_hives,
+                    ),
                     // The retreat: what the support ships are doing, what
                     // the tanker has refined, what the tide has brought in,
                     // and the drive, which is the only way out.
@@ -699,9 +713,14 @@ fn main() {
                         apply_scars,
                         price_jump,
                         haul_cargo,
+                        tend_repairs,
                         script_jobs,
                         script_jump,
                         work_jobs,
+                        // After the cutting rather than before it, so what a
+                        // salvager took off this frame is in the run before
+                        // anything can take the piece away.
+                        record_salvage,
                         refine,
                         tide_carriers,
                         jump_spool,

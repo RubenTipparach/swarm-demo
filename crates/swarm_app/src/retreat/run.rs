@@ -27,6 +27,10 @@ pub(crate) struct RunState {
     /// field is built fresh every time, so without it a run would arrive in
     /// a pristine ship however the last one went.
     pub(crate) scars: Vec<u32>,
+    /// The ships of yours that have died, and how much of each a salvager
+    /// has recovered. What a run can REBUILD, which is the other half of
+    /// what a wreck is worth.
+    pub(crate) hulks: Vec<Hulk>,
     /// The roles the yard will build. Research is what adds to it, which is
     /// the design's "buy equipment that unlocks more research" read the one
     /// way that costs nothing to say: data buys the right to spend
@@ -60,6 +64,7 @@ impl RunState {
             flagship: flagship.into(),
             escorts: 1,
             scars: Vec::new(),
+            hulks: Vec::new(),
             unlocked: vec![Role::Miner, Role::Tanker],
         }
     }

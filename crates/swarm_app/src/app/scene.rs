@@ -54,6 +54,11 @@ pub(crate) struct SceneSpec {
     pub(crate) zoom: f32,
     pub(crate) target: Vec3,
     pub(crate) explode: u32,
+    /// `--wreck TICK` takes the reactor out of ONE escort at that tick, so a
+    /// headless run has a wreck for a salvager to work. It kills the reactor
+    /// cells rather than exploding the ship itself, so the death goes through
+    /// the same `go_critical` rule every other one does.
+    pub(crate) wreck: u32,
     pub(crate) cadence: u32,
     pub(crate) hives: usize,
     pub(crate) order: Option<Vec3>,

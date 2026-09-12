@@ -31,6 +31,9 @@ pub(crate) enum Buy {
     /// rather than typed, so a class added tomorrow is on the ladder
     /// tomorrow.
     Refit(String),
+    /// Put a dead ship back together out of what a salvager recovered of
+    /// it. The number is which ship, by the seed it flew under.
+    Rebuild(u32),
 }
 
 /// What one costs, as (materials, data).
@@ -52,26 +55,66 @@ pub(crate) const REFIT_COST: (u32, u32) = (4 * ORE_CUBE, 2 * DATA_CUBE);
 /// costs. A ship half eaten therefore costs about a cube.
 pub(crate) const REPAIR_PER_CELL: u32 = 1;
 
+/// What each tender takes off the yard's repair bill, and the most they can
+/// take between them. Half, because a repair nobody pays for is a repair
+/// nobody thinks about.
+pub(crate) const TENDER_OFF: f32 = 0.25;
+pub(crate) const TENDER_OFF_MAX: f32 = 0.5;
+
 impl Buy {
     pub(crate) fn price(&self, run: &RunState) -> (u32, u32) {
         match self {
-            // By the cell, so a ship shot to pieces costs what it costs.
-            Buy::Repair => (run.scars.len() as u32 * REPAIR_PER_CELL, 0),
+            // By the cell, so a ship shot to pieces costs what it costs, and
+            // a tender in the fleet is a discount on it: the crews that weld
+            // in the field are the crews that weld in the yard.
+            Buy::Repair => {
+                let tenders = run.fleet.iter().filter(|&&r| r == Role::Tender).count() as u32;
+                let off = 1.0 - (TENDER_OFF * tenders as f32).min(TENDER_OFF_MAX);
+                let cells = run.scars.len() as u32 * REPAIR_PER_CELL;
+                ((cells as f32 * off) as u32, 0)
+            }
             Buy::Escort => (ESCORT_COST, 0),
             Buy::Ship(_) => (SHIP_COST, 0),
             Buy::Research(_) => (0, RESEARCH_COST),
             Buy::Refit(_) => REFIT_COST,
+            // What a hulk costs is what is MISSING from it: the materials
+            // are a hull's own price either way, and the research is what
+            // tells a ship reassembled from what was found apart from one
+            // worked out from what was not.
+            Buy::Rebuild(ship) => hulk_of(run, *ship)
+                .and_then(|h| h.rebuild_price())
+                .unwrap_or((u32::MAX, u32::MAX)),
         }
     }
 
     pub(crate) fn label(&self, run: &RunState) -> String {
         match self {
             Buy::Repair => format!("Weld {} cells", run.scars.len()),
+            // A ship there is no berth for says so on the button, because
+            // "not enough in the bank" would be a lie a player would spend
+            // a system acting on.
+            Buy::Escort | Buy::Ship(_) if berthed(run) >= berths(run) => {
+                "No berth: build a freighter".into()
+            }
             Buy::Escort => format!("Another {}", hull_label(&run.flagship)),
             Buy::Ship(r) => format!("Build a {}", r.label()),
             Buy::Research(r) => format!("Research the {}", r.label()),
             Buy::Refit(k) => format!("Refit to a {}", hull_label(k)),
+            Buy::Rebuild(ship) => match hulk_of(run, *ship) {
+                Some(h) => format!(
+                    "Rebuild the {} ({:.0}% recovered)",
+                    hull_label(&h.class),
+                    h.share() * 100.0
+                ),
+                None => "Rebuild".into(),
+            },
         }
+    }
+
+    /// Whether a berth is needed for this, which is what a freighter is FOR.
+    /// Research and a repair take none: they add no hull.
+    pub(crate) fn berths(&self) -> bool {
+        matches!(self, Buy::Escort | Buy::Ship(_) | Buy::Rebuild(_))
     }
 
     /// Spend it. Answers whether it happened, so the screen can say no
@@ -79,6 +122,12 @@ impl Buy {
     pub(crate) fn take(&self, run: &mut RunState) -> bool {
         let (m, d) = self.price(run);
         if run.bank.materials < m || run.bank.data < d {
+            return false;
+        }
+        // A hull needs somewhere to put it. This is the freighter's second
+        // job and the reason a fleet cannot simply grow: the yard will build
+        // what you can afford and not what you cannot carry.
+        if self.berths() && berthed(run) >= berths(run) {
             return false;
         }
         run.bank.materials -= m;
@@ -89,6 +138,13 @@ impl Buy {
             Buy::Ship(r) => run.fleet.push(*r),
             Buy::Research(r) => run.unlocked.push(*r),
             Buy::Refit(k) => run.flagship = k.clone(),
+            // It flies again, and the wreck is spent: a hulk put back
+            // together is not a hulk any more, and a rebuild that could be
+            // bought twice would be a fleet made of one dead frigate.
+            Buy::Rebuild(ship) => {
+                run.escorts += 1;
+                run.hulks.retain(|h| h.ship != *ship);
+            }
         }
         true
     }
@@ -108,6 +164,14 @@ pub(crate) fn offers(run: &RunState, fleet: &Fleet) -> Vec<Buy> {
     }
     if let Some(next) = next_rung(&run.flagship, fleet) {
         out.push(Buy::Refit(next));
+    }
+    // Every wreck there is enough of. A yard can put back what the field
+    // cannot, which is the whole of the difference between the two tiers:
+    // under half of it and nothing is offered at all.
+    for hulk in &run.hulks {
+        if hulk.rebuild_price().is_some() {
+            out.push(Buy::Rebuild(hulk.ship));
+        }
     }
     for role in ALL_ROLES {
         if !run.unlocked.contains(&role) {
@@ -143,6 +207,26 @@ pub(crate) fn next_rung(from: &str, fleet: &Fleet) -> Option<String> {
         .skip(at + 1)
         .find(|h| h.key.starts_with(navy))
         .map(|h| h.key.clone())
+}
+
+/// One of the run's dead ships by the seed it flew under.
+pub(crate) fn hulk_of(run: &RunState, ship: u32) -> Option<&Hulk> {
+    run.hulks.iter().find(|h| h.ship == ship)
+}
+
+/// How many hulls the fleet may field beyond the command ship, and how many
+/// it is fielding.
+///
+/// A freighter is what raises the first number, which with its cut of
+/// everything landed is the whole of what a freighter does: it never cuts
+/// anything and it is what a growing fleet is built ON.
+pub(crate) fn berths(run: &RunState) -> u32 {
+    let freighters = run.fleet.iter().filter(|&&r| r == Role::Freighter).count() as u32;
+    BASE_BERTHS + FREIGHT_BERTHS * freighters
+}
+
+pub(crate) fn berthed(run: &RunState) -> u32 {
+    run.escorts + run.fleet.len() as u32
 }
 
 /// A class key as a person reads it.
@@ -241,6 +325,11 @@ mod tests {
         assert_eq!(run.bank.data, 0);
         assert_eq!(run.bank.materials, 9000, "research spends no materials");
         assert!(run.unlocked.contains(&Role::Salvager));
+        // Researched, paid for, and still refused: a run opens with its
+        // berths full, which is the freighter's own rule and has its own
+        // test. Make room, and the same purchase goes through.
+        assert!(!Buy::Ship(Role::Salvager).take(&mut run));
+        run.escorts -= 1;
         assert!(Buy::Ship(Role::Salvager).take(&mut run));
         assert_eq!(run.bank.materials, 9000 - SHIP_COST);
         assert_eq!(
@@ -294,6 +383,131 @@ mod tests {
             Some(&Buy::Repair),
             "what is wrong is read first"
         );
+    }
+
+    #[test]
+    fn a_freighter_is_what_a_fleet_grows_on() {
+        let f = shelf();
+        let mut run = RunState::new(4, "terran_frigate");
+        run.bank.materials = 9000;
+        // It opens with three berths and three hulls in them: an escort and
+        // the two ships a run starts with.
+        assert_eq!(berths(&run), BASE_BERTHS);
+        assert_eq!(berthed(&run), 3);
+        assert!(
+            !Buy::Ship(Role::Miner).take(&mut run),
+            "a full fleet builds nothing, however rich it is"
+        );
+        assert!(!Buy::Escort.take(&mut run));
+        assert_eq!(run.bank.materials, 9000, "and is not charged for it");
+        // Research and a repair need no berth, because they add no hull.
+        run.bank.data = RESEARCH_COST;
+        assert!(Buy::Research(Role::Freighter).take(&mut run));
+        // A freighter is the way out, and it takes the last berth to do it.
+        run.fleet.pop();
+        assert!(Buy::Ship(Role::Freighter).take(&mut run));
+        assert_eq!(berths(&run), BASE_BERTHS + FREIGHT_BERTHS);
+        assert!(
+            Buy::Escort.take(&mut run),
+            "two more berths, so two more hulls"
+        );
+        assert!(Buy::Ship(Role::Miner).take(&mut run));
+        assert!(!Buy::Ship(Role::Miner).take(&mut run), "and then no more");
+        // The button says so rather than blaming the bank.
+        assert!(Buy::Ship(Role::Miner).label(&run).contains("freighter"));
+        let _ = offers(&run, &f);
+    }
+
+    #[test]
+    fn a_tender_is_a_discount_on_the_yards_own_welding() {
+        let mut run = RunState::new(5, "terran_frigate");
+        run.scars = (0..200).collect();
+        let full = Buy::Repair.price(&run).0;
+        assert_eq!(full, 200 * REPAIR_PER_CELL);
+        run.fleet.push(Role::Tender);
+        let one = Buy::Repair.price(&run).0;
+        assert!(one < full && one as f32 >= full as f32 * 0.7);
+        run.fleet.push(Role::Tender);
+        run.fleet.push(Role::Tender);
+        // Three of them, and the discount stops at half: a repair nobody
+        // pays for is a repair nobody thinks about.
+        assert_eq!(Buy::Repair.price(&run).0, full / 2);
+    }
+
+    /// A hulk recovered to a given share of what the ship was.
+    fn hulk(share: f32) -> Hulk {
+        Hulk {
+            ship: 77,
+            class: "terran_frigate".into(),
+            whole: 1000,
+            got: (1000.0 * share) as u32,
+        }
+    }
+
+    #[test]
+    fn a_wreck_is_rebuilt_in_the_field_at_seven_tenths_and_never_under_half() {
+        // Under half is scrap: there is no price, and the yard does not
+        // offer it at all. That is what stops a run treating every loss as
+        // a delay.
+        let scrap = hulk(0.49);
+        assert_eq!(scrap.rebuild_price(), None);
+        assert!(!scrap.in_field());
+        // Half to seven tenths is a ship a YARD can put back, and what is
+        // missing has to be worked out rather than found: the materials are
+        // a hull's own price and the research is three times over.
+        let yard = hulk(0.6);
+        assert_eq!(
+            yard.rebuild_price(),
+            Some((REBUILD_COST, REBUILD_DATA * REBUILD_PENALTY))
+        );
+        assert!(!yard.in_field(), "not enough of it came back to reassemble");
+        // And seven tenths is reassembly, in the field, at the plain price.
+        let field = hulk(0.7);
+        assert_eq!(field.rebuild_price(), Some((REBUILD_COST, REBUILD_DATA)));
+        assert!(field.in_field());
+        // A share is a share: more than the whole ship cannot come back.
+        let over = Hulk {
+            got: 4000,
+            ..hulk(1.0)
+        };
+        assert_eq!(over.share(), 1.0);
+        // And a ship nobody ever measured is not a ship: no whole, no share,
+        // rather than a division by nought.
+        let none = Hulk {
+            whole: 0,
+            ..hulk(1.0)
+        };
+        assert_eq!(none.share(), 0.0);
+        assert_eq!(none.rebuild_price(), None);
+    }
+
+    #[test]
+    fn the_yard_rebuilds_a_hulk_once_and_charges_a_berth_for_it() {
+        let f = shelf();
+        let mut run = RunState::new(6, "terran_frigate");
+        run.hulks.push(hulk(0.8));
+        run.hulks.push(hulk(0.2));
+        run.hulks[1].ship = 78;
+        // Only the one there is enough of.
+        let rows = offers(&run, &f);
+        assert!(rows.contains(&Buy::Rebuild(77)));
+        assert!(!rows.contains(&Buy::Rebuild(78)), "under half is scrap");
+        assert!(Buy::Rebuild(77).label(&run).contains("80%"));
+        // A hull needs a berth like any other, and a run opens with none
+        // spare: the freighter rule reaches a rebuild too.
+        run.bank.materials = REBUILD_COST;
+        run.bank.data = REBUILD_DATA;
+        assert!(!Buy::Rebuild(77).take(&mut run));
+        run.escorts -= 1;
+        assert!(Buy::Rebuild(77).take(&mut run));
+        assert_eq!(run.escorts, 1, "it flies again");
+        assert_eq!(run.bank.materials, 0);
+        assert_eq!(run.bank.data, 0);
+        // And the wreck is spent: a rebuild that could be bought twice would
+        // be a fleet made out of one dead frigate.
+        assert!(hulk_of(&run, 77).is_none());
+        assert!(!Buy::Rebuild(77).take(&mut run));
+        assert!(!offers(&run, &f).contains(&Buy::Rebuild(77)));
     }
 
     #[test]

@@ -17,6 +17,9 @@ pub(crate) enum RetreatStat {
     Volatiles,
     Fuel,
     Data,
+    /// The wreck a salvager has recovered most of, which is what the
+    /// rebuild button would put back.
+    Salvage,
     /// Cubes riding on the support ships, which is what is not in the bank
     /// YET: a full miner a long way from home is a hold a player should be
     /// able to see before the swarm gets to it.
@@ -75,6 +78,7 @@ pub(crate) fn build_retreat_panel(mut commands: Commands, run: Res<RunState>) {
                 (RetreatStat::Fuel, "jump fuel"),
                 (RetreatStat::Data, "data"),
                 (RetreatStat::Cargo, "cubes aboard"),
+                (RetreatStat::Salvage, "best wreck"),
             ] {
                 row(p, label, move |r| {
                     r.spawn((
@@ -93,6 +97,7 @@ pub(crate) fn build_retreat_panel(mut commands: Commands, run: Res<RunState>) {
                 height: Val::Px(6.0),
                 ..default()
             });
+            button(p, "Rebuild a wreck  (B)", TEXT, RebuildButton);
             button(p, "Jump out  (J)", GOLD_TEXT, JumpButton);
             p.spawn((
                 Text::new(""),
@@ -107,16 +112,87 @@ pub(crate) fn build_retreat_panel(mut commands: Commands, run: Res<RunState>) {
         });
 }
 
+/// One support ship as the panel reads it: what it is, what it was told to
+/// do, what is in its hold and what state the hull is in.
+pub(crate) type CrewRow<'a> = (&'a Support, &'a Job, &'a Hold, &'a Hull);
+
+/// What each crew is doing, one line each.
+///
+/// The only thing on this panel that is a sentence rather than a number, and
+/// its own function for that reason: a readout of eight numbers and a roster
+/// is two things, and the second one is the only one anybody has to read.
+fn crew_lines(crews: &Query<CrewRow>) -> String {
+    crews
+        .iter()
+        .map(|(s, j, h, hull)| {
+            let doing = if hull.dead_hull {
+                "lost".to_string()
+            } else {
+                match j {
+                    Job::Idle => "idle".into(),
+                    Job::Work(_) if s.role.scans() => {
+                        format!("scanning {:.0}%", h.share() * 100.0)
+                    }
+                    Job::Work(_) if s.role.mends() => "standing by".into(),
+                    Job::Work(_) => format!("cutting {:.0}%", h.share() * 100.0),
+                    Job::Unload(_) => "unloading".into(),
+                }
+            };
+            format!("{}: {doing}", s.role.label())
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// What the fleet is carrying against what it could carry, in cubes.
+fn hold_line(crews: &Query<CrewRow>) -> String {
+    let (aboard, room): (u32, u32) = crews
+        .iter()
+        .fold((0, 0), |(a, r), (_, _, h, _)| (a + h.carrying, r + h.cap));
+    format!("{aboard} of {room}")
+}
+
+/// The wreck the salvagers have most of, which is the one a rebuild would
+/// take: a panel naming every hulk would be a roster of the dead.
+fn salvage_line(run: &RunState) -> String {
+    match run
+        .hulks
+        .iter()
+        .max_by(|a, b| a.share().total_cmp(&b.share()))
+    {
+        Some(h) => format!("{} {:.0}%", hull_label(&h.class), h.share() * 100.0),
+        None => "none".into(),
+    }
+}
+
+/// Everything the panel reads that is not a query, as ONE parameter.
+///
+/// Five resources in an argument list is the smell this project names: the
+/// missing struct is "the state of the run this frame", and Bevy's own
+/// `SystemParam` is what lets it be one without any of them being copied.
+#[derive(SystemParam)]
+pub(crate) struct RunView<'w> {
+    tick: Res<'w, Tick>,
+    scene: Res<'w, SceneSpec>,
+    bank: Res<'w, Bank>,
+    drive: Res<'w, JumpDrive>,
+    run: Res<'w, RunState>,
+}
+
 /// The panel's numbers, and the one line that says what the fleet is doing.
 pub(crate) fn retreat_readouts(
-    tick: Res<Tick>,
-    scene: Res<SceneSpec>,
-    bank: Res<Bank>,
-    drive: Res<JumpDrive>,
-    crews: Query<(&Support, &Job, &Hold, &Hull)>,
+    view: RunView,
+    crews: Query<CrewRow>,
     rocks: Query<&Rock>,
     mut stats: Query<(&RetreatStat, &mut Text, &mut TextColor)>,
 ) {
+    let RunView {
+        tick,
+        scene,
+        bank,
+        drive,
+        run,
+    } = view;
     // What it would cost to take the fleet that is actually standing here
     // out of the system, which is the number the button is judged against.
     let cost = drive.cost;
@@ -145,28 +221,9 @@ pub(crate) fn retreat_readouts(
             RetreatStat::Volatiles => bank.volatiles.to_string(),
             RetreatStat::Fuel => format!("{:.0} of {cost}", bank.fuel),
             RetreatStat::Data => bank.data.to_string(),
-            RetreatStat::Cargo => {
-                let (aboard, room): (u32, u32) = crews
-                    .iter()
-                    .fold((0, 0), |(a, r), (_, _, h, _)| (a + h.carrying, r + h.cap));
-                format!("{aboard} of {room}")
-            }
-            RetreatStat::Crews => crews
-                .iter()
-                .map(|(s, j, h, hull)| {
-                    let doing = if hull.dead_hull {
-                        "lost".to_string()
-                    } else {
-                        match j {
-                            Job::Idle => "idle".into(),
-                            Job::Work(_) => format!("cutting {:.0}%", h.share() * 100.0),
-                            Job::Unload(_) => "unloading".into(),
-                        }
-                    };
-                    format!("{}: {doing}", s.role.label())
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
+            RetreatStat::Salvage => salvage_line(&run),
+            RetreatStat::Cargo => hold_line(&crews),
+            RetreatStat::Crews => crew_lines(&crews),
         };
         if t.0 != want {
             t.0 = want;

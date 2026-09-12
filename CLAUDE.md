@@ -582,6 +582,17 @@ material puts it on at 3.4, well over white, because the ramp is nought to
 one by construction (it is a colour) and how bright that colour is laid on a
 hull is the picture's business, not the ramp's.
 
+**And `damage.rs` is three files, along the line its own module docs already
+drew.** It went over this project's own nine hundred lines when `mend` and
+`holes` landed, and the answer was never to raise the limit: `damage` answers
+what a hit DOES to the cells, `heat` answers what the hole then LOOKS like
+(the ramp, the crust, the soot, what a cell is worth in hit points), and
+`wound` is what the hole HANDS OUT to whatever is drawing it (a breach, a
+vent, a chunk). `DamageGrid::vents` lives in `wound` with the things it
+makes, because Rust lets one type keep its inherent methods in more than one
+file of a crate and where a method belongs is decided by what it is ABOUT.
+`damage` re-exports both, so nothing outside the core learned a new path.
+
 `DamageGrid::vents` answers where smoke leaves, one per face a hit opened
 rather than one per hole: a crater vents along its whole rim, and a single
 plume from the middle would read as a chimney. Smoke is the one spark that
@@ -1733,6 +1744,28 @@ yard is written as a multiple of those, because "two cubes" is a thing a
 player can count in the field and a price in bare materials is a number
 nothing in the world corresponds to.
 
+**And SCRAP is the one cargo that is bulk rather than seam.** A cell of ore
+is a cell somebody went looking for; a cell of hull plating is a cell that
+happened to be in the way, so it packs at `SCRAP_CELLS` of 64 to the cube
+against the seam's eight, and is worth 15 against the ore's 120.
+
+**`Pack` is how dense the cargo is, and it is a property of the CARGO rather
+than of the cube kind.** That is the distinction the first cut got wrong by
+putting the rate on `Cube::Scrap`: the hold then filled on DATA instead, at
+eight cells a cube, and nothing had moved. Every kind packs at the density of
+what it came out of, which is also the survey ship's whole argument, because
+the same data cube is eight cells read off a ship and sixty four found in its
+wreckage. `Cube::packed` is handed the pack rather than guessing it from the
+pile, because a pile of materials cannot say where it came from and whatever
+filled it always can.
+
+The rate is the whole reason a salvager can strip a frigate inside one
+system. At the seam's rate it filled its hold on thirty two cells of an eight
+thousand cell wreck and spent the rest of the run flying home: half an hour
+for half a ship, so every tier of a rebuild was unreachable while the picture
+showed a salvager working hard the whole time. **A number that makes a
+mechanic impossible looks exactly like a mechanic that works.**
+
 **A jump is priced by the FLEET.** The drive costs 250 to spin up and every
 other hull standing inside the field adds its own rung: 25 for a corvette,
 50 for a frigate or a civil trade, 100 for a destroyer, 200 for a cruiser.
@@ -1740,6 +1773,15 @@ So calling in an escort is a decision with two sides to it, because the ship
 that helps you hold a system is the ship you then pay to take out of it. It
 is counted off the LIVE ships rather than off the run's roster, so an escort
 that died is an escort you no longer pay for.
+
+**And the tank the command ship arrives with covers the DRIVE exactly.**
+`RESERVE` is `DRIVE_COST` and is written as that rather than beside it,
+because two numbers that have to be equal are one number. So you can always
+leave alone: a system that goes wrong costs the escorts and the support ships
+standing outside the field when it fires, and never the run itself. That is
+the answer to "does losing the tanker strand you", and it is the owner's:
+total loss is the better disaster, and a disaster you cannot come back from
+at all is not a disaster, it is a reload.
 
 **Where a cutter stands is written in the AVOIDANCE's terms.** `fly_hull`
 holds every ship off a rock by the rock's own navigation sphere plus its own
@@ -1762,6 +1804,14 @@ difference, comparing against how many have EVER been spawned rather than how
 many are alive: killing a carrier does not bring another, which is the whole
 reason to shoot at them while you gather.
 
+**And it does not stop once the fleet is in.** A system a fleet could hold
+for ever is a system worth farming, and a tide that ended would make the
+right play "kill everything, then mine at leisure", which is the skirmish
+with extra steps. One more carrier every `SIEGE` after the fleet arrives,
+with no ceiling, so staying is always possible and always gets worse. There
+is no number of them a player can hold indefinitely, which is what makes
+leaving a judgement rather than a rule.
+
 **The drive spools for thirty seconds and takes what is inside the field.**
 Everything outside is left in the system, and what went is the fleet the next
 system starts with. The fleet is despawned on the way out, because the result
@@ -1778,6 +1828,93 @@ frame's step, and that is a bug this had: at a fiftieth of a cell a frame,
 anyway, so the tank filled itself out of a pile of ice that never shrank. A
 rate in a resource counted in whole cells needs somewhere to keep the
 remainder. A cadence needs none.
+
+**Six roles, and each one is a different sentence about the same fleet.**
+A miner cuts rock and a tanker refines what it brings home; those two are the
+loop. The other four are what a run GROWS into, and every one of them was
+specified by the owner rather than derived:
+
+| role | what it does |
+| --- | --- |
+| survey | scans a rock or a wreck, takes nothing off it, and fills its hold with DATA |
+| freighter | cuts nothing, adds `FREIGHT_SHARE` to everything landed, and carries the BERTHS a fleet grows into |
+| tender | mends a hull it is standing beside, for materials, and discounts the yard's own welding |
+| salvager | cuts a wreck, which pays twice: cubes now, and a ship later |
+
+**A survey ship is a cutter that takes nothing off.** The same standoff, the
+same trip home, the same hold: what fills it is data, and a BODY is what
+remembers how much of it is left to learn (`Scanned`), so a rock somebody has
+already surveyed is a rock nobody profits from surveying again. That is what
+stops a run parking one survey ship on one rock for ever, and it is why a
+survey ship's work is going and looking rather than standing still. Data is
+what buys the RIGHT to buy, so a survey ship is how a run reaches a role it
+has never built.
+
+**A freighter is what a fleet is built ON, and it cuts nothing.** Two jobs,
+both multipliers on other ships: a quarter more on everything landed, and two
+more berths. `BASE_BERTHS` is three, which is exactly what a run opens with,
+so the first freighter is the only thing that makes a fourth hull possible at
+all. A yard will build what you can afford and not what you cannot carry, and
+the button SAYS so rather than blaming the bank: "No berth: build a
+freighter" is the label, because "not enough in the bank" would be a lie a
+player would spend a system acting on.
+
+**A tender is the only thing in this game that MENDS.** One cell a pass, out
+of the bank, on the nearest hurt hull in reach, which makes it a ship a
+player POSITIONS: the same verb the whole game is about. It mends what it is
+beside, so which ship gets the materials is decided by flying it there.
+`DamageGrid::mend` is the exact undoing of a chip (alive, full hit points,
+the dead count down, its own brick and its neighbours' dirtied), and
+`holes` hands back the most OPEN cell first, which is the order the swarm ate
+them in: plating closed over a hole nothing has filled is a picture nobody
+believes. Out of battle the same crews are a discount on the yard, up to half
+off with three of them, because a repair nobody pays for is a repair nobody
+thinks about.
+
+**And a support ship is DISARMED.** They are hulls, so `fire_guns` and
+`fire_flak` had a miner opening up with the fleet's own beams, which is a
+civil trade fighting its own war and makes an escort worth nothing. It is
+`Without<Support>` on both, which is the carriers' own fix a second time: a
+rule a system must not see is a marker and a filter, not an `if`.
+
+**A WRECK IS A HULK, and a salvager is how a loss becomes a delay rather
+than a loss.** Cutting a wreck already paid: what comes off it is cubes like
+any other cut, which is LIQUIDATION and is what happens if nobody decides
+otherwise. What the salvager adds is that the parts it recovers are parts OF
+something. `Remains` rides each wreck piece and counts what has been taken
+off it; `record_salvage` carries the DIFFERENCE into the run every frame,
+because a piece that ages out and despawns must not take back what it gave.
+Only a ship of the fleet's: a carrier has no `class`, so it makes no hulk,
+and the rule falls out of the data rather than being written.
+
+**A salvage cut is a SECTION and a mining cut is a shaft**, and that is the
+one thing the kind decides: a miner is after a seam a few cells wide and the
+shaft is how it reaches one, while a salvager is lifting a hulk apart.
+`cut_once` takes one parameter for it and everything else about a cutter (the
+standoff, the hold, the trip home, the chunks, the sparks) is the same
+function, which is what keeps two jobs from being two cutters.
+
+**And a piece being worked does not age out.** A wreck is taken away after a
+minute because ten carriers' wrecks are ten thousand bricks of mesh, which is
+a cost argument rather than a rule about wrecks; a piece a salvager is
+standing on is one the player has DECIDED to keep, and taking it away mid cut
+is the harness deleting the thing under test.
+
+Three tiers, and they are the owner's:
+
+| recovered | what can be done with it |
+| --- | --- |
+| seven tenths | rebuilt where it lies, in the field, for materials and research |
+| half to seven tenths | only a yard can put it back, at THREE times the research |
+| under half | scrap, at any price |
+
+The materials are a hull's own price either way and what moves is the
+RESEARCH, which is the honest place for it: a ship recovered nearly whole is
+reassembled, and one recovered half is half worked out from first principles.
+A rebuild takes a berth like any other hull and the hulk is SPENT when it is
+bought, because a rebuild that could be bought twice would be a fleet made
+out of one dead frigate. Recovering parts therefore pays twice and the choice
+a player makes is whether to spend the bank putting them back together.
 
 **The flagship carries its holes.** The field is built fresh every system, so
 without that a run would arrive in a pristine ship however the last one went,
@@ -1816,19 +1953,51 @@ because a yard whose prices and roster were painted once would go on offering
 what it has already sold, and Bevy does not run `OnEnter` for a transition to
 the state it is already in.
 
-**The harness is two flags for the two things a player presses**, since a
-headless run has no pointer: `--job TICK` is the right click that puts every
-support ship to work, and `--jump TICK` is the button, with the fuel check
-skipped because half an hour of mining is not a thing a headless run can
-afford to render. `--onward` takes the map's first branch without being
-pressed, so the system AFTER a jump can be photographed, which is the only
-place a run's scars and roster show. The scripted jump arms whenever the
-drive is idle rather than on tick nought, because the clock is advanced ahead
-of it in the same frame and tick nought is never a tick anything there sees.
+**The harness is a flag per thing a player presses**, since a headless run
+has no pointer: `--job TICK` is the right click that puts every support ship
+to work, and `--jump TICK` is the button, with the fuel check skipped because
+half an hour of mining is not a thing a headless run can afford to render.
+`--onward` takes the map's first branch without being pressed, so the system
+AFTER a jump can be photographed, which is the only place a run's scars and
+roster show. The scripted jump arms whenever the drive is idle rather than on
+tick nought, because the clock is advanced ahead of it in the same frame and
+tick nought is never a tick anything there sees.
+
+**A turret cut loose is a `Wreck` with NO `Hull`, and that is what the
+salvager's first run found.** The scripted job scanned for the nearest thing
+with `Wreck` on it and sent the salvager to a gun; `work_jobs`, which needs
+the cells, found no body, quietly set the job back to idle, and the ship flew
+home having cut nothing with not a line in the log to say why. The fix is the
+filter rather than a check in the loop (`WorkableBody` plus `With<Hull>`,
+which is the row `work_jobs` will ask for anyway), and what CAUGHT it is the
+run report: a still frame of a wreck cannot tell one nobody reached from one
+that has been cut over, and the bank read nought for the same reason it would
+have if the salvager had never launched. The player's own right click was
+never wrong, because its picker reads `&Hull` to get a radius and so could
+not name a gun in the first place. **Two paths to one job is two interfaces,
+and only one of them had been thought about.**
+
+**And `--wreck TICK` is the one thing a player cannot press**, which is a
+ship dying. It exists for the salvager: `--explode` takes every hull at once,
+which is a fireball with no fleet left to salvage WITH, so this kills one
+escort's reactor cells and lets `go_critical` take the ship on its own rule
+the tick after. One death path and not two, so the wreck a salvager works is
+the wreck the swarm would have made.
+
+**A harness that fires on an EXACT tick fires only on the one clock that
+counts by ones.** `--job` was `auto.job == tick.tick`, which is right under
+`--fixed-dt`, where one frame is one tick, and wrong on a real clock, where
+the tick jumps by whatever the frame took: a run without the flag stepped
+straight over the mark and every support ship stood idle for the whole render
+with nothing in the log to say why. It is the first tick AT OR PAST the mark,
+once, which is the rule the scripted jump already keeps by arming whenever
+the drive is idle.
 
 **And the report says what the loop DID.** `retreat:` counts the ore and the
-ice left in the field and what is in the bank, because a picture of a rock
-cannot tell a miner that arrived from a miner that never did, and the first
+crystal left in the field, what is in the bank, and what share of each dead
+ship the salvagers have got back, because a picture of a rock cannot tell a
+miner that arrived from a miner that never did and a picture of a wreck
+cannot tell one that has been cut over from one nobody reached. The first
 three runs of this were three different reasons for a bank that stayed at
 nought.
 
@@ -1837,11 +2006,22 @@ the surface at tick 240 and the seam under it a few cuts later. A run played
 straight through with `--onward` crosses three systems in 420 frames and the
 flagship arrives in the third with 257 cells still open.
 
+And the salvage loop, on a terran frigate's wreck (four pieces of 2232, 1891,
+1345 and 1241 cells off a hull that started with 8938): two salvagers get 5%
+of the ship back in 900 ticks, which is fifteen seconds and includes the
+flight out to it. That is about thirty cells a second, so the yard's tier at
+half the ship is two and a half minutes of both of them and the field's at
+seven tenths is three and a half, inside a six minute system and worth
+roughly what it costs. The reactor is the ceiling and it is the interesting
+part: it took a quarter of that ship with it, so seven tenths of the hull
+means nearly every cell of every piece, and a ship that goes up badly is a
+ship only a yard will ever put back.
+
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 85, the core
-cargo test -p swarm_app                                    # 5, the run's own economy
+cargo test -p swarm_core                                   # 88, the core
+cargo test -p swarm_app                                    # 9, the run's own economy
 python3 tools/shape.py --check                             # no file over 900 lines, no function over 100
 cargo fmt --all -- --check                                 # the format
 cargo clippy -p swarm_core -- -D warnings                  # the core's lints
@@ -1892,6 +2072,9 @@ cargo build --release -p swarm_app
     --chewers 90 --frames 240 --zoom 8 --out jump.png                 # the system, left
 ./target/release/swarm_app --headless --fixed-dt --retreat --jump 200 --onward --motes 900 \
     --chewers 90 --frames 420 --zoom 3.2 --out second.png             # and the scars it carried
+./target/release/swarm_app --headless --fixed-dt --retreat --support salvager,salvager \
+    --wreck 30 --job 45 --motes 100 --chewers 0 --rocks 2 \
+    --frames 900 --zoom 6 --out salvage.png       # an escort dies and is cut over for parts
 for y in 0.0 1.6 3.1; do                                   # the same tick, three angles
   ./target/release/swarm_app --headless --fixed-dt --motes 4000 --frames 150 \
       --zoom 11 --yaw $y --out ang_$y.png

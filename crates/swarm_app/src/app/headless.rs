@@ -17,7 +17,12 @@ pub(crate) struct HeadlessTarget(pub(crate) Handle<Image>);
 /// What the retreat's loop actually did, which is the one thing a picture of
 /// it cannot show: a shaft in a rock and a bank that moved look the same in
 /// a still frame as a miner that never arrived.
-fn retreat_line(scene: &SceneSpec, bank: &Bank, rocks: &Query<&Rock>) -> Option<String> {
+fn retreat_line(
+    scene: &SceneSpec,
+    bank: &Bank,
+    run: &RunState,
+    rocks: &Query<&Rock>,
+) -> Option<String> {
     if !scene.retreat {
         return None;
     }
@@ -26,8 +31,22 @@ fn retreat_line(scene: &SceneSpec, bank: &Bank, rocks: &Query<&Rock>) -> Option<
         ore += r.ore;
         crystal += r.crystal;
     }
+    // And what the salvagers got back, which is the other half of the same
+    // point: a picture of a wreck cannot tell one that has been cut over
+    // from one nobody reached, and a share is what decides whether it can
+    // ever fly again.
+    let wrecks = run
+        .hulks
+        .iter()
+        .map(|h| format!("{} at {:.0}%", hull_label(&h.class), h.share() * 100.0))
+        .collect::<Vec<_>>();
+    let salvage = if wrecks.is_empty() {
+        "nothing recovered".into()
+    } else {
+        format!("recovered {}", wrecks.join(", "))
+    };
     Some(format!(
-        "retreat: {} rocks with {ore} ore and {crystal} crystal left in them; banked {} materials, {} volatiles, {} data, {:.1} fuel",
+        "retreat: {} rocks with {ore} ore and {crystal} crystal left in them; banked {} materials, {} volatiles, {} data, {:.1} fuel; {salvage}",
         rocks.iter().len(),
         bank.materials,
         bank.volatiles,
@@ -44,6 +63,7 @@ pub(crate) fn headless_capture(
     rocks: Query<&Rock>,
     scene: Res<SceneSpec>,
     bank: Res<Bank>,
+    run: Res<RunState>,
     fx: Res<LiveFx>,
     quads: Res<BeamQuads>,
     tex: Res<Textures>,
@@ -81,7 +101,7 @@ pub(crate) fn headless_capture(
         "headless: {} frames in {:.1}s ({:.1} ms/frame mean, wall clock), swarm ticks {}, chewed {} cells ({} breaches thrown), worst thrust {:.2}",
         *frames, spent, spent * 1000.0 / *frames as f32, clock.ticks, dead, breaches, worst
     );
-    if let Some(line) = retreat_line(&scene, &bank, &rocks) {
+    if let Some(line) = retreat_line(&scene, &bank, &run, &rocks) {
         println!("{line}");
     }
     println!(

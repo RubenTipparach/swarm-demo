@@ -69,6 +69,45 @@ pub enum Cut {
     Hull,
 }
 
+/// How dense what a hold is filling with is, which is the one thing that
+/// decides how many CELLS make a cube.
+///
+/// A seam is what somebody went looking for: a cell of ore, a cell of
+/// crystal, or a fact a survey ship read off a body, and eight of those make
+/// a cube. BULK is what a salvager tears off a hulk, where a cell is a cell
+/// that happened to be in the way, and it takes eight times as many for a
+/// fraction of the worth.
+///
+/// It is a property of the CARGO and not of the cube kind, because the same
+/// data cube is a seam when a survey ship reads it and bulk when a salvager
+/// finds it in the wreckage. That is the survey ship's whole argument: it
+/// learns more from a ship by reading it than anybody learns by cutting it
+/// up.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Pack {
+    Seam,
+    Bulk,
+}
+
+impl Pack {
+    pub fn cells(self) -> u32 {
+        match self {
+            Pack::Seam => CUBE_CELLS,
+            Pack::Bulk => SCRAP_CELLS,
+        }
+    }
+}
+
+impl Cut {
+    /// A rock is cut for its seams and a hulk is cut for its bulk.
+    pub fn pack(self) -> Pack {
+        match self {
+            Cut::Rock => Pack::Seam,
+            Cut::Hull => Pack::Bulk,
+        }
+    }
+}
+
 /// What one cell yields.
 ///
 /// A rock gives up only its seams: the stone is spoil, which is what makes a
@@ -143,6 +182,14 @@ pub enum Cube {
     Crystal,
     /// Machinery off a dead hull, which is a salvager's own cargo.
     Data,
+    /// Plating and structure off a dead hull. SCRAP, which is the one cargo
+    /// in this game that is bulk rather than seam: a cell of ore is a cell
+    /// somebody went looking for and a cell of hull plating is a cell that
+    /// happened to be in the way, so it packs at `SCRAP_CELLS` to the cube
+    /// and is worth a fraction of one. That is what lets a salvager strip a
+    /// whole frigate inside one system without a trip home being worth eight
+    /// times a miner's.
+    Scrap,
 }
 
 /// What each is worth when it is landed. The two the owner set are the ore
@@ -151,6 +198,18 @@ pub enum Cube {
 pub const ORE_CUBE: u32 = 120;
 pub const CRYSTAL_CUBE: u32 = 50;
 pub const DATA_CUBE: u32 = 30;
+pub const SCRAP_CUBE: u32 = 15;
+
+/// How many cells of plating make one cube of scrap, against `CUBE_CELLS`
+/// for a seam.
+///
+/// Eight times as many for an eighth of the worth, which is what "bulk"
+/// means and is the number the whole salvage loop is paced by. At the seam's
+/// rate a salvager filled its hold on thirty two cells of an eight thousand
+/// cell frigate and spent the rest of the system flying home: half an hour
+/// to recover half a ship, so every tier of a rebuild was unreachable and
+/// the picture showed a salvager working hard the whole time.
+pub const SCRAP_CELLS: u32 = 64;
 
 impl Cube {
     pub fn worth(self) -> Yield {
@@ -167,6 +226,10 @@ impl Cube {
                 data: DATA_CUBE,
                 ..Yield::NOTHING
             },
+            Cube::Scrap => Yield {
+                materials: SCRAP_CUBE,
+                ..Yield::NOTHING
+            },
         }
     }
 
@@ -179,6 +242,9 @@ impl Cube {
             Cube::Ore => 0xC8A24A,
             Cube::Crystal => 0x86E8FF,
             Cube::Data => 0x6FB835,
+            // The grey of bare structure, because that is what it is: a cube
+            // of somebody's plating.
+            Cube::Scrap => 0x8C8F96,
         }
     }
 
@@ -187,6 +253,7 @@ impl Cube {
             Cube::Ore => "ore",
             Cube::Crystal => "crystal",
             Cube::Data => "data",
+            Cube::Scrap => "scrap",
         }
     }
 
@@ -197,17 +264,26 @@ impl Cube {
     /// than however many are in there, because every cube is a thing that
     /// comes off the rock and the caller is what spawns it: a function that
     /// returned three would be a caller that had to remember to spawn three.
-    pub fn packed(loose: &mut Yield) -> Option<Cube> {
-        if loose.materials >= CUBE_CELLS {
-            loose.materials -= CUBE_CELLS;
-            return Some(Cube::Ore);
+    ///
+    /// How DENSE it is decides both how many cells go in and what a cube of
+    /// materials is: a seam gives ore and bulk gives scrap. Handed in rather
+    /// than guessed from the pile, because a pile of materials cannot say
+    /// where it came from and whatever filled it always can.
+    pub fn packed(loose: &mut Yield, pack: Pack) -> Option<Cube> {
+        let per = pack.cells();
+        if loose.materials >= per {
+            loose.materials -= per;
+            return Some(match pack {
+                Pack::Seam => Cube::Ore,
+                Pack::Bulk => Cube::Scrap,
+            });
         }
-        if loose.volatiles >= CUBE_CELLS {
-            loose.volatiles -= CUBE_CELLS;
+        if loose.volatiles >= per {
+            loose.volatiles -= per;
             return Some(Cube::Crystal);
         }
-        if loose.data >= CUBE_CELLS {
-            loose.data -= CUBE_CELLS;
+        if loose.data >= per {
+            loose.data -= per;
             return Some(Cube::Data);
         }
         None
@@ -297,24 +373,76 @@ mod tests {
     #[test]
     fn cells_pack_into_cubes_one_at_a_time_and_the_remainder_is_kept() {
         let mut loose = Yield::NOTHING;
-        assert_eq!(Cube::packed(&mut loose), None, "nothing packs nothing");
+        assert_eq!(
+            Cube::packed(&mut loose, Pack::Seam),
+            None,
+            "nothing packs nothing"
+        );
         // A cut's worth of ore, and a little crystal with it.
         loose += Yield {
             materials: CUBE_CELLS * 2 + 3,
             volatiles: CUBE_CELLS - 1,
             data: 0,
         };
-        assert_eq!(Cube::packed(&mut loose), Some(Cube::Ore));
-        assert_eq!(Cube::packed(&mut loose), Some(Cube::Ore));
+        assert_eq!(Cube::packed(&mut loose, Pack::Seam), Some(Cube::Ore));
+        assert_eq!(Cube::packed(&mut loose, Pack::Seam), Some(Cube::Ore));
         // The third is short, and what is left is KEPT: a cutter that lost
         // its remainder every bite would take twice as long for nothing a
         // player could see.
-        assert_eq!(Cube::packed(&mut loose), None);
+        assert_eq!(Cube::packed(&mut loose, Pack::Seam), None);
         assert_eq!(loose.materials, 3);
         assert_eq!(loose.volatiles, CUBE_CELLS - 1);
         loose.volatiles += 1;
-        assert_eq!(Cube::packed(&mut loose), Some(Cube::Crystal));
+        assert_eq!(Cube::packed(&mut loose, Pack::Seam), Some(Cube::Crystal));
         assert_eq!(loose.volatiles, 0);
+    }
+
+    #[test]
+    fn scrap_is_bulk_and_ore_is_a_seam() {
+        // The same pile of cells is a different number of cubes depending on
+        // how dense it is: a cell of ore is a cell somebody went looking for
+        // and a cell of plating is a cell that was in the way. That is the
+        // whole of what makes a salvager able to strip a frigate inside one
+        // system, and what makes a survey ship the cheap way to learn about
+        // one.
+        assert!(SCRAP_CELLS > CUBE_CELLS && SCRAP_CUBE < ORE_CUBE);
+        assert_eq!(Cut::Rock.pack(), Pack::Seam);
+        assert_eq!(Cut::Hull.pack(), Pack::Bulk);
+        assert_eq!(Pack::Seam.cells(), CUBE_CELLS);
+        assert_eq!(Pack::Bulk.cells(), SCRAP_CELLS);
+        let mut seam = Yield {
+            materials: SCRAP_CELLS,
+            ..Yield::NOTHING
+        };
+        let mut bulk = seam;
+        let mut ore = 0;
+        while Cube::packed(&mut seam, Pack::Seam) == Some(Cube::Ore) {
+            ore += 1;
+        }
+        assert_eq!(ore, SCRAP_CELLS / CUBE_CELLS);
+        assert_eq!(Cube::packed(&mut bulk, Pack::Bulk), Some(Cube::Scrap));
+        assert_eq!(
+            Cube::packed(&mut bulk, Pack::Bulk),
+            None,
+            "one cube, no more"
+        );
+        assert_eq!(bulk.materials, 0);
+        // And that cube is worth less than the ore it took as many cells to
+        // fill, or salvage would simply be better mining.
+        assert!(Cube::Scrap.worth().materials < Cube::Ore.worth().materials * ore);
+        // Every kind packs at the density of what it came out of, which is
+        // why the same data cube is eight cells read off a body and sixty
+        // four found in its wreckage.
+        let mut read = Yield {
+            data: CUBE_CELLS,
+            ..Yield::NOTHING
+        };
+        assert_eq!(Cube::packed(&mut read, Pack::Seam), Some(Cube::Data));
+        let mut torn = Yield {
+            data: CUBE_CELLS,
+            ..Yield::NOTHING
+        };
+        assert_eq!(Cube::packed(&mut torn, Pack::Bulk), None);
     }
 
     #[test]

@@ -84,6 +84,11 @@ fn fleet_column(p: &mut ChildSpawnerCommands, run: &RunState) {
     row(p, "escorts", |r| {
         text(r, &run.escorts.to_string(), 14.0, TEXT);
     });
+    row(p, "berths", |r| {
+        let (used, all) = (berthed(run), berths(run));
+        let c = if used >= all { RED_TEXT } else { TEXT };
+        text(r, &format!("{used} of {all}"), 14.0, c);
+    });
     row(p, "hull damage", |r| {
         let (s, c) = match run.scars.len() {
             0 => ("sound".to_string(), GREEN),
@@ -124,7 +129,7 @@ fn refit_column(p: &mut ChildSpawnerCommands, run: &RunState, offers: &[Buy]) {
     text(p, "THE YARD", 18.0, GOLD_TEXT);
     text(
         p,
-        "materials buy hulls, data buys the right to build them",
+        "materials buy hulls, data buys the right to build them, freighters buy the room",
         12.0,
         MUTED,
     );

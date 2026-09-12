@@ -83,14 +83,40 @@ impl Tide {
                 let half = (all as f32 / 2.0).ceil();
                 1 + (t * (half - 1.0).max(0.0)).floor() as usize
             }
-            Phase::Fleet => all,
+            // And it does not stop. A system a fleet could hold for ever is
+            // a system worth farming, so the swarm keeps sending: one more
+            // carrier every `SIEGE` after the fleet is in, with no ceiling.
+            // Staying is always possible and always gets worse, which is
+            // what makes leaving a judgement rather than a rule.
+            Phase::Fleet => {
+                let over = tick - self.probes - self.swarm;
+                all + (over / SIEGE) as usize
+            }
         }
     }
 }
 
+/// How long the swarm takes to send one more carrier once its fleet is in,
+/// in ticks. A minute, which is long enough that holding the ground you have
+/// is worth doing and short enough that nobody holds it twice over.
+pub const SIEGE: u32 = 60 * 60;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_swarm_keeps_coming_once_its_fleet_is_in() {
+        let t = Tide::default();
+        let fleet = t.probes + t.swarm;
+        assert_eq!(t.carriers_at(fleet), t.carriers, "the fleet, and then more");
+        assert_eq!(t.carriers_at(fleet + SIEGE - 1), t.carriers);
+        assert_eq!(t.carriers_at(fleet + SIEGE), t.carriers + 1);
+        assert_eq!(t.carriers_at(fleet + SIEGE * 9), t.carriers + 9);
+        // Which is the point: there is no number of them a player can hold
+        // for ever, so staying is a judgement rather than a rule.
+        assert!(t.carriers_at(fleet + SIEGE * 40) > t.carriers * 4);
+    }
 
     #[test]
     fn the_three_phases_come_in_order_and_the_last_one_lasts() {
@@ -135,7 +161,11 @@ mod tests {
             carriers: 1,
             ..Tide::default()
         };
+        // One all the way to the fleet: the ramp has nothing to ramp.
         assert_eq!(t.carriers_at(0), 1);
-        assert_eq!(t.carriers_at(u32::MAX), 1);
+        assert_eq!(t.carriers_at(t.probes + t.swarm), 1);
+        // And then the siege, which is every system's rule whatever it
+        // started with.
+        assert_eq!(t.carriers_at(t.probes + t.swarm + SIEGE), 2);
     }
 }

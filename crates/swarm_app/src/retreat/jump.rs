@@ -81,10 +81,17 @@ pub(crate) const JUMP_FIELD: f32 = 14.0;
 /// keep the remainder, and a cadence needs none.
 pub(crate) const REFINE_TICKS: u32 = 6;
 
-/// What the command ship arrives with in its own tank: most of the drive's
-/// own cost and none of the fleet's, so a run that loses everything can
-/// still leave and a run that wants to keep its ships has to mine.
-pub(crate) const RESERVE: f32 = 180.0;
+/// What the command ship arrives with in its own tank: the DRIVE's own cost
+/// exactly, and none of the fleet's.
+///
+/// So you can always leave alone. A system that goes badly wrong costs the
+/// escorts and the support ships standing outside the field when it fires,
+/// and never the run itself, which is the answer the owner gave to "does
+/// losing the tanker strand you": total loss is the better disaster, and a
+/// disaster you cannot come back from at all is not a disaster, it is a
+/// reload. It is written as the drive's cost rather than beside it, because
+/// two numbers that have to be equal are one number.
+pub(crate) const RESERVE: f32 = DRIVE_COST as f32;
 
 #[derive(Resource, Default, Debug)]
 pub(crate) struct JumpDrive {

@@ -20,6 +20,8 @@
 //!   that dies.
 //! - [`heat`]: what a wound LOOKS like: the ramp it cools along, its crust
 //!   and its soot, and what a cell is made of in hit points.
+//! - [`wound`]: what a wound HANDS OUT: the breach, the vent and the chunk a
+//!   hit gives whatever is drawing it.
 //! - [`body`]: a hull as a rigid body, off its live cells: mass, centre,
 //!   inertia, and what a hit at a point does.
 //! - [`ray`]: which live cell a ray meets first, so a click lands on a hull.
@@ -42,6 +44,7 @@ pub mod rock;
 pub mod sky;
 pub mod tide;
 pub mod voxel;
+pub mod wound;
 
 pub use damage::DamageGrid;
 pub use fx::{Beam, Blast, Spark, SparkKind};
