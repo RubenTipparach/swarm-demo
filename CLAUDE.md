@@ -1602,6 +1602,7 @@ cargo clippy -p swarm_core -- -D warnings                  # the core's lints
 python3 tools/pngdiff.py before.png after.png --grid       # a refactor's pictures, against the scene's own floor
 python3 tools/make_chitin_texture.py --check               # the chitin has not drifted
 cargo run --release -p swarm_core --example hull_stats -- assets/hulls   # what makes a hull tough
+cargo run --release -p swarm_core --example rock_stats                   # what a rock is worth, and how buried its ore is
 cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png
 # A headless run defaults the launch delay to NOUGHT and a window defaults it

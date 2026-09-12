@@ -360,6 +360,10 @@ with the ship list built from `assets/hulls/manifest.json` rather than typed.
 
 ## 3. Campaign
 
+*Superseded by `roguelike-campaign.md`, which turns these five missions into
+the node archetypes of a roguelike run with an economy and a support fleet.
+The escalation knobs and the data table rule below still hold.*
+
 Scenarios are DATA, one table in `scenario.rs`: name, a short briefing, the
 player's fleet (flagship class, escorts, fighters), motherships, motes, rocks,
 launch delay, chewers per ship, how close the carriers stand. Adding a mission
