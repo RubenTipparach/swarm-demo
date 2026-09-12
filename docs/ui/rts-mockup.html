@@ -110,12 +110,20 @@ body {
         border: 1px solid #2e5f78; color: #7fd8ea; font-weight: 600; font-size: 12.5px;
         letter-spacing: 0.18em; text-transform: uppercase; }
 
-.cats { display: flex; gap: 2px; }
-.cats button { flex: 1; height: 30px; background: #0b1e2b; border: 1px solid #26495c;
-               display: flex; align-items: center; justify-content: center; }
-.cats button svg { width: 20px; height: 20px; color: #5c8ea4; }
-.cats button[aria-pressed="true"] { background: linear-gradient(180deg,#3f3307,#191504); border-color: var(--gold); }
-.cats button[aria-pressed="true"] svg { color: var(--gold); }
+.cats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+.cats button { height: 38px; display: flex; align-items: center; gap: 5px; padding: 0 4px;
+               background: #0b1e2b; border: 1px solid #26495c; color: #5f92a8; text-align: left; }
+.cats .ic { width: 44px; height: 26px; flex: none; background: currentColor;
+            -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; }
+.cats .tx { min-width: 0; }
+.cats .tx b { display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.07em;
+              text-transform: uppercase; color: #a8c4d4; line-height: 1.2; }
+.cats .tx i { font-style: normal; font-family: "Share Tech Mono", monospace; font-size: 10px; color: #4e6274; }
+.cats button:hover { border-color: #47869e; }
+.cats button[aria-pressed="true"] { background: linear-gradient(180deg,#3f3307,#191504);
+                                    border-color: var(--gold); color: var(--gold); }
+.cats button[aria-pressed="true"] .tx b { color: var(--gold); }
+.cats button[aria-pressed="true"] .tx i { color: #b99433; }
 
 .cathead { display: flex; align-items: center; height: 19px; padding: 0 3px;
            background: #17160b; border-bottom: 1px solid var(--gold-dim); }
@@ -153,6 +161,9 @@ body {
 .qslot { position: relative; width: 98px; height: 30px; background: rgba(9,26,37,.85); border: 1px solid #1d3f52;
          display: flex; align-items: center; gap: 4px; padding: 0 3px; overflow: hidden; }
 .qslot img { width: 28px; height: 18px; object-fit: contain; flex: none; }
+.qslot .qi { width: 18px; height: 18px; flex: none; color: var(--gold); }
+.qslot.sub { border-color: var(--gold-dim); }
+.qslot.sub .f { background: var(--gold); }
 .qslot .qn { font-size: 10px; line-height: 1.05; color: #9fd0e0; overflow: hidden; }
 .qslot .f { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--green); }
 
@@ -199,12 +210,21 @@ body {
 .thumb .box { flex: 1; position: relative; background: #04121b; border: 1px solid #1d4459; overflow: hidden; }
 .thumb .box img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 
-.mods { width: 428px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
-.mods button { background: linear-gradient(180deg,#0f2d3e,#071a26); border: 1px solid #2a5c74;
-               display: flex; align-items: center; justify-content: center; }
-.mods button svg { width: 22px; height: 22px; color: #5c8ea4; }
-.mods button[aria-pressed="true"] { border-color: var(--gold); background: linear-gradient(180deg,#3f3307,#191504); }
-.mods button[aria-pressed="true"] svg { color: var(--gold); }
+.mods { width: 428px; display: flex; flex-direction: column; gap: 3px; }
+.mh { display: flex; align-items: center; height: 12px; font-size: 10px; letter-spacing: 0.16em;
+      text-transform: uppercase; color: var(--dim); }
+.mh b { margin-left: auto; font-family: "Share Tech Mono", monospace; font-size: 10px;
+        font-weight: 400; color: var(--teal); }
+.mgrid { flex: 1; display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
+.mgrid button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+                background: linear-gradient(180deg,#0f2d3e,#071a26); border: 1px solid #2a5c74; color: #5f92a8; }
+.mgrid button svg { width: 19px; height: 19px; }
+.mgrid button span { font-size: 8px; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600; }
+.mgrid button:hover { border-color: #47869e; }
+.mgrid button[data-on="in"] { border-color: var(--gold); color: var(--gold);
+                              background: linear-gradient(180deg,#3f3307,#191504); }
+.mgrid button[data-on="work"] { border-color: var(--cyan); color: var(--cyan); }
+.mgrid button[data-on="no"] { opacity: .28; cursor: default; }
 
 .ticker { position: absolute; left: 452px; top: 726px; width: 700px; height: 20px;
           display: flex; align-items: center; justify-content: center;
@@ -252,14 +272,6 @@ body {
 </style>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
-<symbol id="g-tri" viewBox="0 0 24 24"><path d="M12 4l8 15H4z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
-<symbol id="g-sq" viewBox="0 0 24 24"><rect x="5" y="6" width="14" height="12" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
-<symbol id="g-dia" viewBox="0 0 24 24"><path d="M12 4l8 8-8 8-8-8z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
-<symbol id="g-trap" viewBox="0 0 24 24"><path d="M4 18h16l-3-10H7z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
-<symbol id="g-hex" viewBox="0 0 24 24"><path d="M7 6h10l3 6-3 6H7l-3-6z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
-<symbol id="g-pent" viewBox="0 0 24 24"><path d="M12 4l8 6-3 9H7l-3-9z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
-<symbol id="g-cir" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
-<symbol id="g-pill" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="4" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
 
 <symbol id="c-move" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20L18 6"/><path d="M11 6h7v7"/></g></symbol>
 <symbol id="c-attack" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></g></symbol>
@@ -369,7 +381,10 @@ body {
           <div class="box"><img id="uschem" alt="Selected ship schematic"></div>
           <div class="hbar"><span id="uhp" style="width:96%"></span></div>
         </div>
-        <div class="mods" id="mods"></div>
+        <div class="mods nine-w">
+          <div class="mh"><span>Modules</span><b id="modcount">0 / 0</b></div>
+          <div class="mgrid" id="mods"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -380,7 +395,7 @@ body {
       Both pictures in that HUD are generated, not drawn. One function meshes a model with the same greedy pass
       the battlefield uses, renders it to an offscreen target under an orthographic camera, reads the pixels back
       and runs one rim pass over the alpha. The palette and the camera are the only difference between a schematic
-      and an icon, which is why there is one baker and not two. On the Rust side this is the
+      and an icon or a class mark, which is why there is one baker and not three. On the Rust side this is the
       <code>ship_export</code> example writing PNGs beside the hulls, off <code>greedy_mesh</code> and the
       <code>purpose</code> byte the export already carries.
     </p>
@@ -409,7 +424,10 @@ body {
         all of them.</p>
       </div>
       <div>
-        <h3>A schematic is two materials, not a render</h3>
+        <h3>A schematic is a PLAN, in two materials</h3>
+        <p>Straight down, with the length across the frame, because a ship seen from above is its layout and
+        the layout is what the panel is asking a player to read. It is also the one view every hull in a
+        fleet can be held against another in.</p>
         <p>Hull quads fill dark and outline cyan; any cell with a purpose (propulsion, gun, ordnance, command)
         fills and outlines orange. That is the export's own byte, so a ship says what it is made of without
         anybody labelling it, and a hull shot to pieces will read as one.</p>
@@ -426,10 +444,32 @@ body {
         twenty seven hulls get one.</p>
       </div>
       <div>
+        <h3>A class is told apart by its SHIPS</h3>
+        <p>The row of shapes that was there is gone. A triangle and a diamond are two abstractions somebody
+        has to be taught; a fighter's silhouette beside a carrier's is the fleet saying what it is. Each mark
+        is that class's largest hull in elevation, baked by the same baker as everything else and worn as a
+        CSS mask so the button tints it with its own state, and each carries the class name and what you have
+        of it.</p>
+      </div>
+
+      <div>
+        <h3>The row under Build is the MODULES</h3>
+        <p>Not the build menu a second time. It is what bolts ON to the hull that is selected: production,
+        hangar, armour, drives, sensors, refinery. Gold is installed, cyan is on the subsystem queue, and dim
+        is a fit this class cannot take or a hull with no slot left. Clicking an available one spends resource
+        units and puts it on that queue, which is what the Subsystem Queue line above the yard was always
+        for.</p>
+        <p>It sits under Build, Research and Launch because those three decide what the YARD does and this
+        decides what one SHIP is. The header counts the slots, because a module row with no count is six
+        buttons whose refusal has no reason on screen.</p>
+      </div>
+
+      <div>
         <h3>Queueing is real</h3>
         <p>A row costs resource units, lands in the ship queue with a bar, and when it finishes the hull is
-        spawned into the field and the roster count on the left goes up. A row you cannot afford is dim with its
-        price in red, and the producer's production slots are the cap.</p>
+        spawned into the field and the class strip and the roster both count it. A row you cannot afford is
+        dim with its price in red, and the producer's production slots are the cap. The producer is a hull
+        standing in the field rather than a class, so the slots it reports are that ship's own.</p>
       </div>
       <div>
         <h3>Selection drives three places at once</h3>
@@ -659,16 +699,46 @@ body {
     return baker;
   }
 
-  // Frame the model orthographically. A schematic that cropped a bow would be
-  // a schematic nobody could hold against another one.
-  function frame(cam, m, yaw, pitch, w, h, pad) {
-    var r = Math.sqrt(m.nx * m.nx + m.ny * m.ny + m.nz * m.nz) * 0.5 * pad;
-    var asp = w / h;
-    cam.left = -r * asp; cam.right = r * asp; cam.top = r; cam.bottom = -r;
-    cam.near = -r * 4; cam.far = r * 4;
-    cam.position.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch))
-      .multiplyScalar(r * 2);
+  // Frame the model orthographically. One function, three views, because a
+  // schematic, an icon and a class silhouette are the same bake pointed
+  // differently. A frame that cropped a bow would be one nobody could hold
+  // against another.
+  //
+  // PLAN is what a schematic is: straight down, with the ship's LENGTH across
+  // the frame. A ship seen from above is its layout, which is the thing the
+  // panel is asking a player to read, and it is the one view every hull in a
+  // fleet can be compared in.
+  function frame(cam, m, o, w, h) {
+    var r = Math.sqrt(m.nx * m.nx + m.ny * m.ny + m.nz * m.nz) * 0.5;
+    if (o.view === "plan") {
+      cam.up.set(1, 0, 0);
+      cam.position.set(0, r * 2, 0);
+    } else if (o.view === "side") {
+      cam.up.set(0, 1, 0);
+      cam.position.set(r * 2, 0, 0);
+    } else {
+      cam.up.set(0, 1, 0);
+      cam.position.set(Math.sin(o.yaw) * Math.cos(o.pitch), Math.sin(o.pitch),
+        Math.cos(o.yaw) * Math.cos(o.pitch)).multiplyScalar(r * 2);
+    }
     cam.lookAt(0, 0, 0);
+    cam.updateMatrixWorld(true);
+    // Fit the model's own EXTENTS in this view's axes rather than its bounding
+    // sphere. A plan view of a frigate is long and thin, and a sphere that
+    // contains it is set by the length alone: framing on one drew every ship
+    // at a third of the room it had. Eight corners, two dot products each.
+    var right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
+    var up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
+    var hw = 0, hh = 0, c = new THREE.Vector3();
+    for (var i = 0; i < 8; i++) {
+      c.set((i & 1 ? 0.5 : -0.5) * m.nx, (i & 2 ? 0.5 : -0.5) * m.ny, (i & 4 ? 0.5 : -0.5) * m.nz);
+      hw = Math.max(hw, Math.abs(c.dot(right)));
+      hh = Math.max(hh, Math.abs(c.dot(up)));
+    }
+    var asp = w / h;
+    var k = Math.max(hw / asp, hh) * o.pad;
+    cam.left = -k * asp; cam.right = k * asp; cam.top = k; cam.bottom = -k;
+    cam.near = -r * 4; cam.far = r * 4;
     cam.updateProjectionMatrix();
   }
 
@@ -715,11 +785,15 @@ body {
         vertexShader: LINE_VS, fragmentShader: LINE_FS,
         uniforms: { hull: { value: new THREE.Color(0x3fc8e8) }, subs: { value: new THREE.Color(0xff9a3c) } }
       })));
+    } else if (o.mode === "mask") {
+      // Flat white, no rim, no shading: a silhouette the UI tints itself
+      // through a CSS mask, so one asset serves every state a button has.
+      grp.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff })));
     } else {
       grp.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0xbcd0de })));
     }
     B.scene.add(grp);
-    frame(B.cam, model, o.yaw, o.pitch, w, h, o.pad);
+    frame(B.cam, model, o, w, h);
     B.r.setSize(w, h, false);
     B.r.setRenderTarget(rt);
     B.r.setClearColor(0x000000, 0);
@@ -795,17 +869,27 @@ body {
       p: { nx: 24, ny: 18, nz: 36, beam: 19, depth: 16, full: 1.4, bells: 3, guns: 1, spine: 2, sponson: 3, ventral: 0 } },
     { key: "probe", name: "Probe", cat: "utility", cost: 150, role: "Sensor picket",
       spd: 400, gun: 0, arm: 400, slots: 1, build: 5,
-      p: { nx: 10, ny: 10, nz: 12, beam: 8, depth: 8, full: 1.5, bells: 1, guns: 0, spine: 0, sponson: 0, ventral: 0 } }
+      p: { nx: 10, ny: 10, nz: 12, beam: 8, depth: 8, full: 1.5, bells: 1, guns: 0, spine: 0, sponson: 0, ventral: 0 } },
+    { key: "gunplat", name: "Gun Platform", cat: "platform", cost: 300, role: "Static defence",
+      spd: 0, gun: 30, arm: 9000, slots: 0, build: 15,
+      p: { nx: 22, ny: 18, nz: 24, beam: 17, depth: 14, full: 1.7, bells: 0, guns: 2, spine: 2, sponson: 2, ventral: 1 } },
+    { key: "array", name: "Sensor Array", cat: "platform", cost: 250, role: "Detection",
+      spd: 0, gun: 0, arm: 4000, slots: 0, build: 11,
+      p: { nx: 18, ny: 20, nz: 18, beam: 13, depth: 17, full: 1.9, bells: 0, guns: 0, spine: 1, sponson: 1, ventral: 0 } }
   ];
+  // A class is told apart by the SHAPE OF THE SHIPS IN IT, which is the one
+  // thing a player already knows how to read. A triangle and a diamond are
+  // two abstractions somebody has to be taught; a fighter's silhouette beside
+  // a carrier's is the fleet saying what it is. The mark is a silhouette of
+  // that class's largest hull, baked by the same baker as everything else and
+  // worn as a CSS mask so the button tints it with its own state.
   var CATS = [
-    { id: "fighter", icon: "g-tri", label: "Fighter (Alt+F)", cap: 18 },
-    { id: "corvette", icon: "g-sq", label: "Corvette (Alt+C)", cap: 12 },
-    { id: "frigate", icon: "g-dia", label: "Frigate (Alt+R)", cap: 21 },
-    { id: "capital", icon: "g-trap", label: "Capital (Alt+P)", cap: 15 },
-    { id: "utility", icon: "g-pent", label: "Utility (Alt+T)", cap: 50 },
-    { id: "platform", icon: "g-hex", label: "Platform (Alt+L)", cap: 20 },
-    { id: "module", icon: "g-cir", label: "Module (Alt+M)", cap: 8 },
-    { id: "sensor", icon: "g-pill", label: "Sensors (Alt+S)", cap: 10 }
+    { id: "fighter", name: "Fighter", key: "F", cap: 18 },
+    { id: "corvette", name: "Corvette", key: "C", cap: 12 },
+    { id: "frigate", name: "Frigate", key: "R", cap: 21 },
+    { id: "capital", name: "Capital", key: "P", cap: 15 },
+    { id: "utility", name: "Utility", key: "T", cap: 50 },
+    { id: "platform", name: "Platform", key: "L", cap: 20 }
   ];
   var byKey = {};
   SHIPS.forEach(function (s) { byKey[s.key] = s; });
@@ -816,12 +900,25 @@ body {
     s.cells = 0;
     for (var i = 0; i < s.model.g.length; i++) { if (s.model.g[i]) { s.cells++; } }
     s.schem = bake(s.model, s.mesh, {
-      mode: "schematic", w: 440, h: 140, yaw: -0.72, pitch: 0.26, pad: 1.02,
+      mode: "schematic", w: 440, h: 140, view: "plan", pad: 1.05,
       rim: [126, 234, 255], rings: 2
     }).toDataURL();
     s.icon = bake(s.model, s.mesh, {
-      mode: "icon", w: 112, h: 70, yaw: -1.30, pitch: 0.18, pad: 1.02,
+      mode: "icon", w: 112, h: 70, view: "iso", yaw: -1.30, pitch: 0.18, pad: 1.04,
       rim: [10, 22, 32], rings: 1
+    }).toDataURL();
+  });
+
+  // The class mark: the largest hull in that class, in elevation, flat white.
+  // Largest because it is the one whose silhouette survives being 44 px wide,
+  // and because "what does a capital look like" is answered by the capital a
+  // player is most likely to want.
+  CATS.forEach(function (c) {
+    var rows = SHIPS.filter(function (s) { return s.cat === c.id; });
+    var lead = rows.reduce(function (a, b) { return b.cells > a.cells ? b : a; }, rows[0]);
+    c.lead = lead.key;
+    c.mark = bake(lead.model, lead.mesh, {
+      mode: "mask", w: 132, h: 76, view: "side", pad: 1.03, rim: null, rings: 0
     }).toDataURL();
   });
 
@@ -923,7 +1020,7 @@ body {
     mesh.position.set(x, y, z);
     mesh.rotation.y = yaw;
     var h = {
-      spec: spec, mesh: mesh, hp: 0.55 + Math.random() * 0.45,
+      spec: spec, mesh: mesh, hp: 0.55 + Math.random() * 0.45, mods: {},
       drift: new THREE.Vector3((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.14, (Math.random() - 0.5) * 0.5),
       spin: (Math.random() - 0.5) * 0.0011
     };
@@ -932,7 +1029,7 @@ body {
     hulls.push(h);
     return h;
   }
-  spawn("carrier", 0, 0, 0, 0.42);
+  spawn("carrier", 0, 0, 0, 0.42).mods = { prod: true, hangar: true };
   spawn("destroyer", -140, 16, 70, 1.1);
   spawn("ion", 110, -20, -46, -0.5);
   spawn("flak", 146, 12, 34, 2.2);
@@ -1007,6 +1104,7 @@ body {
     document.getElementById("ugun").textContent = h.spec.gun;
     document.getElementById("uarm").textContent = h.spec.arm;
     document.getElementById("uschem").src = h.spec.schem;
+    drawMods();
     var bar = document.getElementById("uhp");
     bar.style.width = Math.round(h.hp * 100) + "%";
     bar.style.background = hpColour(h.hp);
@@ -1059,7 +1157,16 @@ body {
   window.addEventListener("resize", fit);
 
   var ru = 3000, tab = "build", cat = "fighter";
-  var producers = ["carrier", "destroyer"], prodAt = 0;
+  var prodAt = 0;
+  // A producer is a hull STANDING IN THE FIELD, not a class: its production
+  // and module slots are that ship's own, which is what the panel claims.
+  function producerList() {
+    return hulls.filter(function (h) { return h.spec.slots >= 3; });
+  }
+  function producer() {
+    var l = producerList();
+    return l.length ? l[prodAt % l.length] : null;
+  }
   var queue = [], tickerT = null;
 
   function say(msg) {
@@ -1101,8 +1208,48 @@ body {
 
   function drawCats() {
     document.getElementById("cats").innerHTML = CATS.map(function (c) {
+      var n = countOf({ cat: c.id });
       return '<button type="button" data-cat="' + c.id + '" aria-pressed="' + (c.id === cat) +
-        '" title="' + c.label + '"><svg aria-hidden="true"><use href="#' + c.icon + '"></use></svg></button>';
+        '" title="' + c.name + " (Alt+" + c.key + ')">' +
+        '<span class="ic" style="--m:url(' + c.mark + ')"></span>' +
+        '<span class="tx"><b>' + c.name + '</b><i>' + n + " / " + c.cap + "</i></span></button>";
+    }).join("");
+  }
+
+  // What bolts ON to a hull, as against what is built BY one. A module is the
+  // selected ship's own fit: gold is installed, cyan is on the subsystem
+  // queue, dim is a fit this class cannot take. Clicking an available one
+  // spends resource units and puts it on that queue.
+  var MODULES = [
+    { id: "prod", name: "Production", icon: "m-prod", cost: 800, secs: 18, fits: ["capital"] },
+    { id: "hangar", name: "Hangar", icon: "m-hangar", cost: 600, secs: 15, fits: ["capital"] },
+    { id: "armour", name: "Armour", icon: "m-arm", cost: 450, secs: 13, fits: ["capital", "frigate"] },
+    { id: "drives", name: "Drives", icon: "m-eng", cost: 400, secs: 11, fits: ["capital", "frigate", "utility"] },
+    { id: "sensors", name: "Sensors", icon: "m-sens", cost: 350, secs: 9, fits: ["capital", "frigate", "utility", "platform"] },
+    { id: "refinery", name: "Refinery", icon: "m-res", cost: 500, secs: 14, fits: ["utility", "capital"] }
+  ];
+  var subq = [];
+
+  function fitted(h) {
+    var n = 0;
+    MODULES.forEach(function (m) { if (h.mods[m.id]) { n++; } });
+    return n;
+  }
+  function working(h, id) {
+    return subq.some(function (q) { return q.h === h && q.id === id; });
+  }
+
+  function drawMods() {
+    if (!sel) { return; }
+    var cap = sel.spec.slots;
+    document.getElementById("modcount").textContent = fitted(sel) + " / " + cap;
+    document.getElementById("mods").innerHTML = MODULES.map(function (m) {
+      var state = sel.mods[m.id] ? "in"
+        : working(sel, m.id) ? "work"
+        : m.fits.indexOf(sel.spec.cat) < 0 || fitted(sel) >= cap ? "no" : "";
+      return '<button type="button" data-mod="' + m.id + '" data-on="' + state +
+        '" title="' + m.name + " module, " + m.cost + ' RU"><svg aria-hidden="true"><use href="#' +
+        m.icon + '"></use></svg><span>' + m.name + "</span></button>";
     }).join("");
   }
 
@@ -1144,7 +1291,7 @@ body {
       return;
     }
     var c = CATS.filter(function (k) { return k.id === cat; })[0];
-    head.textContent = c.label;
+    head.textContent = c.name + " (Alt+" + c.key + ")";
     count.textContent = countOf({ cat: cat }) + " / " + c.cap;
     var rows = SHIPS.filter(function (s) { return s.cat === cat; });
     host.innerHTML = rows.length ? rows.map(function (s) {
@@ -1157,23 +1304,35 @@ body {
   }
 
   function drawProducer() {
-    var s = byKey[producers[prodAt]];
-    document.getElementById("prodname").textContent = s.name;
-    document.getElementById("prodschem").src = s.schem;
+    var h = producer();
+    if (!h) { return; }
+    document.getElementById("prodname").textContent = h.spec.name;
+    document.getElementById("prodschem").src = h.spec.schem;
+    document.getElementById("prodhp").style.width = Math.round(h.hp * 100) + "%";
+    document.getElementById("prodhp").style.background = hpColour(h.hp);
     document.getElementById("slots").innerHTML =
-      '<div><span>Production Slots</span><span class="v">' + queue.length + " / " + s.slots + "</span></div>" +
-      '<div><span>Module Slots</span><span class="v">1 / ' + Math.max(1, s.slots - 1) + "</span></div>" +
-      '<div><span>Sensors Slot</span><span class="v">0 / 1</span></div>';
+      '<div><span>Production Slots</span><span class="v">' + queue.length + " / " + h.spec.slots + "</span></div>" +
+      '<div><span>Module Slots</span><span class="v">' + fitted(h) + " / " + h.spec.slots + "</span></div>" +
+      '<div><span>Sensors Slot</span><span class="v">' + (h.mods.sensors ? 1 : 0) + " / 1</span></div>";
   }
 
   function drawQueue() {
-    document.getElementById("queue").innerHTML = queue.map(function (q) {
+    var subs = subq.map(function (q) {
+      return '<div class="qslot sub"><svg class="qi" aria-hidden="true"><use href="#' +
+        MODULES.filter(function (m) { return m.id === q.id; })[0].icon + '"></use></svg>' +
+        '<span class="qn">' + q.name + '</span><span class="f" style="width:' +
+        ((1 - q.left / q.secs) * 100) + '%"></span></div>';
+    });
+    var ships = queue.map(function (q) {
       var s = byKey[q.key];
       return '<div class="qslot"><img src="' + s.icon + '" alt=""><span class="qn">' + s.name +
         '</span><span class="f" style="width:' + ((1 - q.left / q.secs) * 100) + '%"></span></div>';
-    }).join("");
+    });
+    document.getElementById("queue").innerHTML = subs.concat(ships).join("");
     document.getElementById("qshiptxt").textContent =
       queue.length ? "Ship Queue (" + queue.length + ")" : "Ship Queue (Empty)";
+    document.getElementById("qsubtxt").textContent =
+      subq.length ? "Subsystem Queue (" + subq.length + ")" : "Subsystem Queue (Empty)";
   }
 
   function drawRU() { document.getElementById("ru").textContent = ru; }
@@ -1184,12 +1343,6 @@ body {
              ["c-rally", "Rally point"], ["c-salv", "Salvage"], ["c-hyper", "Hyperspace"], ["c-scut", "Scuttle"]];
     document.getElementById("cmd").innerHTML = C.map(function (k, i) {
       return '<button type="button" data-cmd="' + i + '" aria-pressed="false" title="' + k[1] +
-        '"><svg aria-hidden="true"><use href="#' + k[0] + '"></use></svg></button>';
-    }).join("");
-    var M = [["m-prod", "Production"], ["m-hangar", "Hangar"], ["m-arm", "Armour"],
-             ["m-eng", "Engines"], ["m-sens", "Sensors"], ["m-res", "Refinery"]];
-    document.getElementById("mods").innerHTML = M.map(function (k, i) {
-      return '<button type="button" data-mod="' + i + '" aria-pressed="' + (i < 2) + '" title="' + k[1] +
         '"><svg aria-hidden="true"><use href="#' + k[0] + '"></use></svg></button>';
     }).join("");
     var g = "";
@@ -1221,13 +1374,15 @@ body {
     if (t.id === "showall") { cat = "capital"; drawCats(); drawList(); say("All classes"); return; }
     if (t.dataset.tab) { tab = t.dataset.tab; syncTabs(); drawList(); return; }
     if (t.dataset.prod) {
-      prodAt = (prodAt + (t.dataset.prod === "1" ? 1 : producers.length - 1)) % producers.length;
+      var n = producerList().length || 1;
+      prodAt = (prodAt + (t.dataset.prod === "1" ? 1 : n - 1)) % n;
       drawProducer();
       return;
     }
     if (t.dataset.buy) {
       var s = byKey[t.dataset.buy];
-      if (queue.length >= byKey[producers[prodAt]].slots) { say("Production slots full"); return; }
+      var ph = producer();
+      if (ph && queue.length >= ph.spec.slots) { say("Production slots full"); return; }
       if (ru < s.cost) { say("Insufficient resource units"); return; }
       ru -= s.cost;
       queue.push({ key: s.key, secs: s.build, left: s.build });
@@ -1249,8 +1404,14 @@ body {
       if (!on) { say(t.title + ": pick a point"); }
       return;
     }
-    if (t.dataset.mod !== undefined) {
-      t.setAttribute("aria-pressed", t.getAttribute("aria-pressed") === "true" ? "false" : "true");
+    if (t.dataset.mod) {
+      if (t.dataset.on) { return; }
+      var m = MODULES.filter(function (k) { return k.id === t.dataset.mod; })[0];
+      if (ru < m.cost) { say("Insufficient resource units"); return; }
+      ru -= m.cost;
+      subq.push({ h: sel, id: m.id, secs: m.secs, left: m.secs, name: m.name });
+      drawRU(); drawMods(); drawQueue(); drawProducer();
+      say(m.name + " module laid down");
       return;
     }
     if (t.dataset.grp) {
@@ -1297,7 +1458,16 @@ body {
         landed = true;
       }
     }
-    if (landed) { drawRoster(); drawList(); drawProducer(); say("Ship complete"); }
+    for (i = subq.length - 1; i >= 0; i--) {
+      subq[i].left -= dt;
+      if (subq[i].left <= 0) {
+        subq[i].h.mods[subq[i].id] = true;
+        subq.splice(i, 1);
+        landed = true;
+        drawMods();
+      }
+    }
+    if (landed) { drawRoster(); drawCats(); drawList(); drawProducer(); say("Build complete"); }
     drawQueue();
 
     hulls.forEach(function (h) {
@@ -1340,8 +1510,8 @@ body {
   }).join("");
 
   // ---- go ----
-  drawCats(); drawRoster(); drawList(); drawProducer(); drawQueue(); drawRU(); drawBars();
-  syncTabs(); select(hulls[0]); fit();
+  drawRoster(); drawCats(); drawList(); drawProducer(); drawQueue(); drawRU(); drawBars();
+  syncTabs(); select(hulls[0]); drawMods(); fit();
   requestAnimationFrame(loop);
 })();
 </script>
