@@ -114,6 +114,10 @@ pub(crate) struct Script {
     /// picture is of. A scripted jump is not paid for: half an hour of
     /// mining is not a thing a headless run can afford to render.
     pub(crate) jump: Option<u32>,
+    /// Take the first branch off the map without waiting to be told, so a
+    /// headless run can photograph the system AFTER a jump: the scars, the
+    /// roster and the bank a run carries only show in the next one.
+    pub(crate) onward: bool,
 }
 
 pub(crate) fn script_jobs(

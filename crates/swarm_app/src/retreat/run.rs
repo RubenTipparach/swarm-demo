@@ -22,6 +22,16 @@ pub(crate) struct RunState {
     pub(crate) flagship: String,
     /// How many escorts are flying with the flagship.
     pub(crate) escorts: u32,
+    /// Cells of the flagship that were dead when it jumped, applied to the
+    /// hull it arrives in. This is what makes a system COST something: the
+    /// field is built fresh every time, so without it a run would arrive in
+    /// a pristine ship however the last one went.
+    pub(crate) scars: Vec<u32>,
+    /// The roles the yard will build. Research is what adds to it, which is
+    /// the design's "buy equipment that unlocks more research" read the one
+    /// way that costs nothing to say: data buys the right to spend
+    /// materials.
+    pub(crate) unlocked: Vec<Role>,
 }
 
 impl Default for RunState {
@@ -49,6 +59,20 @@ impl RunState {
             systems: 0,
             flagship: flagship.into(),
             escorts: 1,
+            scars: Vec::new(),
+            unlocked: vec![Role::Miner, Role::Tanker],
+        }
+    }
+
+    /// Take the branch the player picked on the map.
+    ///
+    /// Which of `next` is the run's one real decision, so it is made on a
+    /// screen and not here. What this refuses is a node that is not actually
+    /// reachable from where the fleet stands, because a map that can be
+    /// asked to jump anywhere is not a map.
+    pub(crate) fn go(&mut self, to: u16) {
+        if self.node().next.contains(&to) {
+            self.at = to;
         }
     }
 
@@ -62,29 +86,16 @@ impl RunState {
         self.node().next.is_empty()
     }
 
-    /// Move on after a jump.
-    ///
-    /// The FIRST branch, until there is a map screen to pick one on. That
-    /// keeps the run playable end to end now and is exactly the line the map
-    /// screen replaces: the choice is which of `next` this takes, and every
-    /// path crosses every act whichever it is.
-    pub(crate) fn advance(&mut self) {
-        if let Some(&to) = self.node().next.first() {
-            self.at = to;
-        }
-    }
-
     /// What this run is, for the log. A run is a function of its seed, so
     /// this is what somebody reproducing a picture needs.
     pub(crate) fn brief(&self) -> String {
         let node = self.node();
         format!(
-            "run {:#x}: system {} of {}, act {} node {}, {}",
+            "run {:#x}, system {}: act {} of {}, a {} system",
             self.seed,
             self.systems + 1,
-            self.map.nodes.len(),
             node.act + 1,
-            self.at,
+            ACTS,
             node.tag.label()
         )
     }

@@ -7,11 +7,13 @@
 //! in.
 
 mod jump;
+mod refit;
 mod run;
 mod tide;
 mod work;
 
 pub(crate) use jump::*;
+pub(crate) use refit::*;
 pub(crate) use run::*;
 pub(crate) use tide::*;
 pub(crate) use work::*;

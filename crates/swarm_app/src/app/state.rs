@@ -18,6 +18,10 @@ pub(crate) enum AppState {
     Setup,
     Playing,
     Result,
+    /// Between two systems of a run: what the fleet is, what the bank buys,
+    /// and which way it jumps next. The field stays up behind it, because
+    /// the wreckage of the system just left is the picture this sits over.
+    Map,
 }
 
 /// Where the arguments said to open.
@@ -177,13 +181,24 @@ pub(crate) const VERDICT_GRACE: u32 = 240;
 /// The verdict. Every carrier a wreck is a win; every player hull a wreck is
 /// a loss; a sandbox never ends. Wrecks are hulls too and count as neither,
 /// which is what `dead_hull` is for.
+// Three optional components on one query, and each is a RULE: a carrier is
+// not a ship, the flagship is the run, and a wreck is neither.
+#[allow(clippy::type_complexity)]
 pub(crate) fn judge(
     scene: Res<SceneSpec>,
     tick: Res<Tick>,
-    hulls: Query<(&Hull, Option<&Hive>), Without<Wreck>>,
+    drive: Res<JumpDrive>,
+    hulls: Query<(&Hull, Option<&Hive>, Option<&Flagship>), Without<Wreck>>,
     mut outcome: ResMut<Outcome>,
     mut next: ResMut<NextState<AppState>>,
 ) {
+    // A system that has been JUMPED out of has had its verdict, and the
+    // fleet it is counting left with the drive: without this the frame after
+    // a jump sees no player hulls at all and calls it a defeat, over the top
+    // of what the jump already wrote.
+    if drive.jumped {
+        return;
+    }
     // The field is spawned through commands and lands a frame late, and a
     // scene with no carriers in it is a playground rather than a fight.
     if scene.sandbox || tick.tick < 60 || scene.hives == 0 {
@@ -196,9 +211,10 @@ pub(crate) fn judge(
         return;
     }
     let mut ships = 0;
+    let mut flags = 0;
     let mut hives = 0;
     let mut cells = 0;
-    for (h, hive) in &hulls {
+    for (h, hive, flag) in &hulls {
         if h.dead_hull {
             continue;
         }
@@ -206,15 +222,24 @@ pub(crate) fn judge(
             hives += 1;
         } else {
             ships += 1;
+            flags += flag.is_some() as u32;
             cells += h.damage.dead_count();
         }
     }
     // In a retreat the way out is the drive: killing every carrier in a
     // system is worth doing and is not a victory, because the tide brings
     // more and the fleet is still coming. Only the loss applies.
+    // A RUN ends with the command ship, not with the last hull flying: a
+    // retreat whose flagship is a wreck is over however many miners are
+    // still cutting, because the drive that carries them out was in it.
+    let gone = if scene.retreat {
+        flags == 0
+    } else {
+        ships == 0
+    };
     let verdict = if hives == 0 && !scene.retreat {
         Some(true)
-    } else if ships == 0 {
+    } else if gone {
         Some(false)
     } else {
         None

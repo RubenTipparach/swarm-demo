@@ -53,7 +53,17 @@ fn result_rows(
             ("materials", bank.materials.to_string()),
             ("jump fuel", format!("{:.0}", bank.fuel)),
             ("data", bank.data.to_string()),
-            ("ships lost", lost),
+            // What a jump costs is the ships that were not inside the field
+            // when it went, which is a different question from what a battle
+            // costs and is the one this screen can answer.
+            (
+                if outcome.jumped {
+                    "left in the system"
+                } else {
+                    "ships lost"
+                },
+                lost,
+            ),
         ]
     } else {
         vec![
@@ -86,7 +96,7 @@ pub(crate) fn build_result(
     // replayed, a system is followed by the next one, and a finished run is
     // followed by a fresh one.
     let again = match (scene.retreat, outcome.escaped) {
-        (true, false) => "Next system",
+        (true, false) => "Where next",
         (true, true) => "New run",
         _ => "Again",
     };
@@ -156,17 +166,22 @@ pub(crate) fn result_input(
     menu: Query<&Interaction, (Changed<Interaction>, With<ToMenuButton>)>,
     keys: Res<ButtonInput<KeyCode>>,
     outcome: Res<Outcome>,
+    scene: Res<SceneSpec>,
     mut run: ResMut<RunState>,
     mut next: ResMut<NextState<AppState>>,
 ) {
     if pressed(&again) || keys.just_pressed(KeyCode::Enter) {
         // A finished run is not replayed, it is started again: a new seed,
-        // an empty bank and the two ships a run opens with. `run.advance`
-        // has already moved a run that is only between systems.
+        // an empty bank and the two ships a run opens with.
         if outcome.escaped {
             *run = RunState::new(run.seed.wrapping_add(1), &run.flagship.clone());
         }
-        next.set(AppState::Playing);
+        // Between two systems is the map, where the branch is picked and the
+        // bank is spent. A skirmish has neither and goes straight back in.
+        next.set(match (scene.retreat, outcome.escaped) {
+            (true, false) => AppState::Map,
+            _ => AppState::Playing,
+        });
     } else if pressed(&menu) || keys.just_pressed(KeyCode::Escape) {
         next.set(AppState::Menu);
     }

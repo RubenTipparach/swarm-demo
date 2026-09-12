@@ -18,6 +18,8 @@
 //!   `sky.ts`.
 //! - [`fx`]: what a shot is, what a blast kills, and what comes off a thing
 //!   that dies.
+//! - [`heat`]: what a wound LOOKS like: the ramp it cools along, its crust
+//!   and its soot, and what a cell is made of in hit points.
 //! - [`body`]: a hull as a rigid body, off its live cells: mass, centre,
 //!   inertia, and what a hit at a point does.
 //! - [`ray`]: which live cell a ray meets first, so a click lands on a hull.
@@ -31,6 +33,7 @@ pub mod body;
 pub mod damage;
 pub mod economy;
 pub mod fx;
+pub mod heat;
 pub mod map;
 pub mod mesh;
 pub mod ray;

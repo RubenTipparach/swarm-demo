@@ -2,6 +2,7 @@
 
 mod bars;
 mod hud;
+mod map;
 mod menu;
 mod pause;
 mod result;
@@ -12,6 +13,7 @@ mod theme;
 
 pub(crate) use bars::*;
 pub(crate) use hud::*;
+pub(crate) use map::*;
 pub(crate) use menu::*;
 pub(crate) use pause::*;
 pub(crate) use result::*;

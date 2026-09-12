@@ -191,6 +191,9 @@ struct Args {
     /// `--jump TICK` has the drive ready at that tick, so the jump and the
     /// screen after it can be photographed without mining for the fuel.
     jump: Option<u32>,
+    /// And `--onward` goes straight on into the next system rather than
+    /// waiting on the map for a branch to be pressed.
+    onward: bool,
 }
 
 fn parse_args() -> Args {
@@ -235,6 +238,7 @@ fn parse_args() -> Args {
         job: None,
         support: Vec::new(),
         jump: None,
+        onward: false,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -306,6 +310,10 @@ fn parse_args() -> Args {
                 a.job = Some(next().parse().expect("--job TICK"));
                 a.retreat = true;
                 i += 1;
+            }
+            "--onward" => {
+                a.onward = true;
+                a.retreat = true;
             }
             "--jump" => {
                 a.jump = Some(next().parse().expect("--jump TICK"));
@@ -423,6 +431,7 @@ fn main() {
         Some("menu") => AppState::Menu,
         Some("setup") => AppState::Setup,
         Some("result") => AppState::Result,
+        Some("map") => AppState::Map,
         Some(other) => panic!("--screen {other}: menu, setup or result"),
         None if args.headless || args.play => AppState::Playing,
         None => AppState::Menu,
@@ -598,6 +607,7 @@ fn main() {
         .insert_resource(Script {
             job: args.job,
             jump: args.jump,
+            onward: args.onward,
         })
         .init_resource::<JumpDrive>()
         .init_resource::<TideState>()
@@ -641,12 +651,15 @@ fn main() {
         .add_systems(OnEnter(AppState::Menu), build_menu)
         .add_systems(OnEnter(AppState::Setup), build_setup)
         .add_systems(OnEnter(AppState::Result), build_result)
+        .add_systems(OnEnter(AppState::Map), build_map)
+        .add_systems(OnEnter(AppState::Result), script_onward)
         .add_systems(
             Update,
             (
                 menu_input.run_if(in_state(AppState::Menu)),
                 setup_input.run_if(in_state(AppState::Setup)),
                 result_input.run_if(in_state(AppState::Result)),
+                map_input.run_if(in_state(AppState::Map)),
                 hover_buttons.run_if(not(in_state(AppState::Playing))),
             ),
         )
@@ -683,6 +696,7 @@ fn main() {
                     // and the drive, which is the only way out.
                     (
                         size_holds,
+                        apply_scars,
                         script_jobs,
                         script_jump,
                         work_jobs,
