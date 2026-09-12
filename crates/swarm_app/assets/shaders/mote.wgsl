@@ -123,8 +123,14 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     // million bloom sources and the swarm read as a green haze with bodies
     // somewhere in it. Half to just under two now: a fighter at rest is an
     // ember below the threshold, and only one at full transit crosses it.
+    //
+    // The seven is the swarm's own top speed and has to move with it. It was
+    // fourteen against a cap of eight to sixteen; the cap is halved now, and
+    // left alone this would have quietly taken the brightest drive in the
+    // cloud down to 1.3 and put the flare at full transit under the bloom
+    // threshold, which is the sentence above going silently false.
     let speed = length(vertex.i_vel_seed.xyz);
-    out.glow = (1.0 - vertex.color.a) * (0.5 + 1.4 * clamp(speed / 14.0, 0.0, 1.0));
+    out.glow = (1.0 - vertex.color.a) * (0.5 + 1.4 * clamp(speed / 7.0, 0.0, 1.0));
     out.shade = vertex.i_shade.xyz;
     out.hurt = clamp(1.0 - vertex.i_life.x, 0.0, 1.0);
     return out;

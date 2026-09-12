@@ -608,12 +608,26 @@ rule either: `p.hives == 0` and a dead mote simply stays dead.
 countdown over about eight seconds, so the first thing a player sees is ten
 carriers streaming fighters rather than a cloud that was already there.
 
-**Fighters have to be able to CROSS.** At the three to six units a second the
-swarm held when it lived on a shell round the ship, a fighter launched from
-seventy units out took twenty seconds to reach the fight and the cloud never
-built. Eight to sixteen makes the transit about five seconds. The pull toward
-the hull is also capped, or a fighter fifty units out accelerates at fifty and
-arrives as a bullet: it is the cap that makes an approach read as a flight.
+**Fighters have to be able to CROSS, and then to be LOOKED at.** At the three
+to six units a second the swarm held when it lived on a shell round the ship, a
+fighter launched from seventy units out took twenty seconds to reach the fight
+and the cloud never built. Eight to sixteen fixed that and overshot it: the
+transit came down to five seconds and everything after it was a blur, a mote
+arriving, crossing the ring and gone again before a player could pick it out,
+and a gun laid on one laid on where it had been. Four to eight is the cap now,
+half of that, which puts the transit at about ten seconds and leaves the
+fighting legible. It is the CAP and nothing else: the pulls and the swirl are
+what they were, and a mote simply stops gaining once it is up to speed.
+
+The pull toward the hull is capped for the same kind of reason, or a fighter
+fifty units out accelerates at fifty and arrives as a bullet: it is the cap
+that makes an approach read as a flight.
+
+And the drive glow in `mote.wgsl` divides by that top speed, so it moves with
+it. It was fourteen against a cap of sixteen; left alone at half the cap it
+would have quietly taken the brightest drive in the cloud under the bloom
+threshold, which is the rule about a fighter at full transit crossing it going
+false without a line of it changing.
 
 **A carrier is a siege.** `HIVE_HP` is twelve hundred, which is the better
 part of a minute of concentrated fire from three beams. At a tenth of that
