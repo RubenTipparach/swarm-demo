@@ -590,13 +590,18 @@ body {
         play.</p>
       </div>
       <div>
-        <h3>Selection is two lines, not a box</h3>
-        <p>Four corner brackets round a bounding square are a box drawn at the size of the ship's DIAGONAL,
-        so a frigate seen end on wore a mark three times its own width. Two vertical lines at the hull's own
-        left and right say where it is and take no room, and the projection is off the eight corners of its
-        solid box rather than a radius guessed from the lattice.</p>
-        <p>Those lines, the integrity bar under them, the unit readout and the schematic in the bottom bar
-        are one selection with four readers. An unselected hull gets a hairline under it and nothing more.</p>
+        <h3>Selection is an OUTLINE, drawn on the ship</h3>
+        <p>Brackets, rings and lines are all a shape drawn NEAR a hull, sized off a bounding box that on a
+        long ship is mostly empty: a frigate seen end on wore a mark three times its own width. The
+        selected hull is outlined instead, which is the one mark that is always exactly the ship.</p>
+        <p>The same geometry a second time, back faces only, swollen by a constant world thickness per axis
+        so the shell is even rather than heavier at the bow, depth tested and drawn after the hull, so the
+        inside fails against the ship's own depth and only the ring outside its silhouette survives. The
+        thickness is set in PIXELS and converted per frame, because a marker nobody can see at the zoom
+        they are actually at is a marker that is not there.</p>
+        <p>The integrity bar sits ABOVE the hull and on the selected one alone. It stays in screen space
+        because a bar has to be the same number of pixels tall at every range; the outline is the ship's own
+        shape, so it does not.</p>
       </div>
     </div>
     <p class="foot">
@@ -1201,6 +1206,39 @@ body {
 
   var sel = hulls[0];
 
+  // Selection is an outline on the SHIP rather than a shape drawn near it.
+  // The same geometry a second time, back faces only, swollen by a constant
+  // WORLD thickness on each axis (so the shell is even rather than thicker
+  // at the bow, which is what a uniform scale of a long hull gives), depth
+  // tested and drawn after the ship: the interior fails against the hull's
+  // own depth and only the ring outside its silhouette survives.
+  var outline = new THREE.Mesh(
+    new THREE.BufferGeometry(),
+    new THREE.MeshBasicMaterial({
+      color: 0x6ff0ff, side: THREE.BackSide, depthWrite: false,
+      transparent: true, opacity: 0.92
+    })
+  );
+  outline.renderOrder = 2;
+  outline.visible = false;
+  scene.add(outline);
+
+  // Thickness in PIXELS, not in units: a marker a player cannot see at the
+  // zoom they are actually at is a marker that is not there.
+  var OUTLINE_PX = 2.6;
+  function poseOutline() {
+    if (!sel) { outline.visible = false; return; }
+    outline.geometry = cache[sel.spec.key].geo;
+    outline.position.copy(sel.mesh.position);
+    outline.quaternion.copy(sel.mesh.quaternion);
+    var dist = Math.max(1, sel.mesh.position.distanceTo(camera.position));
+    var perPx = 2 * Math.tan(camera.fov * Math.PI / 360) * dist / Math.max(1, stage.clientHeight);
+    var d = OUTLINE_PX * perPx;
+    var b = sel.spec.model.bb.h;
+    outline.scale.set(1 + d / b[0], 1 + d / b[1], 1 + d / b[2]);
+    outline.visible = true;
+  }
+
   // ---- camera and picking ----
   var drag = null;
   cv.addEventListener("pointerdown", function (e) {
@@ -1281,36 +1319,21 @@ body {
     return { x0: x0, x1: x1, y0: y0, y1: y1 };
   }
 
-  // Two vertical lines at the hull's own left and right, and nothing else.
-  // Four corner brackets round a bounding square are a box drawn at the size
-  // of the ship's DIAGONAL, so a frigate seen end on wore a mark three times
-  // its own width; a pair of lines says where it is and takes no room.
+  // The only thing left in screen space is the integrity bar, ABOVE the hull
+  // and on the selected one alone. A bar has to be the same number of pixels
+  // tall at every range, which is why it is not a mesh; the outline is the
+  // ship's own shape and so is.
   function drawBrackets() {
     var w = stage.clientWidth, h = stage.clientHeight;
     brk.setAttribute("viewBox", "0 0 " + w + " " + h);
-    var out = "";
-    hulls.forEach(function (hh) {
-      if (hh.mesh.position.clone().project(camera).z > 1) { return; }
-      var b = screenBox(hh, w, h);
-      var mid = (b.y0 + b.y1) / 2;
-      var half = Math.max(7, (b.y1 - b.y0) / 2 + 3);
-      var l = Math.round(b.x0) - 4, r = Math.round(b.x1) + 4;
-      if (hh === sel) {
-        out += '<g stroke="#6ff0ff" stroke-width="1.4" fill="none">' +
-          '<path d="M' + l + " " + (mid - half) + "V" + (mid + half) + '"/>' +
-          '<path d="M' + r + " " + (mid - half) + "V" + (mid + half) + '"/></g>' +
-          '<rect x="' + l + '" y="' + (mid + half + 4) + '" width="' + (r - l) +
-          '" height="2" fill="#0a1a12"/>' +
-          '<rect x="' + l + '" y="' + (mid + half + 4) + '" width="' + ((r - l) * hh.hp) +
-          '" height="2" fill="' + hpColour(hh.hp) + '"/>';
-      } else {
-        // A hairline under an unselected hull: enough to say it is a unit,
-        // not enough to be read before the ship it is under.
-        out += '<path d="M' + (l + 3) + " " + (mid + half) + "H" + (r - 3) +
-          '" stroke="rgba(108,214,168,.35)" stroke-width="1"/>';
-      }
-    });
-    brk.innerHTML = out;
+    if (!sel || sel.mesh.position.clone().project(camera).z > 1) { brk.innerHTML = ""; return; }
+    var b = screenBox(sel, w, h);
+    var l = Math.round(b.x0), r = Math.max(Math.round(b.x1), l + 14);
+    var y = Math.round(b.y0) - 9;
+    brk.innerHTML =
+      '<rect x="' + l + '" y="' + y + '" width="' + (r - l) + '" height="3" fill="#071410"/>' +
+      '<rect x="' + l + '" y="' + y + '" width="' + ((r - l) * sel.hp) +
+      '" height="3" fill="' + hpColour(sel.hp) + '"/>';
   }
 
   // ===================================================================
@@ -1715,6 +1738,7 @@ body {
       orbit.focus.z + Math.cos(orbit.yaw) * Math.cos(orbit.pitch) * orbit.dist
     );
     camera.lookAt(orbit.focus);
+    poseOutline();
     renderer.render(scene, camera);
     drawBrackets();
 
