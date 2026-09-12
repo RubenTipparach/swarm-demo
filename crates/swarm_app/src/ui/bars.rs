@@ -179,3 +179,17 @@ pub(crate) const BAR_H: f32 = 5.0;
 /// What a fighter is worth, in world units, wherever something has to be
 /// drawn round one: the ring, the bar's height.
 pub(crate) const FIGHTER_RADIUS: f32 = 0.6;
+
+/// The bars do not belong to a scene's entities, so a teardown leaves them:
+/// this takes them down on the way out of `Playing`, or the last fight's
+/// bars would hang over the menu.
+pub(crate) fn clear_bars(
+    mut commands: Commands,
+    mut pool: ResMut<BarPool>,
+    bars: Query<Entity, With<HealthBar>>,
+) {
+    for e in &bars {
+        commands.entity(e).despawn();
+    }
+    pool.0.clear();
+}

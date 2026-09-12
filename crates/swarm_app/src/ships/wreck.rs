@@ -112,10 +112,12 @@ pub(crate) fn go_critical(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut chunk_mats: ResMut<ChunkMaterials>,
     turrets: Query<(Entity, &GlobalTransform, &ChildOf), With<Turret>>,
+    hives: Query<(), With<Hive>>,
+    mut outcome: ResMut<Outcome>,
 ) {
     for (entity, mut hull, xf) in &mut hulls {
         let hull = &mut *hull;
-        if hull.dead_hull {
+        if hull.dead_hull || hull.invulnerable {
             continue;
         }
         // Only the reactor counts. A hull can be shot to pieces everywhere
@@ -137,6 +139,12 @@ pub(crate) fn go_critical(
             continue;
         }
         hull.dead_hull = true;
+        // The verdict's ledger: a player hull gone, and every cell it had
+        // lost by then, because the wreck it becomes is not asked again.
+        if !hives.contains(entity) {
+            outcome.ships_lost += 1;
+            outcome.cells_lost += hull.damage.dead_count();
+        }
 
         let radius = hull.model.radius();
         let centre = xf.translation;
@@ -271,6 +279,7 @@ pub(crate) fn go_critical(
                 dead_hull: true,
                 reactor: Vec::new(),
                 seed: hull.seed ^ (i as u32 + 1),
+                invulnerable: false,
             };
             let wreck_e = commands.spawn((*xf, Visibility::default())).id();
             let mut touched = vec![false; wreck.damage.brick_count()];

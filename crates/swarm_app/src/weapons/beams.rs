@@ -110,12 +110,13 @@ pub(crate) fn resolve_beams(
 /// Guns go off on their own cadence, staggered so a broadside is a rattle
 /// rather than one bang, and sweep so the beams rake the cloud instead of
 /// drilling the same hole in it forever.
+#[allow(clippy::type_complexity)]
 pub(crate) fn fire_guns(
     tick: Res<Tick>,
     scene: Res<SceneSpec>,
     // Not the carriers, which are hulls now: a mothership does not
     // carry the fleet's guns and would otherwise open fire on its own side.
-    hulls: Query<(&Hull, &Transform), Without<Hive>>,
+    hulls: Query<(&Hull, &Transform), (Without<Hive>, Without<Dummy>)>,
     hives: Query<(&Hive, &Transform)>,
     mut fx: ResMut<LiveFx>,
     mut sparks: ResMut<SparkQueue>,

@@ -3,9 +3,11 @@
 
 mod beams;
 mod flak;
+mod range;
 
 pub(crate) use beams::*;
 pub(crate) use flak::*;
+pub(crate) use range::*;
 
 use crate::*;
 
@@ -58,6 +60,9 @@ pub(crate) struct Tracer {
     pub(crate) rate: f32,
     /// What it does when it lands, in world units.
     pub(crate) burst: f32,
+    /// And what else, when it is a torpedo on the range: handed to `Landed`
+    /// the frame it arrives, for the range to strike with.
+    pub(crate) payload: Option<Landing>,
     pub(crate) colour: [f32; 3],
 }
 

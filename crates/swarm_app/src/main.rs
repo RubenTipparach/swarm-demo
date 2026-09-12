@@ -60,10 +60,11 @@ use swarm::{
 use swarm_core::voxel::{mat, SURF_DRIVE};
 use swarm_core::{
     alien::{generate, Archetype},
-    damage::{chunk_for, Chunk, DamageGrid, Vent},
+    body::Body,
+    damage::{chunk_for, Breach, Chunk, DamageGrid, Vent},
     fx::{
-        blast_sparks, breach_sparks, engine_clusters, gun_clusters, muzzle_sparks, reactor_of,
-        shatter, Beam, Blast, Gun, Spark, SparkKind,
+        blast_sparks, breach_sparks, engine_clusters, engines_of, gun_clusters, guns_of,
+        muzzle_sparks, reactor_of, shatter, Beam, Blast, Gun, Spark, SparkKind,
     },
     mesh::{greedy_mesh, mesh_region, srgb_to_linear, MeshData, Surfaces},
     rng::{drift_of, Rng},
@@ -156,6 +157,20 @@ struct Args {
     /// This is for the harness, and it is what makes a headless render a
     /// function of its frame count rather than of how fast the machine is.
     fixed_dt: bool,
+    /// Which screen to open on: `menu`, `setup` or `result`. Implies
+    /// `--hud`, because a screen is UI and UI needs the UI camera.
+    screen: Option<String>,
+    /// A playground rather than a fight: a target dummy, the range, the
+    /// toggles, and no verdict.
+    sandbox: bool,
+    /// Straight into the fight from a window, the way the harness always is.
+    play: bool,
+    target_hull: String,
+    seed: u64,
+    stand: f32,
+    /// One scripted shot on the range: `--fire slug,40` lands a slug on the
+    /// dummy at tick forty, so a tumble can be photographed.
+    fire: Option<(Weapon, u32)>,
 }
 
 fn parse_args() -> Args {
@@ -188,6 +203,13 @@ fn parse_args() -> Args {
         fps: 120,
         thickness: 1.0,
         fixed_dt: false,
+        screen: None,
+        sandbox: false,
+        play: false,
+        target_hull: "karisen_frigate".into(),
+        seed: 4242,
+        stand: 1.0,
+        fire: None,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -244,6 +266,33 @@ fn parse_args() -> Args {
                 i += 1;
             }
             "--fixed-dt" => a.fixed_dt = true,
+            "--screen" => {
+                a.screen = Some(next());
+                a.hud = true;
+                i += 1;
+            }
+            "--sandbox" => a.sandbox = true,
+            "--play" => a.play = true,
+            "--target-hull" => {
+                a.target_hull = next();
+                i += 1;
+            }
+            "--seed" => {
+                a.seed = next().parse().expect("--seed N");
+                i += 1;
+            }
+            "--stand" => {
+                a.stand = next().parse().expect("--stand R");
+                i += 1;
+            }
+            "--fire" => {
+                let s = next();
+                let (w, at) = s.split_once(',').unwrap_or((&s, "40"));
+                let w = Weapon::parse(w).expect("--fire beam|flak|slug|torpedo|bite[,TICK]");
+                a.fire = Some((w, at.parse().expect("--fire WEAPON,TICK")));
+                a.sandbox = true;
+                i += 1;
+            }
             "--hives" => {
                 a.hives = next().parse().expect("--hives N");
                 i += 1;
@@ -318,7 +367,61 @@ fn main() {
         args.launch_delay = 0.0;
     }
     let args = args;
+    // A window opens on the menu and a harness opens on its subject, unless
+    // either says otherwise.
+    let initial = match args.screen.as_deref() {
+        Some("menu") => AppState::Menu,
+        Some("setup") => AppState::Setup,
+        Some("result") => AppState::Result,
+        Some(other) => panic!("--screen {other}: menu, setup or result"),
+        None if args.headless || args.play => AppState::Playing,
+        None => AppState::Menu,
+    };
     let mut app = App::new();
+    let fleet = Fleet::load();
+    let scene = SceneSpec {
+        hull: args.hull.clone(),
+        chewers: args.chewers,
+        yaw: args.yaw,
+        pitch: args.pitch,
+        reinforce: args.reinforce,
+        rocks: args.rocks,
+        fighters: args.fighters,
+        launch_delay: args.launch_delay,
+        zoom: args.zoom,
+        target: args.target,
+        explode: args.explode,
+        cadence: args.cadence,
+        hives: args.hives.min(swarm::MAX_HIVES),
+        order: args.order,
+        aim: args.aim,
+        showcase: args.showcase,
+        thickness: args.thickness,
+        fixed_dt: args.fixed_dt,
+        motes: args.motes,
+        sandbox: args.sandbox,
+        time_scale: 1.0,
+        seed: args.seed,
+        stand: args.stand,
+        target_hull: args.target_hull.clone(),
+    };
+    let form = SetupForm::from_scene(&scene, &fleet);
+    // `--screen result` has no fight to report on, so it reports a made up
+    // one: the screen is what is being photographed.
+    let outcome = if args.screen.as_deref() == Some("result") {
+        Outcome {
+            won: true,
+            ticks: 9060,
+            ships_lost: 1,
+            cells_lost: 3412,
+            hives_killed: 3,
+            hives: 3,
+            ships: 3,
+            decided: None,
+        }
+    } else {
+        Outcome::default()
+    };
     let assets = AssetPlugin {
         file_path: ASSETS.into(),
         ..default()
@@ -370,18 +473,30 @@ fn main() {
         // one before left. `nav_input` is in the main chain below because it
         // runs headless too; the `before` is what keeps a left press from
         // being a confirm AND the start of a box in the same frame.
-        app.add_systems(Startup, build_hud).add_systems(
-            Update,
-            (
-                (toggle_pause, select_input).chain().before(nav_input),
-                hud_feedback,
-                tick_fps,
-                hud_orders.after(nav_input),
-                draw_marquee,
-                draw_bars,
-                pick_hull,
-            ),
+        app.add_systems(
+            OnEnter(AppState::Playing),
+            build_sandbox_panel.run_if(|s: Res<SceneSpec>| s.sandbox),
         );
+        app.add_systems(OnEnter(AppState::Playing), build_hud)
+            .add_systems(
+                Update,
+                (
+                    (toggle_pause, select_input, sandbox_input)
+                        .chain()
+                        .before(nav_input),
+                    (range_input, sandbox_fire).after(nav_input),
+                    sandbox_readouts,
+                    adopt_dummies,
+                    hud_feedback,
+                    tick_fps,
+                    hud_orders.after(nav_input),
+                    draw_marquee,
+                    draw_bars,
+                    pick_hull,
+                    quit_to_menu,
+                )
+                    .run_if(in_state(AppState::Playing)),
+            );
     }
     if args.fps > 0 {
         app.insert_resource(FrameLimit::new(args.fps))
@@ -393,27 +508,19 @@ fn main() {
             fixed_dt: args.fixed_dt,
             ..default()
         })
-        .insert_resource(SceneSpec {
-            hull: args.hull.clone(),
-            chewers: args.chewers,
-            yaw: args.yaw,
-            pitch: args.pitch,
-            reinforce: args.reinforce,
-            rocks: args.rocks,
-            fighters: args.fighters,
-            launch_delay: args.launch_delay,
-            zoom: args.zoom,
-            target: args.target,
-            explode: args.explode,
-            cadence: args.cadence,
-            hives: args.hives.min(swarm::MAX_HIVES),
-            order: args.order,
-            aim: args.aim,
-            showcase: args.showcase,
-            thickness: args.thickness,
-            fixed_dt: args.fixed_dt,
-        })
+        .insert_resource(scene)
         .init_resource::<Tick>()
+        .init_state::<AppState>()
+        .insert_resource(Initial(initial))
+        .insert_resource(outcome)
+        .insert_resource(form)
+        .insert_resource(fleet)
+        .init_resource::<HullFacts>()
+        .insert_resource(Sandbox {
+            auto: args.fire,
+            ..default()
+        })
+        .init_resource::<Landed>()
         .init_resource::<ChunkMaterials>()
         .add_plugins(SwarmPlugin)
         .init_resource::<Shots>()
@@ -431,7 +538,33 @@ fn main() {
             paused: args.paused,
             ..default()
         })
-        .add_systems(Startup, (load_textures, setup).chain())
+        .add_systems(Startup, (load_textures, spawn_backdrop).chain())
+        .add_systems(PostStartup, (mark_keep, boot).chain())
+        // The field is spawned on the way INTO a scene, after the last one
+        // is gone, and the menu takes it down so the sky is all that is left
+        // behind it. A result keeps it: the wreck the fight ended on is the
+        // picture that screen sits over.
+        .add_systems(
+            OnEnter(AppState::Playing),
+            (teardown_field, reset_run, spawn_field).chain(),
+        )
+        .add_systems(OnEnter(AppState::Menu), teardown_field)
+        .add_systems(OnExit(AppState::Playing), clear_bars)
+        // The screens. Each is built on the way in and despawned on the way
+        // out by its own `DespawnOnExit`, and reads its buttons only while it
+        // is up.
+        .add_systems(OnEnter(AppState::Menu), build_menu)
+        .add_systems(OnEnter(AppState::Setup), build_setup)
+        .add_systems(OnEnter(AppState::Result), build_result)
+        .add_systems(
+            Update,
+            (
+                menu_input.run_if(in_state(AppState::Menu)),
+                setup_input.run_if(in_state(AppState::Setup)),
+                result_input.run_if(in_state(AppState::Result)),
+                hover_buttons.run_if(not(in_state(AppState::Playing))),
+            ),
+        )
         .add_systems(
             Update,
             (
@@ -444,24 +577,32 @@ fn main() {
                 // Orders are given whether or not the world is running, which
                 // is the whole point of a pause key in an RTS, so `nav_input`
                 // sits outside the gate with the camera and the drawing.
-                nav_input,
+                nav_input.run_if(in_state(AppState::Playing)),
                 (
                     advance_tick,
-                    (apply_nav_to, call_reinforcements, fly_hull, publish_hull).chain(),
+                    (
+                        apply_nav_to,
+                        call_reinforcements,
+                        fly_hull,
+                        tumble,
+                        publish_hull,
+                    )
+                        .chain(),
                     move_hives,
                     (fire_guns, fire_flak).chain(),
                     (launch_fighters, fly_fighters, fighters_fire, wear_fighters).chain(),
                     resolve_beams,
                     (chew, vent_smoke, go_critical, bleed_hives),
+                    judge,
                     (publish_hives, publish_field).chain(),
-                    fly_tracers,
+                    (fly_tracers, land_torpedoes).chain(),
                     age_fx,
                     fly_chunks,
                     drift_wrecks,
                     spin_showcase,
                 )
                     .chain()
-                    .run_if(running),
+                    .run_if(in_state(AppState::Playing).and(running)),
                 // And everything that only DRAWS keeps running, or a paused
                 // frame would show the last thing that was built rather than
                 // the world as it stands: the beams, the nav disc and the

@@ -16,16 +16,24 @@ pub(crate) const TRACER_WIDTH: f32 = 0.06;
 /// kills a mote is the shell reaching it. That also means a player can watch a
 /// burst travel into the cloud and see the hole it makes appear at the end of
 /// its own flight, which is the whole reason for having a shell at all.
-pub(crate) fn fly_tracers(tick: Res<Tick>, mut fx: ResMut<LiveFx>, mut sparks: ResMut<SparkQueue>) {
-    let mut landed: Vec<Tracer> = Vec::new();
+pub(crate) fn fly_tracers(
+    tick: Res<Tick>,
+    mut fx: ResMut<LiveFx>,
+    mut sparks: ResMut<SparkQueue>,
+    mut landed: ResMut<Landed>,
+) {
+    let mut landed_now: Vec<Tracer> = Vec::new();
     for t in fx.tracers.iter_mut() {
         t.t += t.rate;
         if t.t >= 1.0 {
-            landed.push(*t);
+            landed_now.push(*t);
         }
     }
     fx.tracers.retain(|t| t.t < 1.0);
-    for t in landed {
+    for t in landed_now {
+        if let Some(p) = t.payload {
+            landed.0.push(p);
+        }
         fx.blasts.push(Blast {
             at: t.to.to_array(),
             radius: t.burst,
@@ -59,12 +67,13 @@ pub(crate) fn fly_tracers(tick: Res<Tick>, mut fx: ResMut<LiveFx>, mut sparks: R
 ///
 /// Fast and weak against the long slow beams that go for the carriers, so the
 /// two read as two different weapons doing two different jobs.
+#[allow(clippy::type_complexity)]
 pub(crate) fn fire_flak(
     tick: Res<Tick>,
     scene: Res<SceneSpec>,
     // Not the carriers, which are hulls now: a mothership does not
     // carry the fleet's guns and would otherwise open fire on its own side.
-    hulls: Query<(&Hull, &Transform), Without<Hive>>,
+    hulls: Query<(&Hull, &Transform), (Without<Hive>, Without<Dummy>)>,
     mut fx: ResMut<LiveFx>,
     mut sparks: ResMut<SparkQueue>,
 ) {
@@ -106,6 +115,7 @@ pub(crate) fn fire_flak(
                 t: 0.0,
                 rate: 1.0 / TRACER_TICKS as f32,
                 burst: radius * 0.42,
+                payload: None,
                 colour: [4.2, 2.1, 0.55],
             });
             fx.flak += 1;

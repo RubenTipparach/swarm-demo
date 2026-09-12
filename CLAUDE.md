@@ -194,6 +194,123 @@ and every system asks it. The lesson is the one the two clamps already
 taught: a rule copied is a rule one copy will miss, and the copy that is
 missing is the one nobody can grep for.
 
+## A front door, a form, a verdict and a sandbox
+
+The app used to boot straight into a fight with whatever the command line
+said. It has states now, `AppState`: `Menu`, `Setup`, `Playing`, `Result`,
+and `Boot`, which is the first frame and nothing else. Each screen is UI
+built on the way in and dropped on the way out by its own `DespawnOnExit`;
+the fight is spawned on the way INTO `Playing` and torn down on the way
+into `Menu` or into the next `Playing`. A result keeps the field, because
+the wreck the fight ended on is the picture that screen sits over.
+
+**Boot exists because the initial state's `OnEnter` runs BEFORE `PreStartup`.**
+A run that opened straight on the fight (every headless render does) spawned
+its field before the textures had loaded or the camera existed, and the first
+system to ask for `Textures` panicked. There is no startup schedule early
+enough, so the app starts in `Boot`, `boot` in `PostStartup` sets the state the
+arguments asked for, and the transition happens on the first frame after
+startup has run. `--screen menu|setup|result` opens on a screen, `--play`
+opens a window on the fight, and `--sandbox` opens on the playground.
+
+**The backdrop is spawned once and the field is spawned per scene.** `setup`
+came apart along that line: `spawn_backdrop` (the sky, the stars, the sun,
+the planets, the camera and the meshes rebuilt every frame) runs at startup
+and `mark_keep` tags everything then in the world with `Keep`; `spawn_field`
+(the fleet, the showcase, the carriers, the rocks, what the swarm is told,
+where the camera looks) runs on entering `Playing`. The teardown despawns
+every top level entity with a `Transform` that is not kept and is not UI,
+and the children go with their parents. A marker on the FEW things that
+persist rather than on the many that do not, because the field is spawned
+from a dozen places (a wave, a fighter, a wreck, a chunk) and a marker every
+one of them had to remember is a marker one of them would forget. The swarm
+is rebuilt too: `SwarmConfig.generation` moves with every field and the
+render world compares it to the one its buffers were built for, so a new
+fight starts with every mote inside its carrier again rather than carrying
+the last cloud in.
+
+**The setup is two columns of steppers**, the enemy on the left and your
+side on the right, exactly the proposal's table: motherships, swarm (small,
+medium, large: twenty, a hundred and three hundred thousand), launch delay,
+where the carriers stand, asteroids, the seed; the flagship, its wing, its
+fighters, and in the sandbox the target dummy's class. Every control is an
+arrow pair, so it works without typing. The class list is read off the hull
+files in `assets/hulls` rather than typed, navy by navy up its ladder and
+then the civil trades, so a class added tomorrow is on the form tomorrow;
+under the flagship the form says what it is made of (cells, guns, drives,
+reactor), read off the hull once and remembered, so a pick is a decision and
+not a name. The form is filled from the command line at start and kept
+between visits, and Launch writes `SceneSpec` and enters `Playing`.
+
+**The verdict is `judge`**: every carrier a wreck is a win, every player
+hull a wreck is a loss, wrecks counting as neither, and a sandbox never
+ends. It waits `VERDICT_GRACE` (four seconds) before the screen, so the
+fireball and the wreck are seen before the word. The first cut had no grace,
+and the wreck picture in the suites came out as a pristine frigate firing
+beams: `--explode 90` forces every hull critical at tick ninety, which is a
+victory, and the scene froze on the frame the pieces were spawned, before
+any had drifted apart. A picture that looks wrong names a symptom.
+
+**The sandbox is the skirmish with toggles, a target and a range.** Freeze
+holds the cloud still while everything else runs (`SwarmConfig.frozen`, a
+step of nought for the swarm's clock and the chewers standing down), and it
+needed one fix in `swarm.wgsl`: the drag on a mote's speed was a flat 0.985
+a pass whatever the step, so a cloud frozen for ten seconds restarted at a
+crawl; it is `pow(0.985, dt * 60)` now, and a step of nought is no drag.
+Slow motion is `time_scale`, a quarter, on `SceneSpec::step` and on the
+swarm's clock alike, which is the one clock rule paying off. Invulnerable is
+a flag on the flagship the chewers and the reactor rule both read. B is a
+blast where the cursor points on the plane through the flagship, N a fresh
+dummy. The keys are Z, X, V, B and N because F, R and space were taken.
+
+**The range is a mode.** Arming a weapon (one to five, nought disarms, or
+the panel) puts `OrderMode` in `Range`, so a left click is a shot and never
+a selection, and Escape disarms before it can reach the pause menu, which
+is the move order's own rule kept. The click is a ray from the camera into
+the dummy's own lattice (`swarm_core::ray::march`, a cell walk, so a shot
+into a crater lands on the crater's floor exactly where a chewer's bite
+would), and what lands there is the weapon's:
+
+| weapon | the cells | the shove |
+| --- | --- | --- |
+| beam | the ring of bites a beam takes off a carrier, held while the button is down | 0.02 |
+| flak | a blast of cells at the point, as a burst does to a carrier | 0.25 |
+| slug | a bored column seven cells deep along its own line | 0.6 |
+| torpedo | flies from the flagship first, then a blast twice a flak's | 0.9 |
+| bite | what a chewer does, one cell | 0 |
+
+The shove is a change of velocity in units a second if it landed through
+the centre of mass; the impulse is that times the mass. **The mass is the
+core's** (`swarm_core::body`): every live cell a unit mass at its centre,
+plus the inertia of its own cube, so the mass, the centre and the tensor are
+three sums over the cells and a ship with its bow shot off balances further
+aft and spins differently by construction. `Body::kick` is `dv = j / m` and
+`dw = I^-1 (r x j)`, in the model's frame, so the tensor is never rotated:
+the app takes the point and the impulse into the hull's frame and the two
+velocities back out. The suite holds a block to the lattice's own inertia
+formula, a hit through the centre to no turn, a hit at the rim to a turn
+about the right axis, and half the cells gone to a centre that moved.
+
+**A tumbling hull is placed from its centre of mass**, which is the wreck
+lesson a second time: its cells are laid out about the lattice origin, which
+is not where it balances, so the spin is kept about a pivot and the entity
+placed from that every frame, or a ship kicked at the bow would orbit an
+invisible point. It re-weighs itself after every hit. A little damping
+stands in for the attitude thrusters, or a range target would spin for
+ever, which is honest for vacuum and useless for a range. Measured: a slug
+on a Karisen frigate (6486 cells) a sixth of a radius above its centre takes
+nine cells off and leaves it turning at 14.8 degrees a second.
+
+Two things the first cut got wrong, both caught by the scripted shot
+(`--fire slug,30` lands one at tick thirty from the camera, so the tumble
+can be photographed). The dummy came out as a second FLAGSHIP, because
+`spawn_hull` marks any hull with no station as the flagship and selects it;
+two flagships is a camera, a nav disc and a swarm target that all do nothing,
+since `single()` fails on both. And the shot missed: it was aimed a bit
+under half a radius above the centre, which is inside the LATTICE and above
+the DECK, so the ray crossed empty cells and came out the other side. The
+lattice is not the hull.
+
 ## The swarm is a field, not a million entities
 
 Do the arithmetic before adding anything per mote. Sixteen milliseconds over a
@@ -1476,6 +1593,12 @@ cargo build --release -p swarm_app
     --aim 40,14,-30 --frames 30 --zoom 30 --out order.png              # a move order being given
 ./target/release/swarm_app --headless --fixed-dt --motes 3000 --hives 3 --rocks 14 \
     --chewers 0 --frames 150 --zoom 5 --out battle.png     # the whole thing
+# The screens, and the range: a scripted slug lands at tick thirty.
+./target/release/swarm_app --headless --fixed-dt --motes 200 --frames 12 --screen menu --out menu.png
+./target/release/swarm_app --headless --fixed-dt --motes 200 --frames 12 --screen setup --out setup.png
+./target/release/swarm_app --headless --fixed-dt --motes 200 --frames 12 --screen result --out result.png
+./target/release/swarm_app --headless --fixed-dt --sandbox --hud --fire slug,30 --motes 600 \
+    --hives 2 --rocks 6 --chewers 0 --frames 150 --zoom 5 --out sandbox.png   # the range, two seconds on
 for y in 0.0 1.6 3.1; do                                   # the same tick, three angles
   ./target/release/swarm_app --headless --fixed-dt --motes 4000 --frames 150 \
       --zoom 11 --yaw $y --out ang_$y.png

@@ -1,6 +1,7 @@
 //! A hull and what it does. The behaviours: it flies, keeps station, is
 //! chewed, aims its guns, burns its drives and dies as a wreck.
 
+mod body;
 mod damage;
 mod flames;
 mod flight;
@@ -10,6 +11,7 @@ mod spec;
 mod turrets;
 mod wreck;
 
+pub(crate) use body::*;
 pub(crate) use damage::*;
 pub(crate) use flames::*;
 pub(crate) use flight::*;

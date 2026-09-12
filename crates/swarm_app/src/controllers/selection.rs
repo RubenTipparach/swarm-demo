@@ -62,7 +62,7 @@ pub(crate) fn select_input(
     match *mode {
         // In `Move` the left button is the confirm and nothing else. It does
         // not start a selection, which is the bug that emptied the order.
-        OrderMode::Move => return,
+        OrderMode::Move | OrderMode::Range => return,
         OrderMode::Idle => {
             if over_ui.iter().any(|i| *i != Interaction::None) || alt {
                 return;

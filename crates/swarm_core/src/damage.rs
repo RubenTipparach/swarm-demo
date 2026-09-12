@@ -483,6 +483,45 @@ impl DamageGrid {
         let (n, outward) = self.nearest_exposed(m, p, 2)?;
         self.chip(n, amount, tick, outward)
     }
+
+    /// A column of cells killed along a line, `depth` model units deep from
+    /// `from` along the unit vector `dir`: what a kinetic round does, one
+    /// deep crater rather than a wide one. Every breach it opens faces back
+    /// up the hole, which is the way the chunks come out of a bore.
+    pub fn bore(
+        &mut self,
+        m: &VoxelModel,
+        from: [f32; 3],
+        dir: [f32; 3],
+        depth: f32,
+        tick: u32,
+    ) -> Vec<Breach> {
+        let mut out = Vec::new();
+        let outward = [-dir[0], -dir[1], -dir[2]];
+        let mut last = usize::MAX;
+        let step = m.cell * 0.5;
+        let mut t = 0.0;
+        while t <= depth {
+            let p = [
+                from[0] + dir[0] * t,
+                from[1] + dir[1] * t,
+                from[2] + dir[2] * t,
+            ];
+            t += step;
+            let Some((i, j, k)) = m.cell_of_point(p) else {
+                continue;
+            };
+            let n = m.index(i, j, k);
+            if n == last {
+                continue;
+            }
+            last = n;
+            if let Some(br) = self.chip(n, f32::MAX, tick, outward) {
+                out.push(br);
+            }
+        }
+        out
+    }
 }
 
 /// The piece a breach throws, in the model's frame.
@@ -506,6 +545,29 @@ pub fn chunk_for(m: &VoxelModel, b: &Breach) -> Chunk {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bore_takes_a_column_and_nothing_beside_it() {
+        let mut m = VoxelModel::new(6, 6, 6, 0.25);
+        for i in 0..6 {
+            for j in 0..6 {
+                for k in 0..6 {
+                    m.set(i, j, k, mat::PLATE, 0x808080);
+                }
+            }
+        }
+        let mut d = DamageGrid::new(&m);
+        // From the centre of the near x face, three cells deep along +x.
+        let from = m.centre_of(m.index(0, 3, 3));
+        let got = d.bore(&m, from, [1.0, 0.0, 0.0], 3.0 * m.cell, 7);
+        assert_eq!(got.len(), 4, "a start cell and three more: {}", got.len());
+        for br in &got {
+            let (_, j, k) = m.at(br.cell as usize);
+            assert_eq!((j, k), (3, 3));
+            assert_eq!(br.outward, [-1.0, 0.0, 0.0]);
+        }
+        assert_eq!(d.dead_count(), 4);
+    }
     use crate::mesh::{exposed_faces, greedy_mesh, mesh_region};
 
     fn slab() -> VoxelModel {

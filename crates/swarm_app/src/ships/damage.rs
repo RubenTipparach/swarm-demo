@@ -4,6 +4,7 @@ use crate::*;
 
 pub(crate) fn chew(
     tick: Res<Tick>,
+    cfg: Res<SwarmConfig>,
     mut hulls: Query<(&mut Hull, &Transform)>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -12,9 +13,13 @@ pub(crate) fn chew(
     mut sparks: ResMut<SparkQueue>,
     mut cube: Local<Option<Handle<Mesh>>>,
 ) {
+    // A frozen swarm bites nothing: the chewers are the cloud's teeth.
+    if cfg.frozen {
+        return;
+    }
     for (mut hull, xf) in &mut hulls {
         let hull = &mut *hull;
-        if hull.dead_hull {
+        if hull.dead_hull || hull.invulnerable {
             continue;
         }
         let mut breaches: Vec<Chunk> = Vec::new();

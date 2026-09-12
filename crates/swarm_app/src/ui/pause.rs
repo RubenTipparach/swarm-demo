@@ -61,3 +61,22 @@ pub(crate) fn toggle_pause(
         };
     }
 }
+
+/// The way back to the front door from a fight.
+#[derive(Component)]
+pub(crate) struct QuitButton;
+
+/// Quit to menu: the field is torn down on the way into `Menu`, and the
+/// pause goes with it, or the next scene would open on a stopped clock.
+pub(crate) fn quit_to_menu(
+    quit: Query<&Interaction, (Changed<Interaction>, With<QuitButton>)>,
+    mut hud: ResMut<Hud>,
+    mut cfg: ResMut<SwarmConfig>,
+    mut next: ResMut<NextState<AppState>>,
+) {
+    if quit.iter().any(|i| *i == Interaction::Pressed) {
+        hud.paused = false;
+        cfg.paused = false;
+        next.set(AppState::Menu);
+    }
+}
