@@ -90,10 +90,10 @@ pub(crate) fn call_one(
         materials,
         tex,
         which,
-        xf,
-        chewers,
-        0x9E37 + n * 0x4F1B,
-        Some(station),
+        ShipSpec::at(xf)
+            .chewers(chewers)
+            .seed(0x9E37 + n * 0x4F1B)
+            .station(station),
     );
 }
 

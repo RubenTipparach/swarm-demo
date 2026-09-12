@@ -14,11 +14,38 @@ pub(crate) struct Headless {
 #[derive(Resource)]
 pub(crate) struct HeadlessTarget(pub(crate) Handle<Image>);
 
+/// What the retreat's loop actually did, which is the one thing a picture of
+/// it cannot show: a shaft in a rock and a bank that moved look the same in
+/// a still frame as a miner that never arrived.
+fn retreat_line(scene: &SceneSpec, bank: &Bank, rocks: &Query<&Rock>) -> Option<String> {
+    if !scene.retreat {
+        return None;
+    }
+    let (mut ore, mut ice) = (0, 0);
+    for r in rocks.iter() {
+        match r.flavour {
+            Flavour::Ice => ice += r.seam,
+            _ => ore += r.seam,
+        }
+    }
+    Some(format!(
+        "retreat: {} rocks with {ore} ore and {ice} ice left in them; banked {} materials, {} volatiles, {} data, {:.1} fuel of {JUMP_FUEL:.0}",
+        rocks.iter().len(),
+        bank.materials,
+        bank.volatiles,
+        bank.data,
+        bank.fuel
+    ))
+}
+
 pub(crate) fn headless_capture(
     mut h: ResMut<Headless>,
     target: Option<Res<HeadlessTarget>>,
     clock: Res<SwarmClock>,
     hulls: Query<&Hull>,
+    rocks: Query<&Rock>,
+    scene: Res<SceneSpec>,
+    bank: Res<Bank>,
     fx: Res<LiveFx>,
     quads: Res<BeamQuads>,
     tex: Res<Textures>,
@@ -56,6 +83,9 @@ pub(crate) fn headless_capture(
         "headless: {} frames in {:.1}s ({:.1} ms/frame mean, wall clock), swarm ticks {}, chewed {} cells ({} breaches thrown), worst thrust {:.2}",
         *frames, spent, spent * 1000.0 / *frames as f32, clock.ticks, dead, breaches, worst
     );
+    if let Some(line) = retreat_line(&scene, &bank, &rocks) {
+        println!("{line}");
+    }
     println!(
         "fx: {} beams fired and {} flak bursts, {} beams live and {} quads on the last frame, {} blasts live, {} sparks queued",
         fx.fired, fx.flak, fx.beams.len(), quads.0, fx.blasts.len(), fx.sparked

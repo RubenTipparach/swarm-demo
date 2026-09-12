@@ -3,11 +3,44 @@
 
 use crate::*;
 
-/// An asteroid. Drawn and navigated round, and that is all it does: it has no
-/// damage grid, because nothing in the game can hurt a rock yet and a grid
-/// per rock is eight thousand cells of book keeping for a fact nobody asks.
+/// An asteroid: a voxel model with a damage grid, which is to say a `Hull`
+/// that nobody flies.
+///
+/// It was drawn and navigated round and nothing else until a miner needed to
+/// cut one. Going through the ship builder is what gives it bricks, so a
+/// shaft re-meshes eight cells on a side rather than the whole rock, and a
+/// cut face that glows and cools on the same ramp a wound does. It is born
+/// `inert`, so everything that skips a dead hull skips it: the swarm's
+/// targets, the guns, the bars, the orders and the reactor rule.
 #[derive(Component)]
-pub(crate) struct Rock;
+pub(crate) struct Rock {
+    pub(crate) flavour: Flavour,
+    /// Seam cells STILL in it, counted down as a cutter takes them. The rock
+    /// is what knows this: a readout that walked every cell of every rock to
+    /// answer "is there anything left in this system" would be asking a
+    /// hundred and fifty thousand cells a frame for a number that changes
+    /// once every ten ticks.
+    pub(crate) seam: u32,
+}
+
+/// Which flavour the nth rock of a field is.
+///
+/// The field LEANS and never commits: two in three go the way the node says
+/// and the rest go the other way, and the second rock always goes against
+/// the lean, so even a field of two carries both. A system with no ice is a
+/// system that strands a run, and that is a map rule this keeps on the
+/// field's side as well.
+pub(crate) fn flavour_at(n: usize, lean: Flavour) -> Flavour {
+    let other = match lean {
+        Flavour::Ice => Flavour::Ore,
+        _ => Flavour::Ice,
+    };
+    if n == 1 || n % 3 == 2 {
+        other
+    } else {
+        lean
+    }
+}
 
 /// The asteroid field: how many cells a rock is built on, what one of those
 /// cells is worth against the ship's own radius, where the belt sits in hull

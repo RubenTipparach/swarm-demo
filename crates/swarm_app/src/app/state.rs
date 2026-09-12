@@ -112,6 +112,37 @@ pub(crate) fn reset_run(
     *outcome = Outcome::default();
 }
 
+/// What a RUN carries into the system it is entering, and what it does not.
+///
+/// A second system rather than four more arguments on `reset_run`, because
+/// that one is already at Bevy's limit on how many parameters a system
+/// function may take, and past it `.chain()` simply stops compiling with
+/// nothing pointing at the count. Which is the right split anyway: one of
+/// these resets a SCENE and the other resets a LEG of a run, and they are
+/// only ever ordered together because a leg is played as a scene.
+pub(crate) fn reset_retreat(
+    run: Res<RunState>,
+    mut scene: ResMut<SceneSpec>,
+    mut bank: ResMut<Bank>,
+    mut drive: ResMut<JumpDrive>,
+    mut tide: ResMut<TideState>,
+) {
+    if !scene.retreat {
+        return;
+    }
+    // The scene is written from the RUN on the way in, which is what makes
+    // the next system the next system: the node decides the seed, the rocks,
+    // the tide and which support ships arrive, and `spawn_field` after this
+    // reads exactly that.
+    run.write(&mut scene);
+    // The bank CARRIES between systems, because that is what a run is: the
+    // drive and the tide do not, because each system has its own.
+    *bank = run.bank.clone();
+    *drive = JumpDrive::default();
+    *tide = TideState::default();
+    info!("{}", run.brief());
+}
+
 /// How a scene ended, and what it cost.
 #[derive(Resource, Default, Clone, Debug)]
 pub(crate) struct Outcome {
@@ -130,6 +161,14 @@ pub(crate) struct Outcome {
     /// The tick the verdict was reached, if it has been. The screen follows
     /// `VERDICT_GRACE` later, so the fireball and the wreck are seen first.
     pub(crate) decided: Option<u32>,
+    /// The system was left on the jump drive rather than won or lost, which
+    /// is how a retreat ends when it goes well.
+    pub(crate) jumped: bool,
+    /// Ships that were outside the field when it went.
+    pub(crate) left: u32,
+    /// The jump was out of the LAST system, which is the run won rather than
+    /// a leg of it finished.
+    pub(crate) escaped: bool,
 }
 
 /// Four seconds between the verdict and the screen that says it.
@@ -170,7 +209,10 @@ pub(crate) fn judge(
             cells += h.damage.dead_count();
         }
     }
-    let verdict = if hives == 0 {
+    // In a retreat the way out is the drive: killing every carrier in a
+    // system is worth doing and is not a victory, because the tide brings
+    // more and the fleet is still coming. Only the loss applies.
+    let verdict = if hives == 0 && !scene.retreat {
         Some(true)
     } else if ships == 0 {
         Some(false)

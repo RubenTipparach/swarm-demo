@@ -3,6 +3,72 @@
 
 use crate::*;
 
+/// Everything about a ship that is per SHIP rather than per class.
+///
+/// A struct rather than nine arguments, because the day a rock needed to be
+/// a hull and a miner needed to be a ship that is not the flagship, the
+/// argument list was already carrying an `allow(too_many_arguments)`, which
+/// this file's own rules call the smell that says a struct is missing.
+#[derive(Clone)]
+pub(crate) struct ShipSpec {
+    pub(crate) at: Transform,
+    pub(crate) chewers: u32,
+    pub(crate) seed: u32,
+    /// A place in the flagship's formation, or nothing for a ship that flies
+    /// its own orders.
+    pub(crate) station: Option<Vec3>,
+    pub(crate) armour: f32,
+    /// The class this came from, when it is one of the fleet's own. A hull
+    /// with a class and no station is the flagship, which is why a carrier
+    /// and a rock both leave it empty.
+    pub(crate) class: Option<String>,
+    /// Not a ship anybody flies: a rock, or anything else that is only a
+    /// voxel model with a damage grid on it. It is born `dead_hull`, so
+    /// everything that already skips a dead hull skips it too, which is the
+    /// swarm's targets, the guns, the bars, the orders, the chewers and the
+    /// reactor rule. That is most of the game for one flag.
+    pub(crate) inert: bool,
+}
+
+impl ShipSpec {
+    pub(crate) fn at(at: Transform) -> ShipSpec {
+        ShipSpec {
+            at,
+            chewers: 0,
+            seed: 0,
+            station: None,
+            armour: ARMOUR,
+            class: None,
+            inert: false,
+        }
+    }
+
+    pub(crate) fn chewers(mut self, n: u32) -> ShipSpec {
+        self.chewers = n;
+        self
+    }
+
+    pub(crate) fn seed(mut self, seed: u32) -> ShipSpec {
+        self.seed = seed;
+        self
+    }
+
+    pub(crate) fn station(mut self, station: Vec3) -> ShipSpec {
+        self.station = Some(station);
+        self
+    }
+
+    pub(crate) fn armour(mut self, armour: f32) -> ShipSpec {
+        self.armour = armour;
+        self
+    }
+
+    pub(crate) fn inert(mut self) -> ShipSpec {
+        self.inert = true;
+        self
+    }
+}
+
 /// Build one ship: its materials, its bricks, its guns and engines, and put
 /// it in the world at `at`.
 ///
@@ -11,36 +77,22 @@ use crate::*;
 /// never call for. Everything about a hull that is per SHIP rather than per
 /// class lives here, which is why the materials are made fresh per call: two
 /// frigates sharing one wound material would burn together.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_hull(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     tex: &Textures,
     which: &str,
-    at: Transform,
-    chewers: u32,
-    seed: u32,
-    station: Option<Vec3>,
+    spec: ShipSpec,
 ) -> (Entity, f32) {
     let model = load_hull(which);
     let surf = surface_materials(&model, tex, materials);
     let win = window_materials(&model, tex, materials);
-    spawn_ship(
-        commands,
-        meshes,
-        materials,
-        tex,
-        model,
-        surf,
-        win,
-        at,
-        chewers,
-        seed,
-        station,
-        ARMOUR,
-        Some(which),
-    )
+    let spec = ShipSpec {
+        class: Some(which.into()),
+        ..spec
+    };
+    spawn_ship(commands, meshes, materials, tex, model, surf, win, spec)
 }
 
 /// One ship of any kind: a hull off the shelf, or a mothership, or anything
@@ -62,13 +114,18 @@ pub(crate) fn spawn_ship(
     model: VoxelModel,
     surface_mats: Vec<Handle<StandardMaterial>>,
     window_mats: Vec<Handle<StandardMaterial>>,
-    at: Transform,
-    chewers: u32,
-    seed: u32,
-    station: Option<Vec3>,
-    armour: f32,
-    log: Option<&str>,
+    spec: ShipSpec,
 ) -> (Entity, f32) {
+    let ShipSpec {
+        at,
+        chewers,
+        seed,
+        station,
+        armour,
+        class,
+        inert,
+    } = spec;
+    let log = class.as_deref();
     let radius = model.radius();
     // ---- the turrets come out of the hull first ----
     //
@@ -163,7 +220,7 @@ pub(crate) fn spawn_ship(
         breaches: 0,
         last_heat_key: 0,
         cells,
-        dead_hull: false,
+        dead_hull: inert,
         reactor: reactor_of(&model),
         seed,
         invulnerable: false,

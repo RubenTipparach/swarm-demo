@@ -55,33 +55,16 @@ pub(crate) fn chew(
             continue;
         }
         hull.breaches += breaches.len();
-        let cube = cube
-            .get_or_insert_with(|| meshes.add(Cuboid::from_length(hull.model.cell * 0.9)))
-            .clone();
-        for ch in breaches {
-            let mat = chunk_mats
-                .0
-                .entry(ch.colour)
-                .or_insert_with(|| {
-                    let [r, g, b, _] = swarm_core::mesh::rgb_of(ch.colour);
-                    materials.add(StandardMaterial {
-                        base_color: Color::srgb(r, g, b),
-                        perceptual_roughness: 0.8,
-                        ..default()
-                    })
-                })
-                .clone();
-            let origin = xf.transform_point(Vec3::from(ch.origin));
-            commands.spawn((
-                Mesh3d(cube.clone()),
-                MeshMaterial3d(mat),
-                Transform::from_translation(origin),
-                Debris {
-                    vel: Vec3::from(ch.velocity),
-                    born: ch.born,
-                },
-            ));
-        }
+        throw_chunks(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            &mut chunk_mats,
+            &mut cube,
+            hull.model.cell,
+            xf,
+            &breaches,
+        );
     }
 }
 
@@ -120,5 +103,55 @@ pub(crate) fn vent_smoke(
                 kind: SparkKind::Breach,
             });
         }
+    }
+}
+
+/// Throw the pieces a cut took off, wherever the cut came from.
+///
+/// One implementation, because a chewer's bite, a miner's shaft and a
+/// salvager's cut all take cells off a voxel model and all leave the same
+/// thing behind: a cube of that cell's own colour, drifting. The cube mesh
+/// is built once per caller and the materials are cached by colour, since a
+/// rock is two colours and a hull is a dozen.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn throw_chunks(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    chunk_mats: &mut ChunkMaterials,
+    cube: &mut Option<Handle<Mesh>>,
+    cell: f32,
+    xf: &Transform,
+    chunks: &[Chunk],
+) {
+    if chunks.is_empty() {
+        return;
+    }
+    let cube = cube
+        .get_or_insert_with(|| meshes.add(Cuboid::from_length(cell * 0.9)))
+        .clone();
+    for ch in chunks {
+        let mat = chunk_mats
+            .0
+            .entry(ch.colour)
+            .or_insert_with(|| {
+                let [r, g, b, _] = swarm_core::mesh::rgb_of(ch.colour);
+                materials.add(StandardMaterial {
+                    base_color: Color::srgb(r, g, b),
+                    perceptual_roughness: 0.8,
+                    ..default()
+                })
+            })
+            .clone();
+        let origin = xf.transform_point(Vec3::from(ch.origin));
+        commands.spawn((
+            Mesh3d(cube.clone()),
+            MeshMaterial3d(mat),
+            Transform::from_translation(origin),
+            Debris {
+                vel: Vec3::from(ch.velocity),
+                born: ch.born,
+            },
+        ));
     }
 }
