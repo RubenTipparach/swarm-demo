@@ -29,6 +29,39 @@ const RELIEF: f32 = 0.42;
 /// without anything here knowing what colour it will be drawn in.
 const ORE_SHARE: f32 = 0.06;
 
+/// What a rock is made of besides stone.
+///
+/// The seam is the same MATERIAL whatever the flavour (`mat::ACCENT`, on its
+/// own surface), because everything downstream of here (the mesher, the
+/// materials, the damage grid, a miner's cut) works on the material and
+/// would need a case for each flavour otherwise. What changes is the colour
+/// it is drawn in and what cutting it is worth, and the second of those is
+/// `economy::yield_of`'s business rather than the generator's.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Flavour {
+    /// Metals: a miner cuts it for materials.
+    #[default]
+    Ore,
+    /// Volatiles: a miner cuts it for what the tanker refines into jump fuel.
+    Ice,
+    /// Stone all the way through, and the only thing in the field that is
+    /// worth nothing at all.
+    Barren,
+}
+
+impl Flavour {
+    /// What the seam is drawn in. Ore is the warm yellow the livery has
+    /// always given it; ice is pale blue, because a player has to be able to
+    /// tell at a glance which rock is the way out of the system.
+    pub fn seam_colour(self) -> u32 {
+        match self {
+            Flavour::Ore => 0xC8A24A,
+            Flavour::Ice => 0x9FD6E8,
+            Flavour::Barren => 0,
+        }
+    }
+}
+
 /// Value noise on the integer lattice, hashed rather than tabled.
 ///
 /// Three dimensional, because a rock's relief is a function of a DIRECTION
@@ -100,6 +133,11 @@ fn relief(d: [f32; 3], seed: f32) -> f32 {
 /// same ladder a hull is: the app scales nothing, it asks for the lattice it
 /// wants and puts the model where it wants it.
 pub fn generate(n: usize, cell: f32, seed: u64) -> VoxelModel {
+    generate_of(n, cell, seed, Flavour::Ore)
+}
+
+/// The same rock, carrying what its flavour says it carries.
+pub fn generate_of(n: usize, cell: f32, seed: u64, flavour: Flavour) -> VoxelModel {
     let mut m = VoxelModel::new(n, n, n, cell);
     // Two surfaces, and that is the whole material story of a rock: the stone
     // and the ore in it. A rock with one surface is a rock with no seam, and
@@ -171,10 +209,10 @@ pub fn generate(n: usize, cell: f32, seed: u64) -> VoxelModel {
                 // vein that ran over the surface would read as paint.
                 let deep = r < want - 1.2;
                 let vein = noise3([u[0] * 3.1 + 11.0, u[1] * 3.1 + 11.0, u[2] * 3.1 + 11.0]);
-                if deep && vein > 1.0 - ORE_SHARE * 4.0 {
+                if deep && vein > 1.0 - ORE_SHARE * 4.0 && flavour != Flavour::Barren {
                     m.grid[idx] = mat::ACCENT;
                     m.surf[idx] = SURF_FRAME;
-                    m.colour[idx] = 0xC8A24A;
+                    m.colour[idx] = flavour.seam_colour();
                 } else {
                     m.grid[idx] = mat::PLATE;
                     m.surf[idx] = SURF_ARMOUR;

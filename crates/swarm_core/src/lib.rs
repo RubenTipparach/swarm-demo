@@ -21,16 +21,23 @@
 //! - [`body`]: a hull as a rigid body, off its live cells: mass, centre,
 //!   inertia, and what a hit at a point does.
 //! - [`ray`]: which live cell a ray meets first, so a click lands on a hull.
+//! - [`economy`]: what a cut yields, which is the one place that says what a
+//!   cell is worth when it comes off something.
+//! - [`tide`]: how much of the swarm is out at tick N.
+//! - [`map`]: a run, as a branching chain of systems from a seed.
 
 pub mod alien;
 pub mod body;
 pub mod damage;
+pub mod economy;
 pub mod fx;
+pub mod map;
 pub mod mesh;
 pub mod ray;
 pub mod rng;
 pub mod rock;
 pub mod sky;
+pub mod tide;
 pub mod voxel;
 
 pub use damage::DamageGrid;
