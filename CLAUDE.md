@@ -404,6 +404,19 @@ exactly wrong: the swarm is thickest where the fighting is, so shading a wound
 would put every bright one in the picture precisely where the cloud has already
 put it out.
 
+**A burn is on the CHITIN and it beats the shading.** Two rules, and both are
+about what a player can read. It takes the vertex colour's alpha as its mask,
+which is already the marker for which cells are self lit, so the eyes and the
+drive keep their own colours: those are the two things on a mote that say
+which way it is facing and that it is alive at all, and a bug on fire from eye
+to exhaust is a shape with no parts. And the lit channel is faded out UNDER
+it rather than added to, which is the one place in that shader where the two
+channels are not simply summed. A mote that is on fire is lit by the fire.
+Summing left the shading still deciding how dark the body was, so the same hit
+on the near face of the cloud and in the middle of it came out as two
+different colours, and the dim ones were in the middle, which is where the
+fighting is.
+
 **And it burns ORANGE, not violet.** Violet was the first answer, on the
 reasoning that violet is what a mote bleeds. That is the colour of the ANIMAL
 rather than the colour of an injury, and laid over a body that is already
@@ -447,6 +460,40 @@ put the answer: a mote cannot work its shadow out at draw time and cannot be
 told it either, because nothing about a mote ever comes back to the CPU. The
 mote buffer IS the instance buffer, so a field the tick fills is one the vertex
 shader already has, for no upload and no pass.
+
+## A bug bites what it can SEE
+
+The chewers are the cloud's teeth: the CPU cannot ask the swarm where a mote
+is, so a fixed number of them stand in for it and take cells off the hull. What
+they were was a point on a random exposed QUAD, biting the nearest exposed cell
+and then following its own hole inward, and both halves of that were wrong.
+
+**A random quad is not a random part of a ship.** The greedy mesher merges flat
+plating into a handful of big quads and leaves greebled work as dozens of small
+ones, so picking one uniformly put most of the teeth on the most detailed end
+of the hull, which on every one of these classes is the stern. A frigate was
+eaten from the engines forward, every time, whatever side the cloud was
+actually on. It even hid the drive damage rule: the teeth were sitting on the
+engines, so a chewed ship always went lame first.
+
+**So a tooth is a BEARING now, and every bite is a ray.** They are spread over
+the sphere by the same golden angle spiral the carriers stand on, and a bite
+is `ray::march` from well outside the hull along that bearing: the first live
+cell on the line, holes included, which is the crater's floor once there is a
+crater. A tooth can only ever reach the surface facing it, so nothing tunnels
+and a hole deepens only as fast as the plating round it goes.
+
+The line is nudged off its own axis by HALF a cell and no more, and the
+temptation is to spread it wide enough to make the crater by itself. That is
+wrong twice: a plate cell is a hundred hit points against a bite of nine, so a
+tooth whose bites land on a dozen cells scratches all of them and kills none,
+and the crater does not need the help anyway, because `bite` takes the nearest
+EXPOSED cell and the neighbours of a hole are nearer than its own floor.
+Measured over seven hundred ticks against sixty four teeth: a cell and a half
+of spread took 312 cells off, half a cell takes 492, and the tunnelling it
+replaced took 744. That last number is the price of the fix rather than a
+regression, because a tooth that bores keeps hitting a face it has already
+damaged and one that eats the outside is always starting on fresh plating.
 
 ## Hulls are the redux-tribes hulls, one to one
 

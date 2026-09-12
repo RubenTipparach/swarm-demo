@@ -131,8 +131,22 @@ impl Hull {
 /// thrusters, which are all over the hull and are not drives.
 pub(crate) const THRUSTERS: f32 = 0.18;
 
+/// One of the cloud's teeth: the side it comes in from, and when it bites
+/// next.
+///
+/// A DIRECTION rather than a place, because the place is worked out by a ray
+/// every bite. It used to be a point that started on a random exposed quad and
+/// then followed its own hole inward, and both halves of that were wrong. A
+/// random QUAD is not a random part of a ship: the greedy mesher merges flat
+/// plating into a handful of big quads and leaves greebled work as dozens of
+/// small ones, so picking one uniformly put most of the swarm's teeth on the
+/// most detailed end of the hull, which on every one of these classes is the
+/// stern. A frigate was eaten from the engines forward, every time, whatever
+/// side the cloud was actually on.
 pub(crate) struct Chewer {
-    pub(crate) at: Vec3,
+    /// Unit, in the hull's OWN frame, pointing out from the middle toward the
+    /// side this one attacks from.
+    pub(crate) from: Vec3,
     pub(crate) next: u32,
 }
 

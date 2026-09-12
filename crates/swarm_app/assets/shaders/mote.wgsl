@@ -198,6 +198,27 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // And it BEATS, on the clock the tick handed over in `shade.z`. A steady
     // glow is a colour; a pulse is an injury, and a pulse is what carries at
     // the one or two pixels a mote is usually drawn at.
-    let wound = vec3<f32>(5.0, 2.2, 0.30) * in.hurt * in.hurt * in.shade.z;
-    return vec4<f32>(body + in.color.rgb * in.glow + wound, 1.0);
+    //
+    // It burns on the CHITIN and nowhere else. The lit cells are a bug's eyes
+    // and its drive, and those are the two things that say which way it is
+    // facing and that it is alive at all: painting the burn over them puts out
+    // the only marks on a mote that were ever readable, and a bug on fire from
+    // eye to exhaust is a shape with no parts. The vertex colour's alpha is
+    // already the marker for which cells are which, so the burn simply takes
+    // the other half of it.
+    let plate = in.color.a;
+    let burn = clamp(in.hurt * in.hurt * in.shade.z, 0.0, 1.0) * plate;
+    let wound = vec3<f32>(5.0, 2.2, 0.30) * burn;
+
+    // ---- and a burn BEATS the shadow ----
+    //
+    // The lit channel is faded out under it rather than added to, which is the
+    // one place in this shader where the two channels are not simply summed,
+    // and it is deliberate: a mote that is on fire is lit by the fire. Adding
+    // left the shading underneath still deciding how dark the body was, so the
+    // same hit on the near face of the cloud and in the middle of it came out
+    // as two different colours, and the ones in the middle, which is where the
+    // fighting is, were the dim ones. What a player has just hit should not
+    // depend on where the cloud happened to be standing.
+    return vec4<f32>(body * (1.0 - burn) + in.color.rgb * in.glow + wound, 1.0);
 }
