@@ -579,6 +579,60 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// How many cells of solid material stand between each cell and OUTSIDE
+/// space, by a face walk.
+///
+/// OUTSIDE, and that is the whole of the difference from the depth
+/// [`crate::fx::reactor_of`] derives. That one seeds every empty cell, which
+/// answers "how buried is this in its own structure"; this one floods only
+/// the empty cells reachable from the lattice wall, so an internal void
+/// between the frame and a part is not a way in. A reactor with a void
+/// beside it is shallow by the first measure and deep by this one, and it is
+/// this one that answers "how much plating would a shot have to get through".
+///
+/// A cell outside space itself is nought. A cell no walk can reach (sealed
+/// inside a void that is itself sealed) is [`u32::MAX`], which a caller
+/// filters rather than treating as very deep.
+pub fn depth_from_outside(m: &VoxelModel) -> Vec<u32> {
+    let n = m.len();
+    let mut d = vec![u32::MAX; n];
+    let mut q = std::collections::VecDeque::new();
+    for (c, slot) in d.iter_mut().enumerate() {
+        let (i, j, k) = m.at(c);
+        let edge = i == 0 || j == 0 || k == 0 || i == m.nx - 1 || j == m.ny - 1 || k == m.nz - 1;
+        if m.grid[c] == mat::EMPTY && edge {
+            *slot = 0;
+            q.push_back(c);
+        }
+    }
+    while let Some(c) = q.pop_front() {
+        let (i, j, k) = m.at(c);
+        for (di, dj, dk) in NEIGHBOURS {
+            let (ni, nj, nk) = (i as i32 + di, j as i32 + dj, k as i32 + dk);
+            if !m.inside(ni, nj, nk) {
+                continue;
+            }
+            let nb = m.index(ni as usize, nj as usize, nk as usize);
+            if d[nb] != u32::MAX {
+                continue;
+            }
+            if m.grid[nb] == mat::EMPTY {
+                // Through outside space for free, and never through a void
+                // INSIDE the hull: a gap the walk only reached by crossing
+                // plating is a room, not a way in.
+                if d[c] == 0 {
+                    d[nb] = 0;
+                    q.push_back(nb);
+                }
+            } else {
+                d[nb] = d[c] + 1;
+                q.push_back(nb);
+            }
+        }
+    }
+    d
+}
+
 /// The six face neighbours, in the order the mesher walks them.
 pub const NEIGHBOURS: [(i32, i32, i32); 6] = [
     (1, 0, 0),
@@ -592,6 +646,38 @@ pub const NEIGHBOURS: [(i32, i32, i32); 6] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn depth_counts_the_plating_a_shot_would_have_to_cross() {
+        // A hollow shell two cells thick with a room inside it: the room is
+        // a void the walk can only reach through the plating, so its own
+        // cells never become nought and the cell at the middle is measured
+        // through the WALL rather than from the air beside it.
+        let mut m = VoxelModel::new(9, 9, 9, 1.0);
+        for k in 1..8 {
+            for j in 1..8 {
+                for i in 1..8 {
+                    let c = m.index(i, j, k);
+                    m.grid[c] = mat::PLATE;
+                }
+            }
+        }
+        let hollow = m.index(4, 4, 4);
+        m.grid[hollow] = mat::EMPTY;
+        let d = depth_from_outside(&m);
+        assert_eq!(d[m.index(0, 4, 4)], 0, "space outside is nought");
+        assert_eq!(d[m.index(1, 4, 4)], 1, "the skin is one");
+        assert_eq!(d[m.index(2, 4, 4)], 2);
+        assert_eq!(d[m.index(3, 4, 4)], 3, "the last course before the room");
+        assert_eq!(
+            d[hollow],
+            u32::MAX,
+            "a sealed room is unreachable, not shallow"
+        );
+        // And that is the whole point of measuring from outside: the room
+        // does not make the cells around it shallow.
+        assert_eq!(d[m.index(5, 4, 4)], 3);
+    }
 
     #[test]
     fn index_round_trips() {

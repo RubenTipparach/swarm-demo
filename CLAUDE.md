@@ -2036,6 +2036,59 @@ part: it took a quarter of that ship with it, so seven tenths of the hull
 means nearly every cell of every piece, and a ship that goes up badly is a
 ship only a yard will ever put back.
 
+## The Fleet Registry is the record of every ship
+
+**https://claude.ai/code/artifact/6c55f3e7-3a7a-4b4f-a002-0af5e26de826**
+
+One page listing every ship in the game, each one drawn in 3D from the cells
+the game itself meshes: the twenty three stock hulls and the four alien
+archetypes, with what each is made of, what it carries, how buried its
+reactor is and how big it actually is. `docs/ships/registry.html` is the
+page; `cargo run --release -p swarm_core --example ship_export` is what
+feeds it.
+
+**Keeping it current is a rule, not a courtesy.** When a ship is added or
+removed, when a hull is re-exported, or when anything ON one moves (its
+stats, its guns, its reactor, the role it flies, what a class is for), the
+registry is regenerated and republished IN THE SAME CHANGE. A record of the
+fleet that is a version behind is worse than no record, because a reader
+cannot tell which.
+
+**Nothing on it is hand maintained, which is what makes that cheap.** The
+exporter reads the hull DIRECTORY rather than a list, so a class added
+tomorrow is on the page tomorrow; every number is measured off the model at
+export time by the same `greedy_mesh`, `reactor_of`, `guns_of` and `hp_for`
+the game runs on, so the page cannot disagree with the game about a hull
+without the game disagreeing with itself. Even a navy's SWATCH is measured:
+it is the one colour that covers most of that hull, by quad area rather than
+by quad count, because the greedy mesher leaves a flank as one big rectangle
+and a greebled stern as dozens of small ones and counting quads would paint
+every ship the colour of its machinery.
+
+**Two views, and the second is the one worth having.** A ship on its own, and
+the WHOLE FLEET at true relative scale, laid out a row per navy with the
+rungs aligned in columns. The ladder is the claim this project makes about
+its own fleet most often and the hardest to check by reading: a corvette
+really is half a cruiser, and a drone really is a speck beside both, and a
+picture that fit each ship to the frame would say nothing about any of it.
+
+**The geometry travels as base64 inside JSON**, which reads as a strange
+thing to do until you try to publish it: a static host serves standard web
+media types and a private binary format is not one, so the choice is JSON or
+nothing. As numbers in a JSON array the same quads are three times the size;
+as base64 they are a third larger than the bytes and `atob` is one call. A
+quad rather than two triangles, because every face this mesher makes is an
+axis aligned rectangle, and a `u16` per coordinate over the model's own
+bounding box, because a lattice is at most 128 cells across.
+
+**And `depth_from_outside` moved into the core for it.** `hull_stats` had its
+own copy and the exporter needed the same answer, which is this project's own
+divergent path rule: one measure, one implementation, one test. It is not the
+depth `reactor_of` derives and the doc comment says why. That one seeds every
+empty cell, so it answers "how buried is this in its own structure"; this one
+floods only from the lattice wall, so an internal void is not a way in, and it
+is this one that answers "how much plating would a shot have to get through".
+
 ## Suites
 
 ```sh
@@ -2049,6 +2102,7 @@ python3 tools/make_chitin_texture.py --check               # the chitin has not 
 python3 tools/make_crystal_texture.py --check              # nor the crystal's three maps
 cargo run --release -p swarm_core --example hull_stats -- assets/hulls   # what makes a hull tough
 cargo run --release -p swarm_core --example rock_stats                   # what a rock is worth, and how buried its ore is
+cargo run --release -p swarm_core --example ship_export -- assets/hulls docs/ships   # the registry's geometry and index
 cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png
 # A headless run defaults the launch delay to NOUGHT and a window defaults it
