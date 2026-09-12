@@ -89,13 +89,13 @@ body {
 
 /* left roster */
 .roster { position: absolute; left: 8px; top: 50px; width: 38px; }
-/* The row is shorter than the picture on purpose. A plan view fills its
-   square across and leaves a band above and below, so the rows overlap those
-   bands and the list is a third shorter with the ships drawn no smaller. */
-.rrow { position: relative; display: block; width: 38px; height: 26px;
-        background: transparent; border: 0; padding: 0; font-family: inherit; }
-.rrow img { position: absolute; left: 0; top: -6px; width: 38px; height: 38px; object-fit: contain; }
-.rrow .c { position: absolute; right: 0; bottom: 0; padding: 0 2px; line-height: 1.2;
+/* The thumb is baked three by two rather than square, so a plan view fills
+   its frame with no band above and below to waste. The row is then exactly
+   the picture and nothing overlaps its neighbours. */
+.rrow { position: relative; display: block; width: 38px; height: 27px;
+        background: transparent; border: 0; padding: 0 0 3px; font-family: inherit; }
+.rrow img { position: absolute; inset: 0 0 3px; width: 38px; height: 24px; object-fit: contain; }
+.rrow .c { position: absolute; right: 0; bottom: 1px; padding: 0 2px; line-height: 1.2;
            background: rgba(3,9,14,.72); font-family: "Share Tech Mono", monospace;
            font-size: 10.5px; color: var(--green); }
 .rrow .c.z { color: #33465a; }
@@ -584,11 +584,19 @@ body {
         spawned into the field and the class strip and the roster both count it. A row you cannot afford is
         dim with its price in red, and the producer's production slots are the cap. The producer is a hull
         standing in the field rather than a class, so the slots it reports are that ship's own.</p>
+        <p>And ONE hull of a class at a time: the slip for fighters is not the slip for frigates, so a
+        second frigate is refused while the first is building and the whole class dims to say why. Without
+        that the production slots are the only limit there is, and four frigates at once is the obvious
+        play.</p>
       </div>
       <div>
-        <h3>Selection drives three places at once</h3>
-        <p>Clicking a hull draws the bracket and its integrity bar on it in screen space, fills the unit readout,
-        and swaps the schematic in the bottom bar. One selection, one source, three readers.</p>
+        <h3>Selection is two lines, not a box</h3>
+        <p>Four corner brackets round a bounding square are a box drawn at the size of the ship's DIAGONAL,
+        so a frigate seen end on wore a mark three times its own width. Two vertical lines at the hull's own
+        left and right say where it is and take no room, and the projection is off the eight corners of its
+        solid box rather than a radius guessed from the lattice.</p>
+        <p>Those lines, the integrity bar under them, the unit readout and the schematic in the bottom bar
+        are one selection with four readers. An unselected hull gets a hairline under it and nothing more.</p>
       </div>
     </div>
     <p class="foot">
@@ -1049,7 +1057,7 @@ body {
     // a squat platform came out a third the size in the same row. In a square
     // every ship fills the same box, whichever way it is long.
     s.thumb = bake(s.model, s.mesh, {
-      w: 96, h: 96, view: "plan", pad: 1.04, rim: [126, 234, 255], rings: 1
+      w: 96, h: 64, view: "plan", pad: 1.04, rim: [126, 234, 255], rings: 1
     }).toDataURL();
   });
 
@@ -1253,29 +1261,53 @@ body {
   var brk = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   brk.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1";
   stage.appendChild(brk);
+  // Where a hull actually IS on screen, from the eight corners of its own
+  // solid box rather than from a radius guessed off the lattice. The mesh is
+  // centred on that box already, so the corners are plus or minus its half
+  // extents in the hull's own frame.
+  var CORNER = new THREE.Vector3();
+  function screenBox(hh, w, h) {
+    var b = hh.spec.model.bb;
+    var x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (var i = 0; i < 8; i++) {
+      CORNER.set((i & 1 ? 1 : -1) * b.h[0], (i & 2 ? 1 : -1) * b.h[1], (i & 4 ? 1 : -1) * b.h[2]);
+      CORNER.applyMatrix4(hh.mesh.matrixWorld).project(camera);
+      var px = (CORNER.x * 0.5 + 0.5) * w, py = (-CORNER.y * 0.5 + 0.5) * h;
+      if (px < x0) { x0 = px; }
+      if (px > x1) { x1 = px; }
+      if (py < y0) { y0 = py; }
+      if (py > y1) { y1 = py; }
+    }
+    return { x0: x0, x1: x1, y0: y0, y1: y1 };
+  }
+
+  // Two vertical lines at the hull's own left and right, and nothing else.
+  // Four corner brackets round a bounding square are a box drawn at the size
+  // of the ship's DIAGONAL, so a frigate seen end on wore a mark three times
+  // its own width; a pair of lines says where it is and takes no room.
   function drawBrackets() {
     var w = stage.clientWidth, h = stage.clientHeight;
     brk.setAttribute("viewBox", "0 0 " + w + " " + h);
     var out = "";
     hulls.forEach(function (hh) {
-      var v = hh.mesh.position.clone().project(camera);
-      if (v.z > 1) { return; }
-      var x = (v.x * 0.5 + 0.5) * w, y = (-v.y * 0.5 + 0.5) * h;
-      var d = Math.max(50, hh.mesh.position.distanceTo(camera.position));
-      var a = Math.max(10, Math.min(180, 34 * hh.spec.p.nz * w / (d * 16)));
+      if (hh.mesh.position.clone().project(camera).z > 1) { return; }
+      var b = screenBox(hh, w, h);
+      var mid = (b.y0 + b.y1) / 2;
+      var half = Math.max(7, (b.y1 - b.y0) / 2 + 3);
+      var l = Math.round(b.x0) - 4, r = Math.round(b.x1) + 4;
       if (hh === sel) {
-        var b = a * 0.4;
-        out += '<g stroke="#6ff0ff" stroke-width="1.5" fill="none">' +
-          '<path d="M' + (x - a) + ' ' + (y - a + b) + 'V' + (y - a) + 'H' + (x - a + b) + '"/>' +
-          '<path d="M' + (x + a - b) + ' ' + (y - a) + 'H' + (x + a) + 'V' + (y - a + b) + '"/>' +
-          '<path d="M' + (x - a) + ' ' + (y + a - b) + 'V' + (y + a) + 'H' + (x - a + b) + '"/>' +
-          '<path d="M' + (x + a - b) + ' ' + (y + a) + 'H' + (x + a) + 'V' + (y + a - b) + '"/></g>' +
-          '<rect x="' + (x - a) + '" y="' + (y + a + 5) + '" width="' + (2 * a) + '" height="3" fill="#0a1a12"/>' +
-          '<rect x="' + (x - a) + '" y="' + (y + a + 5) + '" width="' + (2 * a * hh.hp) +
-          '" height="3" fill="' + hpColour(hh.hp) + '"/>';
+        out += '<g stroke="#6ff0ff" stroke-width="1.4" fill="none">' +
+          '<path d="M' + l + " " + (mid - half) + "V" + (mid + half) + '"/>' +
+          '<path d="M' + r + " " + (mid - half) + "V" + (mid + half) + '"/></g>' +
+          '<rect x="' + l + '" y="' + (mid + half + 4) + '" width="' + (r - l) +
+          '" height="2" fill="#0a1a12"/>' +
+          '<rect x="' + l + '" y="' + (mid + half + 4) + '" width="' + ((r - l) * hh.hp) +
+          '" height="2" fill="' + hpColour(hh.hp) + '"/>';
       } else {
-        out += '<circle cx="' + x + '" cy="' + y + '" r="' + (a * 0.55) +
-          '" fill="none" stroke="rgba(108,214,168,.45)" stroke-width="1"/>';
+        // A hairline under an unselected hull: enough to say it is a unit,
+        // not enough to be read before the ship it is under.
+        out += '<path d="M' + (l + 3) + " " + (mid + half) + "H" + (r - 3) +
+          '" stroke="rgba(108,214,168,.35)" stroke-width="1"/>';
       }
     });
     brk.innerHTML = out;
@@ -1428,6 +1460,13 @@ body {
     return '<span class="pips">' + s + "</span>";
   }
 
+  // A yard lays ONE hull of a class at a time: the slip for fighters is not
+  // the slip for frigates, and a queue that took four frigates at once would
+  // make the production slots the only limit there is.
+  function busy(cat) {
+    return queue.some(function (q) { return byKey[q.key].cat === cat; });
+  }
+
   function drawList() {
     var host = document.getElementById("list");
     var head = document.getElementById("catname");
@@ -1457,9 +1496,11 @@ body {
     head.textContent = c.name + " (Alt+" + c.key + ")";
     count.textContent = countOf({ cat: cat }) + " / " + c.cap;
     var rows = SHIPS.filter(function (s) { return s.cat === cat; });
+    var slip = busy(cat);
     host.innerHTML = rows.length ? rows.map(function (s) {
       var on = queue.some(function (q) { return q.key === s.key; });
-      return '<button class="brow" type="button" data-buy="' + s.key + '" data-poor="' + (ore < s.cost ? 1 : 0) +
+      return '<button class="brow" type="button" data-buy="' + s.key + '" data-poor="' +
+        (ore < s.cost || (slip && !on) ? 1 : 0) +
         '" data-on="' + (on ? 1 : 0) + '"><span class="go">&#9654;</span>' +
         '<img class="ic" src="' + s.schem + '" alt="">' + pips(s.slots, 3) +
         '<span class="nm"><b>' + s.name + "</b><i>" + s.cost + "</i></span></button>";
@@ -1563,6 +1604,10 @@ body {
     }
     if (t.dataset.buy) {
       var s = byKey[t.dataset.buy];
+      if (busy(s.cat)) {
+        say(CATS.filter(function (c) { return c.id === s.cat; })[0].name + " slip in use");
+        return;
+      }
       var ph = producer();
       if (ph && queue.length >= ph.spec.slots) { say("Production slots full"); return; }
       if (ore < s.cost) { say("Insufficient resource units"); return; }
