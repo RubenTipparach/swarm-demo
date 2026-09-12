@@ -88,15 +88,24 @@ body {
       font-size: 12.5px; color: var(--ink); text-shadow: 0 0 6px #000; }
 
 /* left roster */
-.roster { position: absolute; left: 6px; top: 50px; width: 170px; }
-.rrow { display: flex; align-items: center; gap: 4px; padding: 0 3px; width: 100%; height: 19px;
-        background: transparent; border: 0; border-left: 2px solid transparent; font-family: inherit; }
-.rrow img { width: 88px; height: 17px; object-fit: contain; flex: none; }
-.rrow .c { margin-left: auto; font-family: "Share Tech Mono", monospace; font-size: 12px;
-           color: var(--green); flex: none; }
-.rrow .c.z { color: #2e3d4c; }
-.rrow:hover { background: rgba(90,170,200,.14); border-left-color: var(--teal); }
-.rdiv { height: 1px; margin: 3px 4px; background: #1d3a4a; }
+.roster { position: absolute; left: 8px; top: 50px; width: 38px; }
+/* The row is shorter than the picture on purpose. A plan view fills its
+   square across and leaves a band above and below, so the rows overlap those
+   bands and the list is a third shorter with the ships drawn no smaller. */
+.rrow { position: relative; display: block; width: 38px; height: 26px;
+        background: transparent; border: 0; padding: 0; font-family: inherit; }
+.rrow img { position: absolute; left: 0; top: -6px; width: 38px; height: 38px; object-fit: contain; }
+.rrow .c { position: absolute; right: 0; bottom: 0; padding: 0 2px; line-height: 1.2;
+           background: rgba(3,9,14,.72); font-family: "Share Tech Mono", monospace;
+           font-size: 10.5px; color: var(--green); }
+.rrow .c.z { color: #33465a; }
+.rrow[data-has="0"] { opacity: .38; }
+.rrow:hover { background: rgba(90,170,200,.16); }
+.rtip { position: absolute; left: 42px; padding: 3px 7px; white-space: nowrap; pointer-events: none;
+        background: rgba(5,16,26,.94); border: 1px solid var(--edge-hot, #2d4258);
+        font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); z-index: 8; }
+.rtip b { font-family: "Share Tech Mono", monospace; letter-spacing: 0; color: var(--teal);
+          text-transform: none; margin-left: 6px; }
 
 /* right panel */
 .rpanel { position: absolute; right: 6px; top: 50px; width: 428px; height: 698px;
@@ -405,7 +414,7 @@ body {
         </div>
       </div>
 
-      <div class="roster nine" id="roster"></div>
+      <div class="roster" id="roster"><div class="rtip" id="rtip" hidden></div></div>
 
       <div class="rpanel nine">
         <div class="phead"><span class="t" id="ptitle">Build Menu</span><button class="x" type="button" title="Close">X</button></div>
@@ -755,20 +764,50 @@ body {
     };
   }
 
+  // The solid cells' own box, which is what a picture of a ship should be
+  // framed and centred on.
+  function bounds(m) {
+    var lo = [m.nx, m.ny, m.nz], hi = [-1, -1, -1], x, y, z, p;
+    for (z = 0; z < m.nz; z++) {
+      for (y = 0; y < m.ny; y++) {
+        for (x = 0; x < m.nx; x++) {
+          if (!get(m, x, y, z)) { continue; }
+          p = [x, y, z];
+          for (var a = 0; a < 3; a++) {
+            if (p[a] < lo[a]) { lo[a] = p[a]; }
+            if (p[a] > hi[a]) { hi[a] = p[a]; }
+          }
+        }
+      }
+    }
+    if (hi[0] < 0) { return { c: [0, 0, 0], h: [1, 1, 1] }; }
+    return {
+      c: [(lo[0] + hi[0] + 1) / 2, (lo[1] + hi[1] + 1) / 2, (lo[2] + hi[2] + 1) / 2],
+      h: [(hi[0] - lo[0] + 1) / 2, (hi[1] - lo[1] + 1) / 2, (hi[2] - lo[2] + 1) / 2]
+    };
+  }
+
+  // The position array is COPIED, because `translate` mutates the attribute
+  // in place and one mesh is turned into three geometries: the schematic, the
+  // roster thumb and the hull in the field. Sharing it moved the model once
+  // per geometry, so the second bake of a ship was centred twice as far out
+  // as the first and the third further still.
   function geomOf(mesh, m) {
     var g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(mesh.pos, 3));
+    g.setAttribute("position", new THREE.BufferAttribute(mesh.pos.slice(), 3));
     g.setAttribute("color", new THREE.BufferAttribute(mesh.col, 3));
     g.setAttribute("normal", new THREE.BufferAttribute(mesh.nor, 3));
     g.setAttribute("sub", new THREE.BufferAttribute(mesh.sub, 1));
-    g.translate(-m.nx / 2, -m.ny / 2, -m.nz / 2);
+    var b = m.bb || (m.bb = bounds(m));
+    g.translate(-b.c[0], -b.c[1], -b.c[2]);
     return g;
   }
   function lineGeomOf(mesh, m) {
     var g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(mesh.lin, 3));
+    g.setAttribute("position", new THREE.BufferAttribute(mesh.lin.slice(), 3));
     g.setAttribute("sub", new THREE.BufferAttribute(mesh.lsub, 1));
-    g.translate(-m.nx / 2, -m.ny / 2, -m.nz / 2);
+    var b = m.bb || (m.bb = bounds(m));
+    g.translate(-b.c[0], -b.c[1], -b.c[2]);
     return g;
   }
 
@@ -814,7 +853,8 @@ body {
   // panel is asking a player to read, and it is the one view every hull in a
   // fleet can be compared in.
   function frame(cam, m, o, w, h) {
-    var r = Math.sqrt(m.nx * m.nx + m.ny * m.ny + m.nz * m.nz) * 0.5;
+    var bb = m.bb || (m.bb = bounds(m));
+    var r = Math.sqrt(bb.h[0] * bb.h[0] + bb.h[1] * bb.h[1] + bb.h[2] * bb.h[2]);
     if (o.view === "plan") {
       cam.up.set(1, 0, 0);
       cam.position.set(0, r * 2, 0);
@@ -836,7 +876,7 @@ body {
     var up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
     var hw = 0, hh = 0, c = new THREE.Vector3();
     for (var i = 0; i < 8; i++) {
-      c.set((i & 1 ? 0.5 : -0.5) * m.nx, (i & 2 ? 0.5 : -0.5) * m.ny, (i & 4 ? 0.5 : -0.5) * m.nz);
+      c.set((i & 1 ? 1 : -1) * bb.h[0], (i & 2 ? 1 : -1) * bb.h[1], (i & 4 ? 1 : -1) * bb.h[2]);
       hw = Math.max(hw, Math.abs(c.dot(right)));
       hh = Math.max(hh, Math.abs(c.dot(up)));
     }
@@ -919,10 +959,15 @@ body {
     rim(img, w, h, o.rim, o.rings);
     g.putImageData(img, 0, 0);
     // Scanlines: what says "a readout of a ship" rather than "a picture of
-    // one". Cheap, and it survives being 130 px wide.
+    // one". SOURCE-ATOP, or the pass paints the whole canvas and every pixel
+    // of the asset comes out opaque: the icon then has a grey frame round it
+    // and object-fit has nothing left to trim, which is what made two ships
+    // in one square box come out two sizes.
+    g.globalCompositeOperation = "source-atop";
     g.globalAlpha = 0.17; g.fillStyle = "#000";
     for (y = 0; y < h; y += 3) { g.fillRect(0, y, w, 1); }
     g.globalAlpha = 1;
+    g.globalCompositeOperation = "source-over";
     return cv;
   }
 
@@ -998,6 +1043,13 @@ body {
     for (var i = 0; i < s.model.g.length; i++) { if (s.model.g[i]) { s.cells++; } }
     s.schem = bake(s.model, s.mesh, {
       w: 440, h: 140, view: "plan", pad: 1.05, rim: [126, 234, 255], rings: 2
+    }).toDataURL();
+    // The roster's is SQUARE, and that is what normalises them: the wide bake
+    // fits a hull's extents into a 3:1 frame, so a long frigate filled it and
+    // a squat platform came out a third the size in the same row. In a square
+    // every ship fills the same box, whichever way it is long.
+    s.thumb = bake(s.model, s.mesh, {
+      w: 96, h: 96, view: "plan", pad: 1.04, rim: [126, 234, 255], rings: 1
     }).toDataURL();
   });
 
@@ -1256,7 +1308,7 @@ body {
     hulls.forEach(function (h, i) { if (i) { n += RUNG[h.spec.cat] || 0; } });
     return n;
   }
-  var prodAt = 0;
+  var prodAt = 0, cycle = {};
   // A producer is a hull STANDING IN THE FIELD, not a class: its production
   // and module slots are that ship's own, which is what the panel claims.
   function producerList() {
@@ -1291,15 +1343,31 @@ body {
   // cap was a second number nobody reads in a fight; a rule between groups
   // does the grouping and the quantity is the only thing that moves.
   function drawRoster() {
-    document.getElementById("roster").innerHTML = CATS.map(function (c) {
-      return SHIPS.filter(function (s) { return s.cat === c.id; }).map(function (s) {
-        var k = countOf({ key: s.key });
-        return '<button class="rrow" type="button" data-pick="' + s.key + '" title="' + s.name +
-          '"><img src="' + s.schem + '" alt="' + s.name + '">' +
-          '<span class="c' + (k ? "" : " z") + '">' + k + "</span></button>";
-      }).join("");
-    }).join('<div class="rdiv"></div>');
+    var tip = document.getElementById("rtip");
+    document.getElementById("roster").innerHTML = SHIPS.map(function (s) {
+      var k = countOf({ key: s.key });
+      return '<button class="rrow" type="button" data-pick="' + s.key + '" data-has="' +
+        (k ? 1 : 0) + '" data-name="' + s.name + '"><img src="' + s.thumb + '" alt="' + s.name +
+        '"><span class="c' + (k ? "" : " z") + '">x' + k + "</span></button>";
+    }).join("");
+    document.getElementById("roster").appendChild(tip);
   }
+
+  // Hovering NAMES the ship, because the picture is the label and a picture
+  // nobody can put a word to is a picture a player has to guess at once.
+  document.getElementById("roster").addEventListener("mouseover", function (e) {
+    var r = e.target.closest(".rrow");
+    var tip = document.getElementById("rtip");
+    if (!r) { return; }
+    tip.innerHTML = r.dataset.name + "<b>" + r.querySelector(".c").textContent + "</b>";
+    tip.style.top = r.offsetTop + 4 + "px";
+    tip.hidden = false;
+  });
+  document.getElementById("roster").addEventListener("mouseout", function (e) {
+    if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest("#roster")) {
+      document.getElementById("rtip").hidden = true;
+    }
+  });
 
   function drawCats() {
     document.getElementById("cats").innerHTML = CATS.map(function (c) {
@@ -1470,7 +1538,13 @@ body {
 
     if (t.dataset.pick) {
       var own = hulls.filter(function (h) { return h.spec.key === t.dataset.pick; });
-      if (own.length) { select(own[0]); } else { say("None in the fleet"); }
+      if (!own.length) { say("None in the fleet"); return; }
+      // One line stands for several hulls, so pressing it again takes the
+      // next one rather than re-selecting the one already chosen.
+      var at = (cycle[t.dataset.pick] || 0) % own.length;
+      cycle[t.dataset.pick] = at + 1;
+      select(own[at]);
+      if (own.length > 1) { say(own[at].spec.name + " " + (at + 1) + " of " + own.length); }
       return;
     }
     if (t.dataset.cat) {
@@ -1495,7 +1569,7 @@ body {
       ore -= s.cost;
       queue.push({ key: s.key, secs: s.build, left: s.build });
       drawBank(); drawQueue(); drawProducer(); drawList();
-      say(s.name + " laid down");
+      say(s.name + " queued");
       return;
     }
     if (t.dataset.res) {
@@ -1519,7 +1593,7 @@ body {
       ore -= m.cost;
       subq.push({ h: sel, id: m.id, secs: m.secs, left: m.secs, name: m.name });
       drawBank(); drawMods(); drawQueue(); drawProducer();
-      say(m.name + " module laid down");
+      say(m.name + " module queued");
       return;
     }
     if (t.dataset.grp) {
