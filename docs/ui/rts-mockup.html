@@ -15,6 +15,8 @@
   --faint: #4e6274;
   --green: #63d12b;
   --red: #e8563c;
+  --ore: #e8a33c;
+  --cry: #58d8c4;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -64,32 +66,40 @@ body {
 .nine   { border: 16px solid transparent; border-image: var(--n-panel) 16 fill / 16px stretch; }
 .nine-w { border: 12px solid transparent; border-image: var(--n-well) 16 fill / 12px stretch; }
 
-.ru { position: absolute; right: 6px; top: 2px; width: 428px; height: 32px;
-      display: flex; align-items: center; gap: 8px; }
-.ru .t { font-weight: 600; font-size: 13px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--gold); }
-.ru .v { margin-left: auto; font-family: "Share Tech Mono", monospace; font-size: 17px; color: var(--gold); }
-.ru svg { width: 16px; height: 16px; color: var(--gold); flex: none; }
+.ru { position: absolute; right: 6px; top: 2px; width: 428px; height: 44px;
+      display: flex; align-items: stretch; gap: 8px; }
+.ru .res { display: flex; align-items: center; gap: 7px; }
+.ru .res svg { width: 20px; height: 20px; flex: none; }
+.ru .ore { padding-right: 10px; border-right: 1px solid #24485c; }
+.ru .ore svg { color: var(--ore); }
+.ru .ore .v { font-family: "Share Tech Mono", monospace; font-size: 19px; color: var(--ore); }
+.ru .cry { flex: 1; min-width: 0; }
+.ru .cry svg { color: var(--cry); }
+.fuel { flex: 1; min-width: 0; }
+.fn { display: flex; align-items: baseline; gap: 5px; line-height: 1; }
+.fn b { font-family: "Share Tech Mono", monospace; font-size: 16px; font-weight: 400; color: var(--cry); }
+.fn i { font-style: normal; font-family: "Share Tech Mono", monospace; font-size: 11px; color: var(--faint); }
+.fbar { margin-top: 3px; height: 5px; background: #0a1b22; border: 1px solid #1c4048; }
+.fbar span { display: block; height: 100%; width: 0; background: var(--cry); transition: width .3s; }
+.ru[data-jump="1"] .fbar span { background: var(--green); }
+.ru[data-jump="1"] .fn b, .ru[data-jump="1"] .fn i { color: var(--green); }
 
 .gt { position: absolute; left: 12px; top: 10px; font-family: "Share Tech Mono", monospace;
       font-size: 12.5px; color: var(--ink); text-shadow: 0 0 6px #000; }
 
 /* left roster */
-.roster { position: absolute; left: 6px; top: 34px; width: 312px; }
-.rrow { display: flex; align-items: center; gap: 6px; padding: 0 4px; width: 100%;
-        background: transparent; border: 0; border-left: 2px solid transparent;
-        font-family: inherit; font-size: 13.5px; text-align: left; color: var(--ink); }
-.rrow.h { height: 23px; font-weight: 600; border-left-color: #26495c; }
-.rrow.s { height: 30px; padding-left: 10px; color: var(--dim); }
-.rrow svg { width: 30px; height: 18px; flex: none; color: var(--teal); }
-.rrow img { width: 138px; height: 27px; object-fit: contain; flex: none; }
-.rrow .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rrow .c { font-family: "Share Tech Mono", monospace; font-size: 12px; color: var(--green);
-           min-width: 46px; text-align: right; flex: none; }
-.rrow .c.z { color: var(--faint); }
+.roster { position: absolute; left: 6px; top: 50px; width: 170px; }
+.rrow { display: flex; align-items: center; gap: 4px; padding: 0 3px; width: 100%; height: 19px;
+        background: transparent; border: 0; border-left: 2px solid transparent; font-family: inherit; }
+.rrow img { width: 88px; height: 17px; object-fit: contain; flex: none; }
+.rrow .c { margin-left: auto; font-family: "Share Tech Mono", monospace; font-size: 12px;
+           color: var(--green); flex: none; }
+.rrow .c.z { color: #2e3d4c; }
 .rrow:hover { background: rgba(90,170,200,.14); border-left-color: var(--teal); }
+.rdiv { height: 1px; margin: 3px 4px; background: #1d3a4a; }
 
 /* right panel */
-.rpanel { position: absolute; right: 6px; top: 36px; width: 428px; height: 712px;
+.rpanel { position: absolute; right: 6px; top: 50px; width: 428px; height: 698px;
           display: flex; flex-direction: column; }
 .phead { display: flex; align-items: center; height: 26px; margin: -8px -8px 5px;
          background: linear-gradient(180deg,#2e2506,#15150a); border: 1px solid var(--gold-dim); padding: 0 4px; }
@@ -358,7 +368,8 @@ body {
 <symbol id="s-speed" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18L18 6"/><path d="M11 6h7v7"/></g></symbol>
 <symbol id="s-gun" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><path d="M12 3v3"/></g></symbol>
 <symbol id="s-arm" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
-<symbol id="s-ru" viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2l9 5-9 5-9-5z"/><path d="M12 12l9-5v10l-9 5z" opacity=".6"/><path d="M12 12v10l-9-5V7z" opacity=".35"/></g></symbol>
+<symbol id="r-ore" viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2l9 5-9 5-9-5z"/><path d="M12 12l9-5v10l-9 5z" opacity=".6"/><path d="M12 12v10l-9-5V7z" opacity=".35"/></g></symbol>
+<symbol id="r-crystal" viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 1l6 7-6 15-6-15z" opacity=".32"/><path d="M12 1l6 7h-6z"/><path d="M12 1L6 8h6z" opacity=".72"/><path d="M12 8h6l-6 15z" opacity=".55"/></g></symbol>
 </defs></svg>
 
 <div class="wrap">
@@ -381,9 +392,17 @@ body {
       <div class="gt" id="gt">Game Time: 0: 0:00</div>
 
       <div class="ru nine">
-        <svg aria-hidden="true"><use href="#s-ru"></use></svg>
-        <span class="t">Resource Units</span>
-        <span class="v" id="ru">3000</span>
+        <div class="res ore">
+          <svg aria-hidden="true"><use href="#r-ore"></use></svg>
+          <span class="v" id="ore">3000</span>
+        </div>
+        <div class="res cry">
+          <svg aria-hidden="true"><use href="#r-crystal"></use></svg>
+          <div class="fuel">
+            <div class="fn"><b id="fuel">190</b><i>/ <span id="need">550</span> to jump</i></div>
+            <div class="fbar"><span id="fbar"></span></div>
+          </div>
+        </div>
       </div>
 
       <div class="roster nine" id="roster"></div>
@@ -523,10 +542,11 @@ body {
         lattice is: a swept dart, a hull with two pods, a hull with a bow gun, a broad hull with three
         drives, a hauler with clamps, and a mount with no drives at all. They carry no faction paint, so
         they serve every navy in the game and every hull added to one.</p>
-        <p>The roster keeps its headers, and a ship line is its SCHEMATIC rather than its name: a plan view
-        at 138 pixels says more than the words "Ion Cannon Frigate" and says it faster. It is read off the
-        fleet rather than typed beside it, so a class added tomorrow is on it tomorrow, and a line of it
-        PICKS: clicking one selects that ship, which is what a roster is for.</p>
+        <p>The roster is half the size it was and carries no words at all: a line is a schematic and a
+        quantity, and a rule between classes does the grouping a heading used to. The cap came off with the
+        label, because what a class is ALLOWED is a number nobody reads in a fight and what it HAS is the
+        only thing that moves. It is read off the fleet rather than typed beside it, so a class added
+        tomorrow is on it tomorrow, and a line of it PICKS: clicking one selects that ship.</p>
       </div>
 
       <div>
@@ -539,6 +559,14 @@ body {
         <p>It sits under Build, Research and Launch because those three decide what the YARD does and this
         decides what one SHIP is. The header counts the slots, because a module row with no count is six
         buttons whose refusal has no reason on screen.</p>
+      </div>
+
+      <div>
+        <h3>Two resources, and the second one is a countdown</h3>
+        <p>Ore is a number. Crystal is not: it is fuel against what a JUMP costs, so it is a bar with the
+        need written over it. The need is the drive plus every other hull standing in the field, which is the
+        Long Retreat's own rule, so laying down an escort visibly sets the jump back and the bar answers "can
+        I leave yet" without a player doing arithmetic. It goes green when it can.</p>
       </div>
 
       <div>
@@ -953,12 +981,12 @@ body {
   // that class's largest hull, baked by the same baker as everything else and
   // worn as a CSS mask so the button tints it with its own state.
   var CATS = [
-    { id: "fighter", name: "Fighter", group: "Fighter Squadrons", icon: "cl-fighter", key: "F", cap: 18 },
-    { id: "corvette", name: "Corvette", group: "Corvette Squadrons", icon: "cl-corvette", key: "C", cap: 12 },
-    { id: "frigate", name: "Frigate", group: "Frigates", icon: "cl-frigate", key: "R", cap: 21 },
-    { id: "capital", name: "Capital", group: "Capital Ships", icon: "cl-capital", key: "P", cap: 15 },
-    { id: "utility", name: "Utility", group: "Utility Ships", icon: "cl-utility", key: "T", cap: 50 },
-    { id: "platform", name: "Platform", group: "Platforms", icon: "cl-platform", key: "L", cap: 20 }
+    { id: "fighter", name: "Fighter", icon: "cl-fighter", key: "F", cap: 18 },
+    { id: "corvette", name: "Corvette", icon: "cl-corvette", key: "C", cap: 12 },
+    { id: "frigate", name: "Frigate", icon: "cl-frigate", key: "R", cap: 21 },
+    { id: "capital", name: "Capital", icon: "cl-capital", key: "P", cap: 15 },
+    { id: "utility", name: "Utility", icon: "cl-utility", key: "T", cap: 50 },
+    { id: "platform", name: "Platform", icon: "cl-platform", key: "L", cap: 20 }
   ];
   var byKey = {};
   SHIPS.forEach(function (s) { byKey[s.key] = s; });
@@ -1214,7 +1242,20 @@ body {
   }
   window.addEventListener("resize", fit);
 
-  var ru = 3000, tab = "build", cat = "fighter";
+  var ore = 3000, tab = "build", cat = "fighter";
+
+  // What a jump costs is the drive plus every other hull standing in the
+  // field, which is the Long Retreat's own rule: an escort that helps you
+  // hold a system is an escort you then pay to take out of it. So the bar
+  // moves when the yard lands a ship, not only when a tanker refines one.
+  var DRIVE_COST = 250;
+  var RUNG = { corvette: 25, frigate: 50, utility: 50, capital: 100, fighter: 0, platform: 0 };
+  var fuel = 190;
+  function jumpNeed() {
+    var n = DRIVE_COST;
+    hulls.forEach(function (h, i) { if (i) { n += RUNG[h.spec.cat] || 0; } });
+    return n;
+  }
   var prodAt = 0;
   // A producer is a hull STANDING IN THE FIELD, not a class: its production
   // and module slots are that ship's own, which is what the panel claims.
@@ -1245,22 +1286,19 @@ body {
   // is on the roster tomorrow. Every row carries the same icon its build row
   // and its class button do, because a line of text is a name a player has to
   // have learnt and a silhouette is one they can already read.
+  // A roster line is a picture and a number and nothing else. The class name
+  // was a label on a group of ships that already look like each other, and a
+  // cap was a second number nobody reads in a fight; a rule between groups
+  // does the grouping and the quantity is the only thing that moves.
   function drawRoster() {
-    var html = "";
-    CATS.forEach(function (c) {
-      var n = countOf({ cat: c.id });
-      html += '<button class="rrow h" type="button" data-pick="' + c.lead + '">' +
-        '<svg aria-hidden="true"><use href="#' + c.icon + '"></use></svg>' +
-        '<span class="n">' + c.group + '</span><span class="c' + (n ? "" : " z") + '">' +
-        n + " / " + c.cap + "</span></button>";
-      SHIPS.filter(function (s) { return s.cat === c.id; }).forEach(function (s) {
+    document.getElementById("roster").innerHTML = CATS.map(function (c) {
+      return SHIPS.filter(function (s) { return s.cat === c.id; }).map(function (s) {
         var k = countOf({ key: s.key });
-        html += '<button class="rrow s" type="button" data-pick="' + s.key +
-          '" title="' + s.name + '"><img src="' + s.schem + '" alt="' + s.name + '">' +
-          '<span class="c' + (k ? "" : " z") + '">' + k + " / " + s.cap + "</span></button>";
-      });
-    });
-    document.getElementById("roster").innerHTML = html;
+        return '<button class="rrow" type="button" data-pick="' + s.key + '" title="' + s.name +
+          '"><img src="' + s.schem + '" alt="' + s.name + '">' +
+          '<span class="c' + (k ? "" : " z") + '">' + k + "</span></button>";
+      }).join("");
+    }).join('<div class="rdiv"></div>');
   }
 
   function drawCats() {
@@ -1330,7 +1368,7 @@ body {
       head.textContent = "Research";
       count.textContent = "0 / " + RESEARCH.length;
       host.innerHTML = RESEARCH.map(function (r, i) {
-        return '<button class="brow" type="button" data-res="' + i + '" data-poor="' + (ru < r.cost ? 1 : 0) +
+        return '<button class="brow" type="button" data-res="' + i + '" data-poor="' + (ore < r.cost ? 1 : 0) +
           '"><span class="go">&#9654;</span>' + pips(2, 3) +
           '<span class="nm"><b>' + r.name + "</b><i>" + r.cost + "</i></span></button>";
       }).join("");
@@ -1353,7 +1391,7 @@ body {
     var rows = SHIPS.filter(function (s) { return s.cat === cat; });
     host.innerHTML = rows.length ? rows.map(function (s) {
       var on = queue.some(function (q) { return q.key === s.key; });
-      return '<button class="brow" type="button" data-buy="' + s.key + '" data-poor="' + (ru < s.cost ? 1 : 0) +
+      return '<button class="brow" type="button" data-buy="' + s.key + '" data-poor="' + (ore < s.cost ? 1 : 0) +
         '" data-on="' + (on ? 1 : 0) + '"><span class="go">&#9654;</span>' +
         '<img class="ic" src="' + s.schem + '" alt="">' + pips(s.slots, 3) +
         '<span class="nm"><b>' + s.name + "</b><i>" + s.cost + "</i></span></button>";
@@ -1392,7 +1430,15 @@ body {
       subq.length ? "Subsystem Queue (" + subq.length + ")" : "Subsystem Queue (Empty)";
   }
 
-  function drawRU() { document.getElementById("ru").textContent = ru; }
+  function drawBank() {
+    document.getElementById("ore").textContent = ore;
+    var need = jumpNeed();
+    var strip = document.querySelector(".ru");
+    document.getElementById("fuel").textContent = Math.floor(fuel);
+    document.getElementById("need").textContent = need;
+    document.getElementById("fbar").style.width = Math.min(100, fuel / need * 100) + "%";
+    strip.setAttribute("data-jump", fuel >= need ? "1" : "0");
+  }
 
   function drawBars() {
     var C = [["c-move", "Move"], ["c-attack", "Attack"], ["c-guard", "Guard"], ["c-stop", "Hold"],
@@ -1445,17 +1491,17 @@ body {
       var s = byKey[t.dataset.buy];
       var ph = producer();
       if (ph && queue.length >= ph.spec.slots) { say("Production slots full"); return; }
-      if (ru < s.cost) { say("Insufficient resource units"); return; }
-      ru -= s.cost;
+      if (ore < s.cost) { say("Insufficient resource units"); return; }
+      ore -= s.cost;
       queue.push({ key: s.key, secs: s.build, left: s.build });
-      drawRU(); drawQueue(); drawProducer(); drawList();
+      drawBank(); drawQueue(); drawProducer(); drawList();
       say(s.name + " laid down");
       return;
     }
     if (t.dataset.res) {
       var r = RESEARCH[+t.dataset.res];
-      if (ru < r.cost) { say("Insufficient resource units"); return; }
-      ru -= r.cost; drawRU(); drawList(); say(r.name + " researching");
+      if (ore < r.cost) { say("Insufficient resource units"); return; }
+      ore -= r.cost; drawBank(); drawList(); say(r.name + " researching");
       return;
     }
     if (t.dataset.launch) { say("Launching strike craft"); return; }
@@ -1469,10 +1515,10 @@ body {
     if (t.dataset.mod) {
       if (t.dataset.on) { return; }
       var m = MODULES.filter(function (k) { return k.id === t.dataset.mod; })[0];
-      if (ru < m.cost) { say("Insufficient resource units"); return; }
-      ru -= m.cost;
+      if (ore < m.cost) { say("Insufficient resource units"); return; }
+      ore -= m.cost;
       subq.push({ h: sel, id: m.id, secs: m.secs, left: m.secs, name: m.name });
-      drawRU(); drawMods(); drawQueue(); drawProducer();
+      drawBank(); drawMods(); drawQueue(); drawProducer();
       say(m.name + " module laid down");
       return;
     }
@@ -1532,6 +1578,12 @@ body {
     if (landed) { drawRoster(); drawCats(); drawList(); drawProducer(); say("Build complete"); }
     drawQueue();
 
+    // A tanker refines volatiles into fuel at a cadence. What it is filling
+    // toward moves with the fleet, so building an escort visibly sets the
+    // jump back: that is the decision the bar exists to show.
+    fuel += dt * 6;
+    drawBank();
+
     hulls.forEach(function (h) {
       h.mesh.position.addScaledVector(h.drift, dt * 8);
       h.mesh.rotation.y += h.spin;
@@ -1575,7 +1627,7 @@ body {
   }).join("");
 
   // ---- go ----
-  drawRoster(); drawCats(); drawList(); drawProducer(); drawQueue(); drawRU(); drawBars();
+  drawRoster(); drawCats(); drawList(); drawProducer(); drawQueue(); drawBank(); drawBars();
   syncTabs(); select(hulls[0]); drawMods(); fit();
   requestAnimationFrame(loop);
 })();
