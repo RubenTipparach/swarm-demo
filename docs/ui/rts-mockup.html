@@ -98,8 +98,6 @@ body {
 .rrow .c { position: absolute; right: 0; bottom: 1px; padding: 0 2px; line-height: 1.2;
            background: rgba(3,9,14,.72); font-family: "Share Tech Mono", monospace;
            font-size: 10.5px; color: var(--green); }
-.rrow .c.z { color: #33465a; }
-.rrow[data-has="0"] { opacity: .38; }
 .rrow:hover { background: rgba(90,170,200,.16); }
 .rtip { position: absolute; left: 42px; padding: 3px 7px; white-space: nowrap; pointer-events: none;
         background: rgba(5,16,26,.94); border: 1px solid var(--edge-hot, #2d4258);
@@ -561,6 +559,10 @@ body {
         label, because what a class is ALLOWED is a number nobody reads in a fight and what it HAS is the
         only thing that moves. It is read off the fleet rather than typed beside it, so a class added
         tomorrow is on it tomorrow, and a line of it PICKS: clicking one selects that ship.</p>
+        <p>A class the fleet has none of is not on it AT ALL. A dimmed schematic with x0 beside it is a
+        picture of a ship that does not exist, and the roster is for finding a hull: a hull nobody built
+        cannot be found, so the line was a row of pixels that could only ever be passed over. What the
+        fleet COULD have is the build menu's question and it is already on the screen.</p>
       </div>
 
       <div>
@@ -600,11 +602,17 @@ body {
         <p>Brackets, rings and lines are all a shape drawn NEAR a hull, sized off a bounding box that on a
         long ship is mostly empty: a frigate seen end on wore a mark three times its own width. The
         selected hull is outlined instead, which is the one mark that is always exactly the ship.</p>
-        <p>The same geometry a second time, back faces only, swollen by a constant world thickness per axis
-        so the shell is even rather than heavier at the bow, depth tested and drawn after the hull, so the
-        inside fails against the ship's own depth and only the ring outside its silhouette survives. The
-        thickness is set in PIXELS and converted per frame, because a marker nobody can see at the zoom
+        <p>The same geometry a second time, back faces only, swollen, depth tested and drawn after the hull,
+        so the inside fails against the ship's own depth and only the ring outside its silhouette survives.
+        The thickness is set in PIXELS and converted per frame, because a marker nobody can see at the zoom
         they are actually at is a marker that is not there.</p>
+        <p>Swollen along the SURFACE NORMAL, which is the whole of it. Scaling the geometry about its centre
+        was the first cut and it outlined the INSIDE of the ship: a scale moves every point radially, so a
+        terrace half way down a stepped hull slides along the hull's own length and comes out from behind
+        the step in front of it, and a voxel hull is nothing but steps. Pushing each surface perpendicular
+        to itself moves that terrace straight up, where the step in front goes on covering it. It needs a
+        normal the mesher does not have, since its quads share no vertices, so the shell welds one averaged
+        direction per position: at a corner that is the diagonal, and the surface stays closed as it grows.</p>
         <p>The integrity bar sits ABOVE the hull and on the selected one alone. It stays in screen space
         because a bar has to be the same number of pixels tall at every range; the outline is the ship's own
         shape, so it does not.</p>
@@ -1213,36 +1221,113 @@ body {
   var sel = hulls[0];
 
   // Selection is an outline on the SHIP rather than a shape drawn near it.
-  // The same geometry a second time, back faces only, swollen by a constant
-  // WORLD thickness on each axis (so the shell is even rather than thicker
-  // at the bow, which is what a uniform scale of a long hull gives), depth
-  // tested and drawn after the ship: the interior fails against the hull's
-  // own depth and only the ring outside its silhouette survives.
+  // The same geometry a second time, back faces only, swollen, depth tested
+  // and drawn after the ship: the interior fails against the hull's own depth
+  // and only the ring outside its silhouette survives.
+  //
+  // Swollen along the SURFACE NORMAL, and that is the whole of it. Scaling the
+  // geometry about its centre was the first cut and it outlined the inside of
+  // the ship: a scale moves every point RADIALLY, so a terrace half way down a
+  // stepped hull slides outward along the hull's own length and emerges from
+  // behind the step in front of it, and a voxel hull is nothing but steps. The
+  // picture was a stack of nested rectangles marching aft. Displacing each
+  // surface perpendicular to ITSELF moves a terrace straight up, where the
+  // step in front of it goes on covering it, and only the silhouette grows.
+  //
+  // Which needs a normal the mesher does not have. Its quads share no
+  // vertices, so every corner carries its own face normal and inflating on
+  // those tears the shell into detached faces with a gap along every edge. So
+  // the shell WELDS: one averaged direction per position, which at a cube's
+  // corner is the diagonal and keeps the surface closed as it grows.
+  function shellOf(geo) {
+    var p = geo.attributes.position.array, n = geo.attributes.normal.array;
+    var dir = new Float32Array(p.length), at = {}, keys = [], i, k, a, j;
+    for (i = 0; i < p.length; i += 3) {
+      k = Math.round(p[i] * 64) + "," + Math.round(p[i + 1] * 64) + "," + Math.round(p[i + 2] * 64);
+      a = at[k];
+      if (!a) { a = at[k] = [0, 0, 0, []]; keys.push(k); }
+      a[0] += n[i]; a[1] += n[i + 1]; a[2] += n[i + 2];
+      a[3].push(i);
+    }
+    for (j = 0; j < keys.length; j++) {
+      a = at[keys[j]];
+      var len = Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]) || 1;
+      for (i = 0; i < a[3].length; i++) {
+        dir[a[3][i]] = a[0] / len;
+        dir[a[3][i] + 1] = a[1] / len;
+        dir[a[3][i] + 2] = a[2] / len;
+      }
+    }
+    var g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(p, 3));
+    g.setAttribute("dir", new THREE.BufferAttribute(dir, 3));
+    return g;
+  }
+
   var outline = new THREE.Mesh(
     new THREE.BufferGeometry(),
-    new THREE.MeshBasicMaterial({
-      color: 0x6ff0ff, side: THREE.BackSide, depthWrite: false,
-      transparent: true, opacity: 0.92
+    new THREE.ShaderMaterial({
+      uniforms: { thick: { value: 0 }, tint: { value: new THREE.Color(0x6ff0ff) } },
+      vertexShader:
+        "attribute vec3 dir;\nuniform float thick;\nvoid main() {\n" +
+        "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position + dir * thick, 1.0);\n}",
+      fragmentShader:
+        "uniform vec3 tint;\nvoid main() { gl_FragColor = vec4(tint, 0.92); }",
+      side: THREE.BackSide, transparent: true,
+      depthTest: false, depthWrite: false,
+      stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc
     })
   );
-  outline.renderOrder = 2;
+  outline.renderOrder = 1;
   outline.visible = false;
-  scene.add(outline);
+
+  // What the shell is held off the ship by is a STENCIL, and that is the
+  // second half of the fix. Depth was the obvious tool and it is the wrong
+  // one twice over. A back face shell sits at the ship's FAR depth, so
+  // anything standing nearer ate the rim: the carrier parked against an
+  // asteroid lost the whole of the side the rock was on, which puts the
+  // marker out exactly when the ship is hardest to pick out of the scene.
+  // And an offset surface SELF INTERSECTS wherever the hull steps in, so
+  // fragments of the shell came out marginally in front of the plating and
+  // drew a contour across the middle of the ship. Both are one question
+  // asked of the wrong buffer: an outline is not "what is in front of what",
+  // it is "which pixels are the ship", and that is a stencil.
+  //
+  // So the hull stamps its own silhouette into the stencil with no colour and
+  // no depth, and the shell draws with the depth test OFF wherever the stamp
+  // is NOT. What survives is the ring outside the silhouette and nothing
+  // else, at a width nothing in the scene can eat into.
+  var overlay = new THREE.Scene();
+  var mask = new THREE.Mesh(
+    new THREE.BufferGeometry(),
+    new THREE.MeshBasicMaterial({
+      colorWrite: false, depthTest: false, depthWrite: false,
+      stencilWrite: true, stencilRef: 1,
+      stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp
+    })
+  );
+  mask.renderOrder = 0;
+  mask.visible = false;
+  overlay.add(mask);
+  overlay.add(outline);
+  renderer.autoClear = false;
 
   // Thickness in PIXELS, not in units: a marker a player cannot see at the
   // zoom they are actually at is a marker that is not there.
   var OUTLINE_PX = 2.6;
   function poseOutline() {
-    if (!sel) { outline.visible = false; return; }
-    outline.geometry = cache[sel.spec.key].geo;
+    if (!sel) { outline.visible = mask.visible = false; return; }
+    var c = cache[sel.spec.key];
+    outline.geometry = c.shell || (c.shell = shellOf(c.geo));
+    mask.geometry = c.geo;
     outline.position.copy(sel.mesh.position);
     outline.quaternion.copy(sel.mesh.quaternion);
+    mask.position.copy(sel.mesh.position);
+    mask.quaternion.copy(sel.mesh.quaternion);
     var dist = Math.max(1, sel.mesh.position.distanceTo(camera.position));
     var perPx = 2 * Math.tan(camera.fov * Math.PI / 360) * dist / Math.max(1, stage.clientHeight);
-    var d = OUTLINE_PX * perPx;
-    var b = sel.spec.model.bb.h;
-    outline.scale.set(1 + d / b[0], 1 + d / b[1], 1 + d / b[2]);
-    outline.visible = true;
+    outline.material.uniforms.thick.value = OUTLINE_PX * perPx;
+    outline.visible = mask.visible = true;
   }
 
   // ---- camera and picking ----
@@ -1403,13 +1488,19 @@ body {
   // was a label on a group of ships that already look like each other, and a
   // cap was a second number nobody reads in a fight; a rule between groups
   // does the grouping and the quantity is the only thing that moves.
+  // A class the fleet has NONE of is not on it at all. A dimmed line with x0
+  // beside it is a picture of a ship that does not exist, which is the one
+  // thing a roster must not draw: what it is for is finding a hull, and a hull
+  // nobody built cannot be found. What a fleet could have is the build menu's
+  // answer and it is already on screen.
   function drawRoster() {
     var tip = document.getElementById("rtip");
-    document.getElementById("roster").innerHTML = SHIPS.map(function (s) {
-      var k = countOf({ key: s.key });
-      return '<button class="rrow" type="button" data-pick="' + s.key + '" data-has="' +
-        (k ? 1 : 0) + '" data-name="' + s.name + '"><img src="' + s.thumb + '" alt="' + s.name +
-        '"><span class="c' + (k ? "" : " z") + '">x' + k + "</span></button>";
+    document.getElementById("roster").innerHTML = SHIPS.filter(function (s) {
+      return countOf({ key: s.key }) > 0;
+    }).map(function (s) {
+      return '<button class="rrow" type="button" data-pick="' + s.key +
+        '" data-name="' + s.name + '"><img src="' + s.thumb + '" alt="' + s.name +
+        '"><span class="c">x' + countOf({ key: s.key }) + "</span></button>";
     }).join("");
     document.getElementById("roster").appendChild(tip);
   }
@@ -1753,7 +1844,14 @@ body {
     );
     camera.lookAt(orbit.focus);
     poseOutline();
+    // The frame clears itself rather than the renderer doing it, because the
+    // selection is a SECOND pass and an automatic clear would wipe the first.
+    // The overlay clears the stencil it is about to stamp: the frame clear
+    // already did, but the pass owning the buffer it depends on is what keeps
+    // it correct the day anything in the scene stencils anything.
+    renderer.clear();
     renderer.render(scene, camera);
+    if (sel) { renderer.clear(false, false, true); renderer.render(overlay, camera); }
     drawBrackets();
 
     var s = Math.floor((now - t0) / 1000);
