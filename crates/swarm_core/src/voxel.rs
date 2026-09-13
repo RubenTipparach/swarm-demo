@@ -810,7 +810,12 @@ mod tests {
     }
 
     /// The real thing, straight off the redux-tribes export: the terran
-    /// frigate is 8938 cells on the frigate rung, in one piece.
+    /// frigate is 8961 cells on the frigate rung, in one piece.
+    ///
+    /// It was 8938 until redux-tribes turned the bow gun to look down the bow:
+    /// a turned mount seats on different cells, and one plate cell that used
+    /// to carry a bridge pane is under the turret now. These pin the EXPORT
+    /// rather than claim anything, so a reader can tell a move from a break.
     #[test]
     fn loads_the_terran_frigate() {
         let path = concat!(
@@ -821,7 +826,7 @@ mod tests {
         let m = VoxelModel::from_ftvx(&bytes).unwrap();
         assert_eq!((m.nx, m.ny, m.nz), (HULL_NX, HULL_NY, HULL_NZ));
         assert_eq!(m.cell, RUNG_FRIGATE);
-        assert_eq!(m.solid_count(), 8938);
+        assert_eq!(m.solid_count(), 8961);
         assert!(m.grid.iter().filter(|&&x| mat::is_armour(x)).count() > 6000);
         // Its surfaces, as hull.ts builds its materials: the Terran plates
         // riveted, its frame in composite weave, its machinery greebled.
@@ -842,9 +847,10 @@ mod tests {
             }
         }
         // And its windows, the ones hull.ts derives: 240 cabin panes, 30
-        // running lights, 13 bridge viewport cells, 9 portholes, every one on
-        // a solid cell and none looking up or down.
-        assert_eq!(m.windows.len(), 292);
+        // running lights, 12 bridge viewport cells, 9 portholes, every one on
+        // a solid cell and none looking up or down. The bridge was 13 before
+        // the bow gun turned: the mount stands over one of them now.
+        assert_eq!(m.windows.len(), 291);
         let by_kind = |k: &str| {
             m.windows
                 .iter()
@@ -858,7 +864,7 @@ mod tests {
                 by_kind("bridge"),
                 by_kind("porthole")
             ),
-            (240, 30, 13, 9)
+            (240, 30, 12, 9)
         );
         for w in &m.windows {
             assert_ne!(m.grid[w.cell as usize], mat::EMPTY);
@@ -872,7 +878,7 @@ mod tests {
         // rasterises it, and that rasteriser is not symmetric: its CLAUDE.md
         // records that CX = 16 is a cell boundary on a lattice of 32, so
         // `round(CX + u*hw)` and `round(CX - u*hw)` do not land the same
-        // distance out. Measured here: 1406 of 8938 cells differ across the
+        // distance out. Measured here: 1280 of 8961 cells differ across the
         // plane between cells 15 and 16, and the civil boxship's solid cells
         // average x = 16.5. A loader that "fixed" that would draw a different
         // ship from the one in the shipyard, so it is reported and left alone.

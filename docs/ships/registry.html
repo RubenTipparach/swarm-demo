@@ -390,7 +390,7 @@
         <div class="tools">
           <button id="mode-ship" aria-pressed="true">Ship</button>
           <button id="mode-fleet" aria-pressed="false">Whole fleet</button>
-          <button id="guns" aria-pressed="true">Guns</button>
+          <button id="guns" aria-pressed="true">Bow gun</button>
           <button id="spin" aria-pressed="true">Spin</button>
           <button id="reset">Reset view</button>
         </div>
@@ -675,11 +675,22 @@
   // ---- geometry --------------------------------------------------------
   var FACE = [[1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]];
 
+  // Packed binary out of a JSON envelope: a static host serves standard media
+  // types and a private format is not one, so the quads travel as base64
+  // rather than as three times as many characters of array. One function,
+  // because the hull and every turret on it arrive the same way.
+  function unpack(b64) {
+    var raw = atob(b64);
+    var bytes = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    return bytes.buffer;
+  }
+
   // One `.shp` into two meshes: the skin, lit, and the windows, which are not.
   // A pane is unlit on purpose: emission is the only part of a window that
   // survives with no light on it, and that is what makes a hull read as
   // crewed rather than as painted.
-  function build(buf, mounts) {
+  function build(buf, bow) {
     var dv = new DataView(buf);
     if (String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) !== "SHIP") {
       throw new Error("not a ship file");
@@ -727,48 +738,36 @@
       geo.computeBoundingSphere();
       group.add(new THREE.Mesh(geo, mats[m]));
     }
-    // And every gun, as an ARROW out of its own muzzle along its own facing:
-    // gold for the hull's one BOW GUN, which looks down the bow, and cyan for
-    // every other, which looks outboard.
+    // And ONE arrow, on the BOW GUN, because that is the facing this page
+    // exists to show: an arrow on a gun that points where it always pointed
+    // says nothing and buries the one that does not.
     //
-    // A COUNT cannot carry this: "three guns" is true of a hull whose foredeck
-    // battery points at the sky and of one whose points down the bow, and
-    // those are different ships. A cylinder and a cone rather than a line,
-    // because WebGL ignores `linewidth` and a one pixel line is a facing
-    // nobody can see well enough to approve.
-    if (mounts && mounts.length) {
+    // There is no turret to POSE here, and an earlier cut of this page spent a
+    // lot of effort on one. The cells arrive already lying down the bow,
+    // because redux-tribes turns the mount when it authors the hull and this
+    // project re-exports it: the fix belonged in the repository that draws the
+    // ship rather than in the page that photographs it.
+    if (bow) {
       var reach = Math.max(0.6, new THREE.Box3().setFromObject(group)
         .getSize(new THREE.Vector3()).length() * 0.13);
-      var shaft = new THREE.CylinderGeometry(reach * 0.035, reach * 0.035, reach * 0.72, 8);
-      var head = new THREE.ConeGeometry(reach * 0.10, reach * 0.28, 10);
-      var inks = {
-        side: new THREE.MeshBasicMaterial({ color: 0x6ff0ff }),
-        bow: new THREE.MeshBasicMaterial({ color: 0xf5c542 })
-      };
-      var Y = new THREE.Vector3(0, 1, 0);
-      mounts.forEach(function (g) {
-        var at = new THREE.Vector3(g.at[0], g.at[1], g.at[2]);
-        var out = new THREE.Vector3(g.out[0], g.out[1], g.out[2]).normalize();
-        // A cylinder is built up the Y axis, so one quaternion turns the whole
-        // arrow onto the facing and both pieces ride it.
-        var turn = new THREE.Quaternion().setFromUnitVectors(Y, out);
-        var ink = inks[g.bow ? "bow" : "side"];
-        var arrow = new THREE.Group();
-        var rod = new THREE.Mesh(shaft, ink);
-        rod.position.set(0, reach * 0.36, 0);
-        var tip = new THREE.Mesh(head, ink);
-        tip.position.set(0, reach * 0.86, 0);
-        arrow.add(rod, tip);
-        arrow.position.copy(at);
-        arrow.quaternion.copy(turn);
-        arrow.userData.mount = true;
-        arrow.traverse(function (o) { o.userData.mount = true; });
-        group.add(arrow);
-      });
+      var ink = new THREE.MeshBasicMaterial({ color: 0xf5c542 });
+      var dir = new THREE.Vector3(bow.out[0], bow.out[1], bow.out[2]).normalize();
+      var arrow = new THREE.Group();
+      // A cylinder and a cone rather than a line: WebGL ignores `linewidth`,
+      // so a one pixel line is a facing nobody can see well enough to judge.
+      var rod = new THREE.Mesh(
+        new THREE.CylinderGeometry(reach * 0.035, reach * 0.035, reach * 0.72, 8), ink);
+      rod.position.set(0, reach * 0.36, 0);
+      var tip = new THREE.Mesh(
+        new THREE.ConeGeometry(reach * 0.10, reach * 0.28, 10), ink);
+      tip.position.set(0, reach * 0.86, 0);
+      arrow.add(rod, tip);
+      arrow.position.set(bow.at[0], bow.at[1], bow.at[2]);
+      arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      arrow.traverse(function (o) { o.userData.mount = true; });
+      group.add(arrow);
     }
 
-    // Centred on its own middle, so orbiting a ship turns it about itself
-    // rather than swinging it round the lattice origin.
     // Framed on the HULL rather than on the hull plus its needles, or a ship
     // would shrink in the stage by however far its guns point.
     var box = new THREE.Box3();
@@ -787,13 +786,7 @@
       if (!r.ok) throw new Error("missing " + key);
       return r.json();
     }).then(function (j) {
-      // Packed binary inside a JSON envelope: a static host serves standard
-      // media types and a private format is not one, so the quads travel as
-      // base64 rather than as three times as many characters of array.
-      var raw = atob(j.b64);
-      var bytes = new Uint8Array(raw.length);
-      for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-      cache[key] = build(bytes.buffer, j.mounts);
+      cache[key] = build(unpack(j.b64), j.bow);
       return cache[key];
     });
   }
@@ -1122,9 +1115,9 @@
     document.getElementById("spin").addEventListener("click", function () {
       spinning = !spinning; syncSpin();
     });
-    // The needles are an ANSWER rather than part of the ship, so they can be
-    // taken off: a facing is what this control exists to show and a hull with
-    // eight of them on is a hull you cannot see the plating of.
+    // The arrow is an ANSWER rather than part of the ship, so it can be taken
+    // off: what it marks is the one mount whose facing was CHANGED, and over
+    // the nose of a frigate it stands in front of the plating it is bolted to.
     document.getElementById("guns").addEventListener("click", function () {
       mountsOn = !mountsOn; syncSpin();
     });

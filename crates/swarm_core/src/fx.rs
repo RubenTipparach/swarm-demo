@@ -376,6 +376,8 @@ pub struct Gun {
 /// alone picks a SPONSON on the hulls whose foremost deck mount is out on a
 /// flank, which is what half let through: the Benefactor's starboard battery
 /// came out pointing down the bow with its port twin still looking outboard.
+/// A pair on the foremost station is therefore refused outright rather than
+/// resolved, and only a hull with a genuine centreline mount has a bow gun.
 pub const BOW_BEAM: f32 = 0.25;
 
 /// And how high above the mid plane, as a share of the half depth.
@@ -409,21 +411,44 @@ fn half_extents(m: &VoxelModel) -> [f32; 3] {
 /// Which of a hull's guns is its BOW GUN: the one on top, farthest in front.
 ///
 /// ONE per ship, never two, which is what makes this a rule about a ship
-/// rather than about a region of one. Of the mounts standing on the deck over
-/// the centreline and forward of amidships, the foremost is it; a hull with no
-/// such mount has no bow gun and every one of its guns keeps looking outboard.
+/// rather than about a region of one. It is the mount standing on the deck
+/// over the centreline with NO OTHER GUN ON THE SHIP forward of it; a hull
+/// with no such mount has no bow gun and every one of its guns keeps looking
+/// outboard.
+///
+/// **"Farthest in front" is measured against the other GUNS, not against a
+/// line drawn through the middle of the hull**, and the first cut got that
+/// wrong. Amidships reads as the obvious test and it threw out every corvette
+/// in the fleet: a corvette is a needle whose foremost deck mount sits a
+/// couple of cells abaft its own midpoint with the whole of its nose ahead of
+/// it carrying nothing at all. What that test was actually protecting against
+/// is a hull whose only centreline deck mount is at the STERN with its real
+/// battery out on the flanks forward of it, which is the Rogue and Benefactor
+/// destroyer, and "nothing is forward of it" refuses those by saying so.
 ///
 /// It takes the clusters rather than the model because the answer is "which of
 /// these", and a second walk over the cells to ask it would be a second answer
 /// to the question of what a gun even is.
+///
+/// This is the same rule redux-tribes' own `bowRing` keeps, and it has to be:
+/// that project TURNS the cells and this one derives the facing they look
+/// along, so a hull the two disagree about is a barrel drawn one way and a
+/// beam leaving it another. `the_bow_gun_is_the_foremost_deck_mount_over_the_centreline`
+/// is what holds them together over the shipped fleet.
 pub fn bow_gun(m: &VoxelModel, guns: &[(Gun, [f32; 3], Vec<usize>)]) -> Option<usize> {
     let h = half_extents(m);
+    let fore = guns
+        .iter()
+        .fold(f32::NEG_INFINITY, |z, (_, mid, _)| z.max(mid[2]));
     guns.iter()
         .enumerate()
         .filter(|(_, (_, mid, _))| {
-            (mid[0] / h[0]).abs() < BOW_BEAM && mid[1] / h[1] > BOW_DECK && mid[2] > 0.0
+            mid[2] >= fore && (mid[0] / h[0]).abs() < BOW_BEAM && mid[1] / h[1] > BOW_DECK
         })
-        .max_by(|a, b| a.1 .1[2].total_cmp(&b.1 .1[2]))
+        // A hull whose foremost station carries a PAIR has neither of them on
+        // the centreline, so the nearer to it wins and the beam test has
+        // already refused both if they are really a broadside.
+        .min_by(|a, b| (a.1 .1[0]).abs().total_cmp(&(b.1 .1[0]).abs()))
         .map(|(i, _)| i)
 }
 
@@ -979,6 +1004,66 @@ mod muzzle_tests {
             flank.out[2].abs() < 0.5,
             "and a sponson amidships has no business pointing down the bow: {:?}",
             flank.out
+        );
+    }
+
+    /// The two cases "forward of amidships" got wrong, which is why the rule
+    /// measures against the other GUNS instead.
+    ///
+    /// A CORVETTE is a needle whose foremost mount sits abaft its own midpoint
+    /// with nothing ahead of it, and an amidships test threw every one of them
+    /// out. A hull whose only centreline deck mount is at the STERN with its
+    /// battery out on the flanks forward of it is what that test was actually
+    /// protecting against, and it is refused by saying exactly that.
+    #[test]
+    fn a_bow_gun_is_the_foremost_gun_rather_than_a_forward_one() {
+        let body = |m: &mut VoxelModel, k0: usize, k1: usize| {
+            for k in k0..k1 {
+                for j in 5..11 {
+                    for i in 5..11 {
+                        let n = m.index(i, j, k);
+                        m.grid[n] = mat::PLATE;
+                        m.surf[n] = crate::voxel::SURF_ARMOUR;
+                    }
+                }
+            }
+        };
+        let gun = |m: &mut VoxelModel, i0: usize, j0: usize, k0: usize| {
+            for k in k0..k0 + 2 {
+                for j in j0..j0 + 2 {
+                    for i in i0..i0 + 2 {
+                        let n = m.index(i, j, k);
+                        m.grid[n] = mat::MACHINE;
+                        m.surf[n] = SURF_WEAPON;
+                    }
+                }
+            }
+        };
+
+        // A needle with its one mount abaft the middle and a long bare nose.
+        let mut corvette = VoxelModel::new(16, 16, 32, 0.25);
+        body(&mut corvette, 4, 28);
+        gun(&mut corvette, 7, 11, 12);
+        let guns = guns_of(&corvette);
+        assert_eq!(guns.len(), 1);
+        assert_eq!(
+            guns[0].out,
+            [0.0, 0.0, 1.0],
+            "nothing is forward of it, so it is the bow gun wherever it sits"
+        );
+
+        // And a stern mount with a flank battery well forward of it.
+        let mut destroyer = VoxelModel::new(16, 16, 32, 0.25);
+        body(&mut destroyer, 4, 28);
+        gun(&mut destroyer, 7, 11, 6);
+        gun(&mut destroyer, 3, 7, 22);
+        gun(&mut destroyer, 11, 7, 22);
+        let guns = guns_of(&destroyer);
+        assert_eq!(guns.len(), 3, "three blocks are three guns");
+        assert!(
+            guns.iter().all(|g| g.out != [0.0, 0.0, 1.0]),
+            "a stern mount with a battery ahead of it is not a bow gun: {:?}",
+            guns.iter().map(|g| g.out).collect::<Vec<_>>()
         );
     }
 

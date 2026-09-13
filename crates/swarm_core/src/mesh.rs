@@ -753,7 +753,7 @@ mod tests {
         assert_eq!(s.face_quads(), faces, "the layers cover every face once");
         assert_eq!(
             s.window_quads(),
-            292,
+            291,
             "every window hull.ts derived is drawn"
         );
         assert!(
@@ -782,9 +782,48 @@ mod tests {
                 );
             }
         }
-        // Seven surfaces on a stock Terran: three bands, frame, drive, weapon, part.
+        // A surface has a mesh exactly when it has a face open to space.
+        //
+        // This used to pin the LIST, as seven on a stock Terran, and that was
+        // an incidental fact rather than an invariant: the hull had exactly
+        // one patch of bare frame showing, and the day redux-tribes turned the
+        // bow gun the mount came to stand over it. Six surfaces then read as a
+        // regression when the picture was correct and every other frigate in
+        // the fleet has drawn six all along. What is actually worth holding is
+        // that nothing with an exposed face goes undrawn and nothing else gets
+        // a mesh, which no hull moving can make stale.
         let used: Vec<usize> = (0..SURF_COUNT).filter(|&i| !s.skin[i].is_empty()).collect();
-        assert_eq!(used, vec![0, 1, 2, 3, 4, 5, 6]);
+        let solid = |i: i32, j: i32, k: i32| {
+            m.inside(i, j, k) && m.grid[m.index(i as usize, j as usize, k as usize)] != mat::EMPTY
+        };
+        let mut open = vec![false; SURF_COUNT];
+        for c in 0..m.len() {
+            if m.grid[c] == mat::EMPTY {
+                continue;
+            }
+            let (i, j, k) = m.at(c);
+            for (di, dj, dk) in crate::voxel::NEIGHBOURS {
+                if !solid(i as i32 + di, j as i32 + dj, k as i32 + dk) {
+                    open[m.surf[c] as usize] = true;
+                    break;
+                }
+            }
+        }
+        let want: Vec<usize> = (0..SURF_COUNT).filter(|&i| open[i]).collect();
+        assert_eq!(used, want, "a surface draws exactly when it is exposed");
+        // And the six every warship wears are among them: the three armour
+        // bands, the drive, the gun and the machinery.
+        use crate::voxel::{SURF_DRIVE, SURF_PART, SURF_WEAPON};
+        for s in [
+            0,
+            1,
+            2,
+            SURF_DRIVE as usize,
+            SURF_WEAPON as usize,
+            SURF_PART as usize,
+        ] {
+            assert!(used.contains(&s), "surface {s} is not drawn");
+        }
         eprintln!(
             "terran_frigate: {} exposed faces, {} skin quads, {} window quads, hull.ts drew 1611",
             faces,

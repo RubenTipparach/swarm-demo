@@ -31,7 +31,22 @@ pub(crate) const TURRET_SLEW: f32 = 1.9;
 ///
 /// Everything is in the HULL's frame. The child's transform is relative to its
 /// parent already, so the target has to be taken into that frame first, and
-/// the rotation is then a plain `looking_to` with no ship pose in it at all.
+/// the rotation carries no ship pose at all.
+///
+/// **The rotation is an ARC from where the gun was authored, not an absolute
+/// pose.** It used to be `looking_to(-want_local)`, which puts local plus Z on
+/// the target and is therefore only right if every turret's cells were laid
+/// out looking along plus Z. They are not: a cluster's cells are drawn in the
+/// pose redux-tribes bolted it on in, which is outboard on a sponson and down
+/// the bow on a bow gun. So a broadside turret standing at rest was being
+/// turned a quarter from the shape it was drawn as, and the bow gun, whose
+/// rest is plus Z exactly, was the one mount the old rule left ALONE: the
+/// arrow over its nose moved and the barrel under it did not, which is what
+/// "it has not been turned" was.
+///
+/// `from_rotation_arc(rest, want)` is identity at rest, whatever a gun's rest
+/// happens to be, so a turret with nothing to shoot at is drawn exactly as its
+/// cells were authored and every turn is measured from there.
 pub(crate) fn aim_turrets(
     time: Res<Time>,
     scene: Res<SceneSpec>,
@@ -76,11 +91,7 @@ pub(crate) fn aim_turrets(
             None => ship.rotation * t.rest,
         };
         let want_local = (ship.rotation.inverse() * want_world).normalize_or(t.rest);
-        // Negated for the reason every hull here is negated: Bevy's forward is
-        // minus Z and a barrel points along plus Z.
-        let goal = Transform::IDENTITY
-            .looking_to(-want_local, Vec3::Y)
-            .rotation;
+        let goal = Quat::from_rotation_arc(t.rest, want_local);
         xf.rotation = xf.rotation.slerp(goal, (dt * TURRET_SLEW).min(1.0));
     }
 }

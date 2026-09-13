@@ -194,31 +194,31 @@ fn stats(key: &str, m: &VoxelModel, skin: &MeshData, quads: usize) -> String {
     )
 }
 
-/// Where every gun on this hull sits and which way it looks, so the registry
-/// can DRAW the answer rather than print a count of it.
+/// One turret, as the GAME draws it: its own cells, its own pivot, and the
+/// facing its barrel rests along.
 ///
-/// A facing is a claim about a ship that a number cannot carry: "three guns"
-/// is true of a hull whose foredeck battery points at the sky and of one whose
-/// points down the bow, and those are different ships.
-fn mounts(m: &VoxelModel) -> String {
-    let guns = gun_clusters(m);
-    let bow = bow_gun(m, &guns);
-    guns.iter()
-        .enumerate()
-        .map(|(n, (g, _, _))| {
-            format!(
-                r#"{{"at":[{:.4},{:.4},{:.4}],"out":[{:.4},{:.4},{:.4}],"bow":{}}}"#,
-                g.at[0],
-                g.at[1],
-                g.at[2],
-                g.out[0],
-                g.out[1],
-                g.out[2],
-                bow == Some(n)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(",")
+/// Where a hull's BOW GUN is and which way it looks, for the one arrow the
+/// page draws.
+///
+/// Only the bow gun, because an arrow on a gun that points where it always
+/// pointed says nothing and buries the one that does not: eight needles on a
+/// hull is a hull whose plating cannot be seen. And only the FACING travels,
+/// not the cells: redux-tribes turns the bow gun's cells when it authors the
+/// hull, so the mesh already lies down the bow and the registry has nothing to
+/// pose. An earlier cut of this shipped each turret as its own mesh for the
+/// viewer to rotate, which was the right fix in the wrong repository.
+struct Bow {
+    at: [f32; 3],
+    out: [f32; 3],
+}
+
+impl Bow {
+    fn json(&self) -> String {
+        format!(
+            r#"{{"at":[{:.4},{:.4},{:.4}],"out":[{:.4},{:.4},{:.4}]}}"#,
+            self.at[0], self.at[1], self.at[2], self.out[0], self.out[1], self.out[2],
+        )
+    }
 }
 
 /// Mesh a ship, write its geometry, and answer its row of the index.
@@ -237,13 +237,21 @@ fn ship(key: &str, m: &VoxelModel, out: &str) -> String {
     }
     let bytes = encode(&layers);
     let quads: usize = layers.iter().map(|l| l.mesh.quads()).sum();
+    let guns = gun_clusters(m);
+    let bow = bow_gun(m, &guns).map(|n| Bow {
+        at: guns[n].0.at,
+        out: guns[n].0.out,
+    });
     let json = format!(
-        "{{\"quads\":{quads},\"mounts\":[{}],\"b64\":\"{}\"}}\n",
-        mounts(m),
+        "{{\"quads\":{quads},\"bow\":{},\"b64\":\"{}\"}}\n",
+        bow.as_ref().map(Bow::json).unwrap_or("null".into()),
         base64(&bytes)
     );
     std::fs::write(format!("{out}/{key}.json"), &json).expect("a ship file can be written");
-    println!("{key}: {quads} quads, {} bytes packed", bytes.len());
+    println!(
+        "{key}: {quads} quads, bow gun {}",
+        if bow.is_some() { "yes" } else { "no" }
+    );
     stats(key, m, &skin, quads)
 }
 

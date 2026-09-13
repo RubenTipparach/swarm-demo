@@ -1841,15 +1841,38 @@ beside the hull, so a class with no weapons has none rather than having some
 invented for it.
 
 **With ONE exception per hull, and it is a rule about the SHIP rather than
-about a region of one: the BOW GUN.** Of the mounts standing on the deck over
-the centreline and forward of amidships, the foremost is the bow gun and it
+about a region of one: the BOW GUN.** The mount standing on the deck over the
+centreline with no other gun on the ship forward of it is the bow gun and it
 looks down the bow; a hull with no such mount has none, and every other gun on
 every hull keeps looking outboard. Radially a foredeck battery looked half up
 and half out, which puts a ship's foremost mount at the sky, and what a gun
 bolted over the nose is FOR is firing over it.
 
-The three thresholds are measured across the fleet rather than guessed, and
-each one is the middle of an empty band. Every gun within 0.05 of the
+**The fix belongs in redux-tribes, and that is where it is.** The first cut
+turned the FACING here and left the cells where they were, so the arrow over a
+frigate's nose moved and the barrel under it did not, which is exactly what
+"it has not been turned" looks like. redux-tribes is where a mount's rest
+facing is authored (`ringFacing`, a quarter turn on its ring), so `bowRing`
+went in there, `measure_fleet.mjs --sync` carried the new hull points and
+envelopes into the class table, and this project re-exported the hulls. The
+cells arrive lying down the bow now, which is why the registry poses no turret
+and the rest of the game needed nothing. **A ship is authored in one place; a
+change that draws it differently belongs in that place and not in the harness
+photographing it.**
+
+**"Farthest in front" is measured against the other GUNS, not against a line
+drawn through the middle of the hull.** Amidships reads as the obvious test
+and it threw out every corvette in the fleet: a corvette is a needle whose
+foremost deck mount sits a couple of cells abaft its own midpoint with the
+whole of its nose ahead of it carrying nothing at all. What that test was
+actually protecting against is a hull whose only centreline deck mount is at
+the STERN with its real battery out on the flanks forward of it, which is the
+Rogue and Benefactor destroyer, and "nothing is forward of it" refuses those
+by saying so directly. The owner caught it off the picture: six hulls where
+there should have been ten.
+
+The two thresholds that remain are measured across the fleet rather than
+guessed, and each is the middle of an empty band. Every gun within 0.05 of the
 centreline is either a bow gun or a belly turret and the next one out is a
 Benefactor cruiser's starboard sponson at 0.48, so `BOW_BEAM` is a quarter.
 The first cut had it at half and let that sponson through: with "farthest
@@ -1861,19 +1884,47 @@ commit, which missed the Terran cruiser and destroyer by a hundredth: their
 foredecks sit a third of the way up rather than half, and a threshold set from
 the FRIGATE is a threshold that is wrong on the rung nobody looked at.
 
-Six hulls carry one: the Terran and Karisen frigate, destroyer and cruiser.
-The muzzle moves with the facing, to the cluster's own forward face, or the
-barrel would be drawn coming out of the side of its own turret.
+Ten hulls carry one: all four Terran, all four Karisen, and the Rogue and
+Benefactor corvette, whose single deck mount is the only gun they have. The
+muzzle moves with the facing, to the cluster's own forward face, or the barrel
+would be drawn coming out of the side of its own turret. `bow_gun` here and
+`bowRing` there are one rule written twice across a repository boundary, which
+is this file's own divergent path warning, and the guard is that the cells are
+redux-tribes' answer and the facing is derived from them: a hull the two
+disagree about is a barrel drawn one way and a beam leaving it another, and
+`bow_check` is what measures that they do not.
+
+**A turret turns by an ARC from where it was authored, never to an absolute
+pose.** `aim_turrets` used to say `looking_to(-want_local)`, which puts local
+plus Z on the target and is therefore only right if every turret's cells were
+laid out along plus Z. They are not: a cluster is drawn in the pose it was
+bolted on in, outboard on a sponson and down the bow on a bow gun. So every
+broadside turret standing at rest was being turned a quarter from the shape it
+was drawn as, and the bow gun, whose rest is plus Z exactly, was the one mount
+that rule left ALONE. `Quat::from_rotation_arc(rest, want)` is identity at
+rest whatever a gun's rest is, so a turret with nothing to shoot at is drawn
+exactly as its cells were authored and every turn is measured from there.
 
 **And the registry DRAWS it, which is the only way it could be approved.** A
 count cannot carry a facing: "three guns" is true of a hull whose foredeck
 battery points at the sky and of one whose points down the bow, and those are
-different ships. The exporter writes each mount's muzzle and facing and the
-page puts an arrow on each, gold for the bow gun and cyan for every other, off
-a Guns toggle because a hull with eight arrows on it is a hull whose plating
-cannot be seen. A cylinder and a cone rather than a line, because WebGL
-ignores `linewidth` and a one pixel line is a facing nobody can see well
-enough to judge.
+different ships. The exporter writes the bow gun's muzzle and facing and the
+page puts ONE gold arrow there, off a toggle, because an arrow on a gun that
+points where it always pointed says nothing and buries the one that does not.
+A cylinder and a cone rather than a line, because WebGL ignores `linewidth`
+and a one pixel line is a facing nobody can see well enough to judge.
+
+**Three pins moved with the hull and none of them was a regression.** The
+Terran frigate is 8961 cells rather than 8938 and 291 windows rather than 292,
+because a turned mount seats on different cells and one plate cell that used
+to carry a bridge pane is under the turret now. The third was the interesting
+one: the mesh suite pinned the LIST of surfaces a stock Terran draws as seven,
+and the mount came to stand over the hull's one patch of bare frame, so six
+read as a break when the picture was right and every other frigate in the
+fleet has drawn six all along. It holds the INVARIANT now, that a surface has
+a mesh exactly when it has a face open to space, which no hull moving can make
+stale. **A pin on an incidental fact fails the day something legitimate moves,
+and the reader cannot tell which it was.**
 
 **Sparks are one buffer with TWO writers.** The lower half of the ring is the
 app's, written with `write_buffer` at a cursor `swarm.rs` keeps; the upper
