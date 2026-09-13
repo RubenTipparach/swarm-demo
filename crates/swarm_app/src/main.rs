@@ -69,6 +69,7 @@ use swarm_core::{
     build::Tier,
     damage::{chunk_for, Breach, Chunk, DamageGrid, Vent},
     economy::{yield_of, Cube, Cut, Pack, Yield, DATA_CUBE, ORE_CUBE},
+    formation::{self, Shape},
     fx::{
         blast_sparks, breach_sparks, engine_clusters, engines_of, gun_clusters, guns_of,
         muzzle_sparks, reactor_of, shatter, Beam, Blast, Gun, Spark, SparkKind,
@@ -605,6 +606,9 @@ fn main() {
                 Update,
                 (
                     (deck_tabs, deck_commands).chain().before(nav_input),
+                    // Guard reads the left press, so it runs with the other
+                    // input systems and after the cell that opens its mode.
+                    guard_input.after(deck_commands),
                     call_class,
                     slide_deck,
                     light_deck,
@@ -658,6 +662,13 @@ fn main() {
         .init_resource::<LiveFx>()
         .init_resource::<NavOrder>()
         .init_resource::<NavAsk>()
+        // The command bar's own state. Narrow resources, one fact each, which
+        // is what keeps a cell from having to ask three systems what it is.
+        .init_resource::<WorkAsk>()
+        .init_resource::<FleetStance>()
+        .init_resource::<Wing>()
+        .init_resource::<Docked>()
+        .init_resource::<Rally>()
         .init_resource::<Deck>()
         .init_resource::<OrderMode>()
         .init_resource::<Pings>()
@@ -781,6 +792,7 @@ fn main() {
                     fade_flashes,
                     glow_engines,
                     aim_turrets,
+                    hold_guard,
                 ),
                 remesh_dirty,
                 (orbit_camera, ride_the_eye),

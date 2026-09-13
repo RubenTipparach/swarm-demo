@@ -35,6 +35,7 @@ pub mod body;
 pub mod build;
 pub mod damage;
 pub mod economy;
+pub mod formation;
 pub mod fx;
 pub mod heat;
 pub mod map;

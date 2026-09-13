@@ -481,6 +481,7 @@ pub(crate) fn hud_orders(
             OrderMode::Box => "release to select what is inside the box",
             OrderMode::Move => "aim on the plane   hold shift to raise or lower   left click confirms   esc cancels",
             OrderMode::Range => &armed,
+            OrderMode::Guard => "click the ship to guard   esc cancels",
         };
         if t.0 != want {
             t.0 = want.into();

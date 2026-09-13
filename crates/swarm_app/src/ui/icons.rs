@@ -165,7 +165,7 @@ pub(crate) fn bake_mark(mark: &Mark, ink: Ink, w: u32, h: u32) -> Image {
 }
 
 /// Every mark the deck draws.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Glyph {
     Fighter,
     Corvette,
@@ -182,6 +182,9 @@ pub(crate) enum Glyph {
     Rally,
     Hyper,
     Scut,
+    Form,
+    Dock,
+    Salv,
     Speed,
     Gun,
     Armour,
@@ -195,7 +198,13 @@ pub(crate) enum Glyph {
 }
 
 impl Glyph {
-    pub(crate) const ALL: [Glyph; 25] = [
+    /// Every glyph, in the order they are baked. A mark's HANDLE is its index
+    /// here, so a variant missing from this list is a variant that silently
+    /// draws the first mark instead: `Glyphs::of` falls back to nought, and
+    /// Form, Dock and Salvage all came out wearing the fighter's mark for
+    /// exactly that reason. `every_glyph_is_baked` is what makes that a failed
+    /// test rather than a picture somebody has to notice.
+    pub(crate) const ALL: [Glyph; 28] = [
         Glyph::Fighter,
         Glyph::Corvette,
         Glyph::Frigate,
@@ -221,6 +230,9 @@ impl Glyph {
         Glyph::Slug,
         Glyph::Torpedo,
         Glyph::Bite,
+        Glyph::Form,
+        Glyph::Dock,
+        Glyph::Salv,
     ];
 
     fn mark(self) -> &'static Mark {
@@ -238,6 +250,9 @@ impl Glyph {
             Glyph::Stance => &STANCE,
             Glyph::Launch => &LAUNCH,
             Glyph::Rally => &RALLY,
+            Glyph::Form => &FORM,
+            Glyph::Dock => &DOCK,
+            Glyph::Salv => &SALV,
             Glyph::Hyper => &HYPER,
             Glyph::Scut => &SCUT,
             Glyph::Gun => &GUNMARK,
@@ -443,6 +458,49 @@ static LAUNCH: Mark = Mark {
     ],
 };
 
+/// The mockup's `c-form`: three filled triangles in a wedge, which is the
+/// formation itself drawn rather than a word for it.
+static FORM: Mark = Mark {
+    w: 24.0,
+    h: 24.0,
+    parts: &[
+        Ink2::Poly(&[(12.0, 3.0), (15.0, 8.0), (9.0, 8.0)], 1.0),
+        Ink2::Poly(&[(5.0, 13.0), (8.0, 18.0), (2.0, 18.0)], 1.0),
+        Ink2::Poly(&[(19.0, 13.0), (22.0, 18.0), (16.0, 18.0)], 1.0),
+    ],
+};
+
+/// The mockup's `c-dock`: an arrow down onto a deck, which is `LAUNCH` the
+/// other way up. Drawn as its own mark rather than a flipped one, because a
+/// mark is DATA here and a transform would be a second way to make one.
+static DOCK: Mark = Mark {
+    w: 24.0,
+    h: 24.0,
+    parts: &[
+        Ink2::Path(&[(12.0, 3.0), (12.0, 14.0)]),
+        Ink2::Path(&[(7.0, 9.0), (12.0, 14.0), (17.0, 9.0)]),
+        Ink2::Path(&[(4.0, 20.0), (20.0, 20.0)]),
+    ],
+};
+
+/// The mockup's `c-salv`: a grab, which is the claw a salvager works with.
+static SALV: Mark = Mark {
+    w: 24.0,
+    h: 24.0,
+    parts: &[
+        Ink2::Path(&[
+            (5.0, 4.0),
+            (5.0, 10.0),
+            (7.0, 15.0),
+            (12.0, 17.0),
+            (17.0, 15.0),
+            (19.0, 10.0),
+            (19.0, 4.0),
+        ]),
+        Ink2::Path(&[(12.0, 17.0), (12.0, 21.0)]),
+    ],
+};
+
 static RALLY: Mark = Mark {
     w: 24.0,
     h: 24.0,
@@ -567,3 +625,38 @@ static BITE: Mark = Mark {
         Ink2::Poly(&[(12.0, 12.0), (21.0, 8.0), (21.0, 16.0)], 1.0),
     ],
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every glyph the enum has is in `ALL`, because `Glyphs::of` finds a
+    /// mark's image by its POSITION in that list and falls back to nought.
+    ///
+    /// A lookup that falls back cannot find its own omissions: three marks
+    /// were added to the enum and to `mark()` and left out of this list, and
+    /// what came out was three buttons wearing the fighter's silhouette. The
+    /// match in `mark()` is exhaustive and the compiler holds it; this list is
+    /// not, so a test has to.
+    #[test]
+    fn every_glyph_is_baked() {
+        // The count first, which is the cheap half and says outright that the
+        // list has fallen behind.
+        assert_eq!(
+            Glyph::ALL.len(),
+            28,
+            "a glyph was added or removed without the list"
+        );
+        for (n, g) in Glyph::ALL.iter().enumerate() {
+            assert_eq!(
+                Glyph::ALL.iter().position(|x| x == g),
+                Some(n),
+                "{g:?} is in the list twice"
+            );
+        }
+        // And every one draws something, or a button is a blank square.
+        for g in Glyph::ALL {
+            assert!(!g.mark().parts.is_empty(), "{g:?} has no art");
+        }
+    }
+}

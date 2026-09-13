@@ -85,24 +85,40 @@ pub(crate) fn command_bar(
 fn page_keys(g: &mut ChildSpawnerCommands, skin: &Skin, glyphs: &Glyphs, page: Page, ink: Ink) {
     match page {
         Page::Fleet => {
+            // Twelve, which is the mockup's own grid, in its own order: the
+            // three that aim, the one that stops, the four that say HOW to
+            // fight, and the four that end something.
+            //
+            // Bars and Frames are not here and never were in the mockup: they
+            // turn a READOUT on and off rather than order a ship, so they live
+            // on the Menu view with Resume. Focus is gone too, because space
+            // already snaps the camera to the flagship and a cell that is a
+            // second way to press one key is a cell that can disagree with it.
             for (cmd, mk) in [
                 (DeckCmd::Move, Glyph::Move),
+                (DeckCmd::Attack, Glyph::Attack),
+                (DeckCmd::Guard, Glyph::Guard),
                 (DeckCmd::Stop, Glyph::Stop),
-                (DeckCmd::Focus, Glyph::Attack),
-                (DeckCmd::Bars, Glyph::Guard),
-                (DeckCmd::Fps, Glyph::Stance),
+                (DeckCmd::Form, Glyph::Form),
+                (DeckCmd::Stance, Glyph::Stance),
+                (DeckCmd::Dock, Glyph::Dock),
+                (DeckCmd::Rally, Glyph::Rally),
+                (DeckCmd::Salvage, Glyph::Salv),
+                (DeckCmd::Hyper, Glyph::Hyper),
+                (DeckCmd::Scuttle, Glyph::Scut),
             ] {
                 cell(g, skin, glyphs, cmd.label(), mk, ink, cmd);
             }
-            // Call carries `CallButton` as well, because `call_reinforcements`
-            // already reads that marker for R's own button and a second way to
-            // call a wave would be a second wave rule.
+            // Launch carries `CallButton` as well, because
+            // `call_reinforcements` already reads that marker for R's own
+            // button and a second way to call a wave would be a second wave
+            // rule. It is the mockup's `c-launch` and the game's Call.
             cell(
                 g,
                 skin,
                 glyphs,
-                DeckCmd::Call.label(),
-                Glyph::Rally,
+                "Launch",
+                Glyph::Launch,
                 ink,
                 (DeckCmd::Call, CallButton),
             );

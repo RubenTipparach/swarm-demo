@@ -2,11 +2,13 @@
 //! which system reads a button press this frame.
 
 mod camera;
+mod commands;
 mod orders;
 mod range;
 mod selection;
 
 pub(crate) use camera::*;
+pub(crate) use commands::*;
 pub(crate) use orders::*;
 pub(crate) use range::*;
 pub(crate) use selection::*;
@@ -33,4 +35,8 @@ pub(crate) enum OrderMode {
     Move,
     /// A weapon is armed on the range: a left click is a shot.
     Range,
+    /// The Guard cell is waiting for the ship to guard: a left click picks
+    /// one. A mode rather than a flag some other system reads, for the reason
+    /// the whole enum exists.
+    Guard,
 }

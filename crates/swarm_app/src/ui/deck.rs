@@ -124,11 +124,28 @@ pub(crate) struct CallClass(pub(crate) usize);
 pub(crate) enum DeckCmd {
     Move,
     Stop,
-    Focus,
     Call,
-    Bars,
-    Fps,
     Pause,
+    /// Fly the order AND shoot on the way, which is the move order with the
+    /// stance put back to aggressive in the same press.
+    Attack,
+    /// Hold station on whatever is picked next.
+    Guard,
+    /// Cycle aggressive, defensive, hold fire.
+    Stance,
+    /// Cycle the wing's shape: wedge, line, sphere.
+    Form,
+    /// Recall the fighters to the ship they fly off.
+    Dock,
+    /// Where a ship the yard builds flies to.
+    Rally,
+    /// Put every support ship to work, which is the right click `--job`
+    /// photographs.
+    Salvage,
+    /// Spin the jump drive up.
+    Hyper,
+    /// Take your own reactor.
+    Scuttle,
 }
 
 impl DeckCmd {
@@ -139,11 +156,17 @@ impl DeckCmd {
         match self {
             DeckCmd::Move => "Move",
             DeckCmd::Stop => "Stop",
-            DeckCmd::Focus => "Focus",
             DeckCmd::Call => "Call",
-            DeckCmd::Bars => "Bars",
-            DeckCmd::Fps => "Frames",
             DeckCmd::Pause => "Pause",
+            DeckCmd::Attack => "Attack",
+            DeckCmd::Guard => "Guard",
+            DeckCmd::Stance => "Stance",
+            DeckCmd::Form => "Form",
+            DeckCmd::Dock => "Dock",
+            DeckCmd::Rally => "Rally",
+            DeckCmd::Salvage => "Salvage",
+            DeckCmd::Hyper => "Jump out",
+            DeckCmd::Scuttle => "Scuttle",
         }
     }
 }

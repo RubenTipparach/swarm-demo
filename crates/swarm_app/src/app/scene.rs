@@ -251,11 +251,14 @@ fn spawn_fleet(
             materials,
             tex,
             &scene.hull,
-            radius,
-            Vec3::ZERO,
-            Quat::IDENTITY,
-            (scene.chewers / 3) as u32,
-            n,
+            Wave {
+                radius,
+                lead_pos: Vec3::ZERO,
+                lead_rot: Quat::IDENTITY,
+                chewers: (scene.chewers / 3) as u32,
+                n,
+                shape: Shape::default(),
+            },
         );
     }
 

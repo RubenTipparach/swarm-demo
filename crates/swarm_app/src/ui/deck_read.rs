@@ -119,41 +119,132 @@ pub(crate) fn deck_tabs(
 /// either learned something.
 pub(crate) fn deck_commands(
     presses: Query<(&Interaction, &DeckCmd), Changed<Interaction>>,
+    mut commands: Commands,
+    tick: Res<Tick>,
     mut hud: ResMut<Hud>,
-    mut ask: ResMut<NavAsk>,
-    mut orbit: Query<&mut Orbit>,
-    mut ack: ResMut<Ack>,
+    mut out: Orders,
+    picked: Query<Entity, (With<Selected>, With<Hull>, Without<Hive>)>,
     mut hulls: Query<&mut Hull, (With<Selected>, Without<Hive>)>,
 ) {
     for (i, cmd) in &presses {
         if *i != Interaction::Pressed {
             continue;
         }
-        match cmd {
-            DeckCmd::Move => ask.0 = true,
-            DeckCmd::Stop => {
-                let mut n = 0;
-                for mut h in &mut hulls {
-                    if h.order.take().is_some() {
-                        n += 1;
-                    }
-                }
-                ack.text = format!("{n} held");
-                ack.left = ACK_LIFE;
-            }
-            DeckCmd::Focus => {
-                for mut o in &mut orbit {
-                    o.follow = true;
-                }
-            }
-            // The wave is `call_reinforcements`, which reads this button the
-            // way it reads R. Nothing to do here but let it see the press.
-            DeckCmd::Call => {}
-            DeckCmd::Bars => hud.show_bars = !hud.show_bars,
-            DeckCmd::Fps => hud.show_fps = !hud.show_fps,
-            DeckCmd::Pause => hud.paused = !hud.paused,
+        let mine: Vec<Entity> = picked.iter().collect();
+        if !arm_a_mode(*cmd, &mut out, &mine, &mut commands) {
+            act_at_once(
+                *cmd,
+                &mut out,
+                &mut hud,
+                &mine,
+                &mut commands,
+                &mut hulls,
+                &tick,
+            );
         }
     }
+}
+
+/// The cells that ARM something and wait for a second press, and whether this
+/// was one of them.
+///
+/// Four of the twelve work this way and they all work the same way: a mode
+/// costs one more click and lets the player take as long as they like over the
+/// part that is actually hard, which is the lesson the move order was rebuilt
+/// as a prototype to learn. Nothing here resolves anything.
+fn arm_a_mode(cmd: DeckCmd, out: &mut Orders, mine: &[Entity], commands: &mut Commands) -> bool {
+    let said = match cmd {
+        DeckCmd::Move => {
+            out.ask.open = true;
+            return true;
+        }
+        // Attack IS move, with the stance put back to aggressive in the same
+        // press. It is not a second order path: `nav_input` stays the one
+        // implementation of what a move order is, and what makes this attack
+        // move rather than move is which markers are on the ship when it
+        // arrives.
+        DeckCmd::Attack => {
+            for &e in mine {
+                Stance::Aggressive.apply(e, commands);
+            }
+            out.fleet.0 = Stance::Aggressive;
+            out.ask.open = true;
+            "attack move: pick a point"
+        }
+        DeckCmd::Guard => {
+            *out.mode = OrderMode::Guard;
+            "guard: pick a ship"
+        }
+        // A rally point is a PLACE, so it is aimed with the disc the move
+        // order already aims with: one disc, and what it commits to is the
+        // difference. A second way to name a point in three dimensions would
+        // be that whole elevation flow written twice.
+        DeckCmd::Rally => {
+            out.ask.open = true;
+            out.ask.rally = true;
+            "rally: aim the disc"
+        }
+        _ => return false,
+    };
+    out.ack.text = said.into();
+    out.ack.left = ACK_LIFE;
+    true
+}
+
+/// The cells that do their whole job on the press.
+///
+/// Two of them do nothing here on purpose. Launch carries `CallButton` and
+/// Jump out carries `JumpButton`, which are the markers the wave and the drive
+/// already read off their own controls: a second way to call a wave would be a
+/// second wave rule, and a second way to spin a drive up would be two drives.
+fn act_at_once(
+    cmd: DeckCmd,
+    out: &mut Orders,
+    hud: &mut Hud,
+    mine: &[Entity],
+    commands: &mut Commands,
+    hulls: &mut Query<&mut Hull, (With<Selected>, Without<Hive>)>,
+    tick: &Tick,
+) {
+    let said = match cmd {
+        DeckCmd::Stop => {
+            let mut n = 0;
+            for mut h in hulls.iter_mut() {
+                if h.order.take().is_some() {
+                    n += 1;
+                }
+            }
+            format!("{n} held")
+        }
+        DeckCmd::Stance => set_stance(commands, &mut out.fleet, mine).label().into(),
+        DeckCmd::Form => {
+            out.wing.0 = out.wing.0.next();
+            format!("the wing keeps a {}", out.wing.0.label())
+        }
+        DeckCmd::Dock => {
+            out.docked.0 = !out.docked.0;
+            if out.docked.0 {
+                "fighters recalled".into()
+            } else {
+                "fighters away".into()
+            }
+        }
+        // The right click that already puts every support ship to work.
+        DeckCmd::Salvage => {
+            out.work.0 = true;
+            "support ships to work".into()
+        }
+        DeckCmd::Scuttle => format!("{} scuttled", scuttle(hulls, mine, tick.tick)),
+        DeckCmd::Pause => {
+            hud.paused = !hud.paused;
+            return;
+        }
+        DeckCmd::Call | DeckCmd::Hyper => return,
+        // Every arming cell was handled before this was reached.
+        DeckCmd::Move | DeckCmd::Attack | DeckCmd::Guard | DeckCmd::Rally => return,
+    };
+    out.ack.text = said;
+    out.ack.left = ACK_LIFE;
 }
 
 /// A press on a reinforcement row: one more of that class, on the next free
@@ -170,6 +261,7 @@ pub(crate) fn call_class(
     tex: Res<Textures>,
     scene: Res<SceneSpec>,
     lead: Res<Lead>,
+    wing: Res<Wing>,
     presses: Query<(&Interaction, &CallClass), Changed<Interaction>>,
     flagship: Query<&Hull, With<Flagship>>,
     escorts: Query<(), With<Escort>>,
@@ -192,13 +284,34 @@ pub(crate) fn call_class(
         &mut materials,
         &tex,
         class,
-        hull.model.radius(),
-        lead.pos,
-        lead.rot,
-        (scene.chewers / 3) as u32,
-        out,
+        Wave {
+            radius: hull.model.radius(),
+            lead_pos: lead.pos,
+            lead_rot: lead.rot,
+            chewers: (scene.chewers / 3) as u32,
+            n: out,
+            shape: wing.0,
+        },
     );
     info!("{class} inbound, {} in the wing", out + 1);
+}
+
+/// Everything a command cell WRITES, as one parameter.
+///
+/// The bar went from six cells to twelve and `deck_commands` went to thirteen
+/// arguments with it, which is this project's own smell for a missing struct.
+/// `DeckView` below is the same answer for what the deck READS; this is the
+/// other half, and the two together are why the handler is one page rather
+/// than a parameter list nobody can scan.
+#[derive(SystemParam)]
+pub(crate) struct Orders<'w> {
+    pub(crate) ask: ResMut<'w, NavAsk>,
+    pub(crate) work: ResMut<'w, WorkAsk>,
+    pub(crate) mode: ResMut<'w, OrderMode>,
+    pub(crate) fleet: ResMut<'w, FleetStance>,
+    pub(crate) wing: ResMut<'w, Wing>,
+    pub(crate) docked: ResMut<'w, Docked>,
+    pub(crate) ack: ResMut<'w, Ack>,
 }
 
 /// Everything the deck reads that is not a query, as ONE parameter.

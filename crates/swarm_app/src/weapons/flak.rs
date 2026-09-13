@@ -75,7 +75,18 @@ pub(crate) fn fire_flak(
     // fleet's guns and would otherwise open fire on its own side. And not
     // the support ships, which are unarmed: a miner that could keep the
     // swarm off itself is a miner nobody has to escort.
-    hulls: Query<(&Hull, &Transform), (Without<Hive>, Without<Dummy>, Without<Support>)>,
+    // Holding fire stops this too; DEFENSIVE does not, and that is the whole
+    // of what defensive means. Flak is point defence, so a ship on it keeps
+    // its own screen up and stops reaching for carriers.
+    hulls: Query<
+        (&Hull, &Transform),
+        (
+            Without<Hive>,
+            Without<Dummy>,
+            Without<Support>,
+            Without<HoldFire>,
+        ),
+    >,
     mut fx: ResMut<LiveFx>,
     mut sparks: ResMut<SparkQueue>,
 ) {

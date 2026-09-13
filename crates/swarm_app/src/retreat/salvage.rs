@@ -139,6 +139,7 @@ pub(crate) fn rebuild_input(
     scene: Res<SceneSpec>,
     cfg: Res<SwarmConfig>,
     lead: Res<Lead>,
+    wing: Res<Wing>,
     tex: Res<Textures>,
     escorts: Query<(), (With<Escort>, Without<Support>)>,
     mut run: ResMut<RunState>,
@@ -179,11 +180,14 @@ pub(crate) fn rebuild_input(
         &mut materials,
         &tex,
         &hulk.class,
-        cfg.hull_radius,
-        lead.pos,
-        lead.rot,
-        (scene.chewers / 3) as u32,
-        escorts.iter().count() as u32,
+        Wave {
+            radius: cfg.hull_radius,
+            lead_pos: lead.pos,
+            lead_rot: lead.rot,
+            chewers: (scene.chewers / 3) as u32,
+            n: escorts.iter().count() as u32,
+            shape: wing.0,
+        },
     );
     ack.text = format!("the {} is under way again", hull_label(&hulk.class));
     ack.left = ACK_LIFE * 2.0;
