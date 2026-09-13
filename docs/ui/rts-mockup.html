@@ -82,6 +82,12 @@ body {
      has to be re-resolved in the scope the token lives in. */
   color: var(--ink);
 
+  /* One duration and one curve, so everything that moves moves together. The
+     curve decelerates hard: a panel that arrives gently and leaves at the same
+     rate reads as a thing with weight rather than as a fade. */
+  --dur: 260ms;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
   --g-deep: #04121b;   /* the darkest ground: inside a box, behind a bar */
   --g-fill: #0d2231;   /* a filled cell that is not a button */
   --btn-a: #123549;    /* a button's top */
@@ -163,9 +169,53 @@ body {
 .rtip b { font-family: var(--hud-mono); letter-spacing: 0; color: var(--teal);
           text-transform: none; margin-left: 6px; }
 
-/* right panel */
+/* A panel LEAVES the way it came, which is sideways off its own edge. Fading
+   alone would have it dissolve in place, and a player then has nowhere to
+   point at when they want it back; sliding says where it went. It is
+   `pointer-events: none` while it is gone, or a closed panel goes on
+   swallowing clicks over a third of the field. */
 .rpanel { position: absolute; right: 6px; top: 50px; width: 428px; height: 698px;
-          display: flex; flex-direction: column; }
+          display: flex; flex-direction: column;
+          transition: transform var(--dur) var(--ease), opacity var(--dur) var(--ease); }
+#hud[data-panel="0"] .rpanel { transform: translateX(444px); opacity: 0; pointer-events: none; }
+
+/* The bottom is a STACK, not a panel: the readout drops away and everything
+   above it comes down to the edge, so what is left is the tab bar hugging the
+   bottom of the screen rather than floating a hundred pixels up it. */
+.ticker, .groups, .ltabs, .mtabs, .rtabs, .brow3, .btog {
+  transition: transform var(--dur) var(--ease), opacity var(--dur) var(--ease);
+}
+#hud[data-bottom="0"] .brow3 { transform: translateY(106px); opacity: 0; pointer-events: none; }
+#hud[data-bottom="0"] .ticker,
+#hud[data-bottom="0"] .groups,
+#hud[data-bottom="0"] .ltabs,
+#hud[data-bottom="0"] .mtabs,
+#hud[data-bottom="0"] .rtabs,
+#hud[data-bottom="0"] .btog { transform: translateY(92px); }
+
+/* The toggle sits in the empty column above the left tabs, which is the one
+   place on the bottom edge nothing else wants. */
+.btog { position: absolute; left: 6px; top: 752px; width: 142px; height: 22px;
+        display: flex; align-items: center; justify-content: center; gap: 7px;
+        background: linear-gradient(180deg,var(--btn-a),var(--btn-b));
+        border: 1px solid var(--edge-hot); color: var(--ink-hot);
+        font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.btog:hover { border-color: var(--edge-lit); }
+.btog .ca { display: inline-block; font-size: 9px; transition: transform var(--dur) var(--ease); }
+#hud[data-bottom="0"] .btog .ca { transform: rotate(180deg); }
+
+/* A control answers a press before anything else does, and 120 ms is under
+   what anybody reads as a delay. Gradients do not interpolate, so what this
+   actually buys is the borders and the text, which is where the state is. */
+#hud button { transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease,
+                          opacity 120ms ease, transform 90ms ease; }
+#hud button:active { transform: translateY(1px); }
+
+/* Somebody who has asked their machine to stop moving things is not asking
+   for a slower version of it. */
+@media (prefers-reduced-motion: reduce) {
+  #hud, #hud * { transition-duration: 0.01ms !important; }
+}
 .phead { display: flex; align-items: center; height: 26px; margin: -8px -8px 5px;
          background: linear-gradient(180deg,var(--gold-a),var(--gold-b)); border: 1px solid var(--gold-dim); padding: 0 4px; }
 .phead .t { font-weight: 700; font-size: 15px; letter-spacing: 0.1em; color: var(--gold); text-transform: uppercase; }
@@ -453,7 +503,8 @@ body {
     <div class="sp"></div>
     <div class="hint">
       <b>drag</b> orbit &nbsp;&nbsp;<b>wheel</b> zoom &nbsp;&nbsp;<b>click a hull</b> select<br>
-      <b>build row</b> queue it &nbsp;&nbsp;<b>1..0</b> control group &nbsp;&nbsp;<b>tabs</b> build, research, launch
+      <b>build row</b> queue it &nbsp;&nbsp;<b>1..0</b> control group &nbsp;&nbsp;<b>tabs</b> build, research, launch<br>
+      <b>X or B</b> close the panel &nbsp;&nbsp;<b>PANEL or C</b> drop the bottom &nbsp;&nbsp;<b>esc</b> close what is open
     </div>
   </header>
 
@@ -481,7 +532,7 @@ body {
       <div class="roster" id="roster"><div class="rtip" id="rtip" hidden></div></div>
 
       <div class="rpanel nine">
-        <div class="phead"><span class="t" id="ptitle">Build Menu</span><button class="x" type="button" title="Close">X</button></div>
+        <div class="phead"><span class="t" id="ptitle">Build Menu</span><button class="x" type="button" data-act="panel" title="Close (a tab reopens it)">X</button></div>
         <div class="pbody">
           <div class="sel1"><span id="prodname">Carrier</span><span class="ca">&#9660;</span></div>
           <div class="pstage">
@@ -500,6 +551,10 @@ body {
           <div class="queue nine-w" id="queue"></div>
         </div>
       </div>
+
+      <button class="btog" id="btog" type="button" data-act="bottom" aria-expanded="true">
+        <span class="ca">&#9660;</span><span>Panel</span>
+      </button>
 
       <div class="ticker" id="ticker"></div>
       <div class="groups" id="groups"></div>
@@ -581,6 +636,32 @@ body {
   <section class="sect">
     <h2>What each decision is</h2>
     <div class="grid2">
+      <div>
+        <h3>Both panels COLLAPSE, and the motion is the whole point</h3>
+        <p>The X on the build menu closes it and a tab brings it back, so the control that put it away is
+        never the only one that can fetch it: press Build with the panel shut and it returns on Build. PANEL
+        at the bottom left drops the readout and brings the control groups and the tab bar down to the edge,
+        which leaves the tabs hugging the bottom of the screen rather than floating a hundred pixels up it.
+        Both are a button first and a key second (B and C, escape closes whatever is open, panel before
+        bottom), because a control that is only a key is a feature nobody can find.</p>
+        <p>A panel LEAVES the way it came, which is sideways off its own edge. Fading alone would have it
+        dissolve in place and leave a player with nowhere to point when they want it back; sliding says where
+        it went. It is <code>pointer-events: none</code> while it is gone, or a closed panel goes on
+        swallowing clicks over a third of the field, which is the invisible Resume button this project has
+        already been caught by once.</p>
+        <p>One duration and one curve for everything that moves, 260 ms on a hard deceleration, because a
+        panel that arrives gently and leaves at the same rate reads as a thing with weight rather than as a
+        fade. Measured off the live transforms rather than off a screenshot, since a screenshot on a software
+        rasteriser lands whenever it lands: the bottom travels 0, 51, 89, 102, 106 px and the panel 0, 216,
+        371, 428, 444, both settled by about 316 ms, and the steps getting smaller IS the curve. Controls
+        answer in 120 ms, which is under what anybody reads as a delay, and they take a one pixel press.
+        Gradients do not interpolate, so what that actually buys is the borders and the text, which is where
+        the state is. And somebody who has asked their machine to stop moving things is not asking for a
+        slower version of it, so <code>prefers-reduced-motion</code> takes every duration to nothing.</p>
+        <p>What is OPEN is one attribute on the HUD element and nothing else. The transitions are declared in
+        the stylesheet, so opening a panel is setting a flag and the motion is not that code's business at
+        all: no tween, no clock, nothing per frame.</p>
+      </div>
       <div>
         <h3>A SKIN is a row, and the chrome had to become a layer first</h3>
         <p>Seven of them, above the stage: the fleet's own, Windows 98, Vista, wood, parchment, brushed steel
@@ -2147,6 +2228,21 @@ body {
     document.getElementById("groups").innerHTML = g;
   }
 
+  // What is OPEN is state on the HUD element and nothing else: the two
+  // transitions are declared in the stylesheet, so opening a panel is setting
+  // an attribute and the motion is not this code's business at all.
+  var open = { panel: true, bottom: true };
+  function setPanel(on) {
+    open.panel = on;
+    hud.dataset.panel = on ? "1" : "0";
+    say(on ? "Panel open" : "Panel closed, press a tab");
+  }
+  function setBottom(on) {
+    open.bottom = on;
+    hud.dataset.bottom = on ? "1" : "0";
+    document.getElementById("btog").setAttribute("aria-expanded", String(on));
+  }
+
   function syncTabs() {
     document.querySelectorAll("#rtabs button").forEach(function (b) {
       b.setAttribute("aria-pressed", String(b.dataset.tab === tab));
@@ -2157,8 +2253,11 @@ body {
 
   // One click handler, and what the target carries decides what it meant.
   hud.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-cat],[data-buy],[data-res],[data-tab],[data-cmd],[data-mod],[data-grp],[data-prod],[data-launch],[data-pick],#showall");
+    var t = e.target.closest("[data-act],[data-cat],[data-buy],[data-res],[data-tab],[data-cmd],[data-mod],[data-grp],[data-prod],[data-launch],[data-pick],#showall");
     if (!t) { return; }
+
+    if (t.dataset.act === "panel") { setPanel(!open.panel); return; }
+    if (t.dataset.act === "bottom") { setBottom(!open.bottom); return; }
 
     if (t.dataset.pick) {
       var own = hulls.filter(function (h) { return h.spec.key === t.dataset.pick; });
@@ -2178,7 +2277,11 @@ body {
       return;
     }
     if (t.id === "showall") { cat = "capital"; drawCats(); drawList(); say("All classes"); return; }
-    if (t.dataset.tab) { tab = t.dataset.tab; syncTabs(); drawList(); return; }
+    // A tab is the way BACK. The X closes the panel and the tab that names
+    // what would be in it opens it again, so the control that put it away is
+    // never the only one that can fetch it: press Build with the panel shut
+    // and it comes back on Build.
+    if (t.dataset.tab) { tab = t.dataset.tab; syncTabs(); drawList(); setPanel(true); return; }
     if (t.dataset.prod) {
       var n = producerList().length || 1;
       prodAt = (prodAt + (t.dataset.prod === "1" ? 1 : n - 1)) % n;
@@ -2240,6 +2343,15 @@ body {
     if (/^[0-9]$/.test(e.key)) {
       var b = document.querySelector('[data-grp="' + (e.key === "0" ? 10 : +e.key) + '"]');
       if (b) { b.click(); }
+    }
+    // A control that is only a key is a feature nobody can find, so both of
+    // these are a button FIRST and a key second. Escape closes whatever is
+    // open, one thing at a time, panel before bottom, which is the rule the
+    // game's own pause key keeps.
+    if (e.key === "b" || e.key === "B") { setPanel(!open.panel); }
+    if (e.key === "c" || e.key === "C") { setBottom(!open.bottom); }
+    if (e.key === "Escape") {
+      if (open.panel) { setPanel(false); } else if (open.bottom) { setBottom(false); }
     }
   });
 
@@ -2352,6 +2464,7 @@ body {
 
   // ---- go ----
   applySkin(SKINS[0].id);
+  hud.dataset.panel = "1"; hud.dataset.bottom = "1";
   drawBars(); syncTabs(); select(hulls[0]); fit();
   requestAnimationFrame(loop);
 })();
