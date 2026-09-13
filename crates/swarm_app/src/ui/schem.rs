@@ -201,27 +201,42 @@ fn finish(px: Vec<u8>, w: u32, h: u32) -> Image {
 /// about what a hull looks like.
 #[derive(Resource, Default)]
 pub(crate) struct Schematics {
+    /// The class each pair was baked for, in the order they were baked.
+    pub(crate) keys: Vec<String>,
     pub(crate) big: Vec<Handle<Image>>,
     pub(crate) small: Vec<Handle<Image>>,
 }
 
 impl Schematics {
     pub(crate) fn of(&self, class: &str) -> Option<(Handle<Image>, Handle<Image>)> {
-        let n = PICKABLE.iter().position(|p| *p == class)?;
+        let n = self.keys.iter().position(|k| k == class)?;
         Some((self.big.get(n)?.clone(), self.small.get(n)?.clone()))
     }
 }
 
 /// Bake the fleet. Called once, beside the frames, because both are pictures
 /// the deck cannot be built without.
+///
+/// EVERY class on the manifest and not the dropdown's picked eight, because
+/// the build menu offers what the yard can make and that is the whole fleet:
+/// a row with no picture in it is a row a player cannot tell from the one
+/// under it. Read off the same directory `Fleet::load` reads, so a class
+/// added tomorrow has a schematic tomorrow.
 pub(crate) fn bake_fleet(images: &mut Assets<Image>, plan: Plan) -> Schematics {
+    let then = std::time::Instant::now();
     let mut out = Schematics::default();
-    for class in PICKABLE {
-        let model = load_hull(class);
+    for entry in Fleet::load().0 {
+        let model = load_hull(&entry.key);
         out.big
             .push(images.add(bake_plan(&model, plan, SCHEM.0, SCHEM.1)));
         out.small
             .push(images.add(bake_plan(&model, plan, THUMB.0, THUMB.1)));
+        out.keys.push(entry.key);
     }
+    info!(
+        "schematics: {} classes baked in {:.0} ms",
+        out.keys.len(),
+        then.elapsed().as_secs_f32() * 1000.0
+    );
     out
 }

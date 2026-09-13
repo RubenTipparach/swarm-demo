@@ -134,34 +134,6 @@ pub(crate) fn head(
     });
 }
 
-/// A button wearing the button frame, with its label as a child.
-pub(crate) fn btn(
-    p: &mut ChildSpawnerCommands,
-    skin: &Skin,
-    text: &str,
-    size: f32,
-    node: Node,
-    marker: impl Bundle,
-) -> Entity {
-    let tok = skin.tok();
-    let mut e = p.spawn((
-        Button,
-        Node {
-            padding: UiRect::axes(Val::Px(10.0), Val::Px(5.0)),
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            ..node
-        },
-        frame(skin, Frame::Btn),
-        Chromed,
-        marker,
-    ));
-    e.with_children(|t| {
-        label(t, text, size, tok.ink);
-    });
-    e.id()
-}
-
 /// A bar: a well with a fill inside it, the fill carrying the marker so a
 /// readout can set its width.
 ///

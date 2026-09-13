@@ -68,8 +68,20 @@ impl Default for Deck {
 pub(crate) const SLIDE: f32 = 0.11;
 
 /// How wide the side panel is, and how tall the bottom deck stands.
-pub(crate) const PANEL_W: f32 = 322.0;
-pub(crate) const DECK_H: f32 = 150.0;
+/// The deck is authored against a 1600 by 900 HUD and SCALED to the window.
+///
+/// That is the mockup's own arrangement (`#hud` is 1600 by 900 with a
+/// transform on it) and it is what makes the two comparable: every number in
+/// this file and in `yard.rs` can be read straight off
+/// `docs/ui/rts-mockup.html` and checked against it. The first cut authored in
+/// window pixels and drifted from the picture it was ported from the moment
+/// anything moved, which is what "the proportions are not the same" was: the
+/// fleet rail was 126 wide against the mockup's 38.
+
+pub(crate) const HUD_H: f32 = 900.0;
+
+pub(crate) const PANEL_W: f32 = 428.0;
+pub(crate) const DECK_H: f32 = 92.0;
 
 /// Everything on the deck that carries a number, named by what it says.
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
@@ -80,17 +92,21 @@ pub(crate) enum DeckStat {
     Clock,
     Strip,
     StripSub,
-    Wing,
     Ship,
     Role,
     Speed,
     Guns,
     Armour,
-    Flag,
-    Cells,
-    FlagGuns,
-    Drives,
-    Reactor,
+    /// The build menu's own readouts.
+    Modules,
+    YardName,
+    SlotsProd,
+    SlotsMod,
+    SlotsSens,
+    CatName,
+    CatCount,
+    SubQueue,
+    ShipQueue,
 }
 
 /// A bar's fill, which is a width rather than a string.
@@ -98,7 +114,8 @@ pub(crate) enum DeckStat {
 pub(crate) enum Fill {
     Fuel,
     Unit,
-    Flag,
+    /// How far along the job at the front of the yard's queue is.
+    Yard,
 }
 
 /// The picture of whatever is selected, set on SELECTION rather than drawn,
@@ -113,10 +130,6 @@ pub(crate) struct RosterRow(pub(crate) usize);
 /// The count on that row.
 #[derive(Component)]
 pub(crate) struct RosterCount(pub(crate) usize);
-
-/// A row of the reinforcement list: press it and one of that class flies in.
-#[derive(Component)]
-pub(crate) struct CallClass(pub(crate) usize);
 
 /// The buttons on the Fleet page, which are keys the game already has asked
 /// for a second time.
@@ -172,7 +185,7 @@ impl DeckCmd {
 }
 
 /// A tab of the command bar, and the page it shows.
-#[derive(Component)]
+#[derive(Component, Clone, Copy)]
 pub(crate) struct PageTab(pub(crate) Page);
 
 /// The body of one page, shown when its tab is pressed.
@@ -232,18 +245,53 @@ pub(crate) fn build_deck(
         clock(p, &skin);
         strip(p, &skin, &glyphs, &scene);
         rail(p, &skin, &fleet);
-        // The side panel is the DEBUG panel and is not part of the game's own
-        // design: a campaign is played off the strip, the rail and the deck.
-        // It carries the range's numbers in the sandbox and the wave in a
-        // skirmish, and a run gets neither.
-        if !scene.retreat {
-            side_panel(p, &skin, &fleet, &scene);
-        }
+        // The build menu in a skirmish and a run, the range in a sandbox:
+        // one panel, two contents, chosen by the mode.
+        side_panel(p, &skin, &glyphs, &scene);
         bottom(p, &skin, &glyphs, &scene, page);
         if scene.retreat {
             run_controls(p, &skin, &glyphs);
         }
     });
+}
+
+/// Scale the whole HUD so a number authored against 1600 by 900 lands where
+/// the mockup puts it, whatever the window is.
+///
+/// By HEIGHT, and that is the decision worth writing down. Scaling by width
+/// leaves the bottom deck short of the bottom on anything taller than 16 by 9,
+/// and scaling by the smaller of the two letterboxes a HUD that is supposed to
+/// sit in the window's own corners. By height, every vertical number is exactly
+/// the mockup's share of the screen, and a window wider than 16 by 9 simply has
+/// more room between the left rail and the right panel, which is what a wider
+/// screen SHOULD give a HUD.
+///
+/// `UiScale` rather than a transform on the root, because Bevy lays UI out in
+/// logical pixels and this changes what one is: a child positioned 6 from the
+/// right is still 6 scaled pixels from the window's own edge, so nothing has to
+/// know it is being scaled.
+/// A headless run has no `Window` at all, so it asks `Headless` for the size of
+/// the target it is drawing to instead. Without that the HUD stayed at scale
+/// one in exactly the runs that exist to photograph it, which is the trap
+/// `--hud` fell into once already when Bevy handed UI to a primary window that
+/// was not there.
+pub(crate) fn scale_hud(
+    windows: Query<&Window>,
+    shot: Option<Res<Headless>>,
+    mut scale: ResMut<UiScale>,
+) {
+    let h = windows
+        .iter()
+        .next()
+        .map(|w| w.resolution.height())
+        .or_else(|| shot.map(|s| s.height as f32));
+    let Some(h) = h else {
+        return;
+    };
+    let want = (h / HUD_H).clamp(0.25, 4.0);
+    if (scale.0 - want).abs() > 1e-4 {
+        scale.0 = want;
+    }
 }
 
 /// The deck's own root, so a system can find everything under it.
@@ -255,8 +303,8 @@ fn clock(p: &mut ChildSpawnerCommands, skin: &Skin) {
     p.spawn((
         Node {
             position_type: PositionType::Absolute,
-            left: Val::Px(14.0),
-            top: Val::Px(9.0),
+            left: Val::Px(12.0),
+            top: Val::Px(10.0),
             flex_direction: FlexDirection::Column,
             ..default()
         },
@@ -295,12 +343,13 @@ fn strip(p: &mut ChildSpawnerCommands, skin: &Skin, glyphs: &Glyphs, scene: &Sce
         Frame::Panel,
         Node {
             position_type: PositionType::Absolute,
-            right: Val::Px(14.0),
-            top: Val::Px(8.0),
+            right: Val::Px(6.0),
+            top: Val::Px(2.0),
             width: Val::Px(PANEL_W),
+            height: Val::Px(44.0),
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
-            column_gap: Val::Px(14.0),
+            column_gap: Val::Px(8.0),
             ..default()
         },
     ))
@@ -340,10 +389,11 @@ fn rail(p: &mut ChildSpawnerCommands, skin: &Skin, fleet: &Schematics) {
     p.spawn((
         Node {
             position_type: PositionType::Absolute,
-            left: Val::Px(12.0),
-            top: Val::Px(56.0),
+            left: Val::Px(8.0),
+            top: Val::Px(50.0),
+            width: Val::Px(38.0),
             flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(3.0),
+            row_gap: Val::Px(2.0),
             ..default()
         },
         Pickable::IGNORE,
@@ -354,11 +404,12 @@ fn rail(p: &mut ChildSpawnerCommands, skin: &Skin, fleet: &Schematics) {
                 Button,
                 Node {
                     display: Display::None,
-                    width: Val::Px(126.0),
-                    padding: UiRect::axes(Val::Px(5.0), Val::Px(2.0)),
+                    width: Val::Px(38.0),
+                    height: Val::Px(26.0),
+                    padding: UiRect::axes(Val::Px(2.0), Val::Px(1.0)),
                     justify_content: JustifyContent::SpaceBetween,
                     align_items: AlignItems::Center,
-                    column_gap: Val::Px(4.0),
+                    column_gap: Val::Px(1.0),
                     ..default()
                 },
                 BackgroundColor(tok.row.col()),
@@ -367,9 +418,9 @@ fn rail(p: &mut ChildSpawnerCommands, skin: &Skin, fleet: &Schematics) {
             ))
             .with_children(|row| {
                 if let Some((_, small)) = fleet.of(class) {
-                    row.spawn(schematic(small, 84.0, 28.0));
+                    row.spawn(schematic(small, 24.0, 20.0));
                 }
-                readout(row, "", 12.0, tok.cyan, RosterCount(n));
+                readout(row, "", 9.0, tok.cyan, RosterCount(n));
             });
         }
     });
@@ -384,17 +435,19 @@ fn bottom(
     scene: &SceneSpec,
     open: Page,
 ) {
+    // The mockup's `.brow3`: 6 in from each side, 802 down, 92 tall, and four
+    // things across it. The command bar is 344, the unit panel 520, the
+    // selection thumb takes what is left and the modules row is 428.
     p.spawn((
         Node {
             position_type: PositionType::Absolute,
-            left: Val::Px(0.0),
-            right: Val::Px(0.0),
-            bottom: Val::Px(0.0),
+            left: Val::Px(6.0),
+            right: Val::Px(6.0),
+            top: Val::Px(802.0),
             height: Val::Px(DECK_H),
             flex_direction: FlexDirection::Row,
-            align_items: AlignItems::FlexEnd,
-            column_gap: Val::Px(12.0),
-            padding: UiRect::axes(Val::Px(14.0), Val::Px(10.0)),
+            align_items: AlignItems::Stretch,
+            column_gap: Val::Px(6.0),
             ..default()
         },
         Pickable::IGNORE,
@@ -403,14 +456,68 @@ fn bottom(
     .with_children(|b| {
         command_bar(b, skin, glyphs, scene, open);
         unit_panel(b, skin, glyphs);
+        // The mockup's `.thumb`, which is what takes up the slack: without it
+        // the three fixed blocks pack to the left and the modules row lands in
+        // the middle of the screen rather than in the corner it belongs in.
+        unit_thumb(b, skin);
+        // The subsystem row, bottom right, which is the mockup's own MODULES.
+        modules_row(b, skin, glyphs);
     });
+    // The three tab strips, all on one line at 776, which is where the mockup
+    // puts them: the pages on the left, the views in the middle and the
+    // panel's own on the right.
+    tab_strip(
+        p,
+        skin,
+        Node {
+            left: Val::Px(6.0),
+            top: Val::Px(776.0),
+            width: Val::Px(344.0),
+            ..default()
+        },
+        &Page::ALL
+            .iter()
+            .map(|x| (x.name(), PageTab(*x), *x == open))
+            .collect::<Vec<_>>(),
+    );
+    tab_strip(
+        p,
+        skin,
+        Node {
+            left: Val::Px(452.0),
+            top: Val::Px(776.0),
+            width: Val::Px(700.0),
+            ..default()
+        },
+        &ViewTab::ALL
+            .iter()
+            .map(|x| (x.label(), ViewTabButton(*x), false))
+            .collect::<Vec<_>>(),
+    );
+    tab_strip(
+        p,
+        skin,
+        Node {
+            right: Val::Px(6.0),
+            top: Val::Px(776.0),
+            width: Val::Px(428.0),
+            ..default()
+        },
+        &PanelTab::ALL
+            .iter()
+            .map(|x| (x.label(), PanelTabButton(*x), *x == PanelTab::Build))
+            .collect::<Vec<_>>(),
+    );
     p.spawn((
         Button,
         Node {
             position_type: PositionType::Absolute,
-            left: Val::Px(14.0),
-            bottom: Val::Px(DECK_H + 4.0),
-            padding: UiRect::axes(Val::Px(10.0), Val::Px(3.0)),
+            left: Val::Px(6.0),
+            top: Val::Px(752.0),
+            width: Val::Px(142.0),
+            height: Val::Px(22.0),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
             ..default()
         },
         frame(skin, Frame::Btn),

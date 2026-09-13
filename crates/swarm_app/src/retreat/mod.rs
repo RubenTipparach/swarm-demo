@@ -46,6 +46,29 @@ impl Bank {
         self.volatiles += got.volatiles;
         self.data += got.data;
     }
+
+    /// Whether every pile covers what a price asks of it.
+    ///
+    /// All three at once, because a price is one decision: a hull a player can
+    /// pay the materials for and not the data is a hull they cannot have, and
+    /// answering that in three places is three places to forget one.
+    pub(crate) fn afford(&self, cost: Yield) -> bool {
+        self.materials >= cost.materials
+            && self.volatiles >= cost.volatiles
+            && self.data >= cost.data
+    }
+
+    /// Take a price out, and say whether it was there. Nothing is taken from
+    /// a bank that cannot cover the whole of it.
+    pub(crate) fn spend(&mut self, cost: Yield) -> bool {
+        if !self.afford(cost) {
+            return false;
+        }
+        self.materials -= cost.materials;
+        self.volatiles -= cost.volatiles;
+        self.data -= cost.data;
+        true
+    }
 }
 
 /// What a support ship is for. One role is one job it knows how to do, and

@@ -247,55 +247,6 @@ fn act_at_once(
     out.ack.left = ACK_LIFE;
 }
 
-/// A press on a reinforcement row: one more of that class, on the next free
-/// station of the wing.
-///
-/// `call_one` is the same function R runs; what the row changes is the class
-/// argument, which is what makes the list a list rather than six copies of a
-/// button.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn call_class(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    tex: Res<Textures>,
-    scene: Res<SceneSpec>,
-    lead: Res<Lead>,
-    wing: Res<Wing>,
-    presses: Query<(&Interaction, &CallClass), Changed<Interaction>>,
-    flagship: Query<&Hull, With<Flagship>>,
-    escorts: Query<(), With<Escort>>,
-) {
-    let Some((_, pick)) = presses.iter().find(|(i, _)| **i == Interaction::Pressed) else {
-        return;
-    };
-    let Some(&class) = PICKABLE.get(pick.0) else {
-        return;
-    };
-    let Ok(hull) = flagship.single() else { return };
-    let out = escorts.iter().count() as u32;
-    if out >= WING_MAX {
-        info!("the wing is full at {WING_MAX}");
-        return;
-    }
-    call_one(
-        &mut commands,
-        &mut meshes,
-        &mut materials,
-        &tex,
-        class,
-        Wave {
-            radius: hull.model.radius(),
-            lead_pos: lead.pos,
-            lead_rot: lead.rot,
-            chewers: (scene.chewers / 3) as u32,
-            n: out,
-            shape: wing.0,
-        },
-    );
-    info!("{class} inbound, {} in the wing", out + 1);
-}
-
 /// Everything a command cell WRITES, as one parameter.
 ///
 /// The bar went from six cells to twelve and `deck_commands` went to thirteen
@@ -334,7 +285,6 @@ struct Card {
     speed: f32,
     guns: usize,
     cells: usize,
-    left: f32,
 }
 
 /// Read a card off a hull. One function, because the unit panel and the fleet
@@ -358,7 +308,6 @@ fn card(hull: &Hull, role: &str) -> Card {
         speed: HULL_SPEED * hull.model.radius() * hull.thrust(),
         guns,
         cells: live,
-        left: reactor_left(hull),
     }
 }
 
@@ -378,15 +327,92 @@ pub(crate) fn reactor_left(hull: &Hull) -> f32 {
 
 /// Every number on the deck, once a frame.
 #[allow(clippy::too_many_arguments)]
+/// What the build menu reads off the ship that carries the yard.
+///
+/// A struct built once before the loop rather than a query inside it: a
+/// readout system that asked the fleet a question per row would ask it nine
+/// times for nine rows of one panel.
+struct YardFacts {
+    name: String,
+    slots: Slots,
+    /// Production jobs running, module bays filled, sensors fitted.
+    at: Slots,
+    /// What is waiting, split the way the two queue lines are.
+    fits: usize,
+    hulls: usize,
+}
+
+impl Default for YardFacts {
+    fn default() -> Self {
+        YardFacts {
+            name: "no yard".into(),
+            slots: Slots::default(),
+            at: Slots::default(),
+            fits: 0,
+            hulls: 0,
+        }
+    }
+}
+
+impl YardFacts {
+    /// What one ship's yard reads as.
+    fn of(hull: &Hull, yard: &Yard) -> YardFacts {
+        let Some(class) = hull.class.clone() else {
+            return YardFacts::default();
+        };
+        let fitted = |sensor: bool| {
+            yard.modules
+                .iter()
+                .filter(|m| m.is_sensor() == sensor)
+                .count() as u32
+        };
+        let fits = yard.queue.iter().filter(|t| t.order.is_fit()).count();
+        YardFacts {
+            slots: Slots::of(&class),
+            at: Slots {
+                // A production slot is BUSY when a job is on it, which is the
+                // front of the queue up to however many run at once: that is
+                // what a production slot IS rather than a second counter.
+                production: (yard.queue.len() as u32).min(yard.slots(&class)),
+                module: fitted(false),
+                sensors: fitted(true),
+            },
+            fits,
+            hulls: yard.queue.len() - fits,
+            name: hull_label(&class),
+        }
+    }
+}
+
+/// What a queue line says, which is a COUNT rather than a word: "(Empty)" is
+/// what the mockup draws for nothing waiting and a number is what it draws for
+/// anything else, and one function is why the two lines cannot disagree.
+fn queue_line(what: &str, n: usize) -> String {
+    match n {
+        0 => format!("{what} Queue (Empty)"),
+        1 => format!("{what} Queue: 1 waiting"),
+        _ => format!("{what} Queue: {n} waiting"),
+    }
+}
+
 pub(crate) fn deck_readouts(
     view: DeckView,
+    views: Res<Views>,
     hives: Query<(), (With<Hive>, Without<Wreck>)>,
     escorts: Query<(), With<Escort>>,
     picked: PickedShip,
-    flagship: Query<&Hull, With<Flagship>>,
+    yards: Query<(&Hull, &Shipyard), With<Flagship>>,
     mut stats: Query<(&DeckStat, &mut Text)>,
 ) {
     let secs = view.tick.tick / 60;
+    // What the build menu says, off the ship that carries the yard. The
+    // flagship today: `Slots::of` reads a hull's rung and nothing else, so
+    // these are the real numbers for the real class rather than a placeholder
+    // waiting for the queue to land.
+    let yard = yards
+        .single()
+        .map(|(h, y)| YardFacts::of(h, &y.0))
+        .unwrap_or_default();
     let unit = picked.iter().next().map(|(h, flag, sup)| {
         let role = match (flag.is_some(), sup) {
             (true, _) => "Command".into(),
@@ -395,10 +421,22 @@ pub(crate) fn deck_readouts(
         };
         card(h, &role)
     });
-    let flag = flagship.single().ok().map(|h| card(h, "Command"));
     for (stat, mut t) in &mut stats {
         let want = match stat {
             DeckStat::None => continue,
+            // The build menu's readouts, which stage three fills from a live
+            // `Yard`. Until that lands they say what a hull's rung ALREADY
+            // gives it, which is a true number rather than a placeholder: the
+            // slots are `Slots::of` on the flagship's own class.
+            DeckStat::YardName => yard.name.clone(),
+            DeckStat::SlotsProd => format!("{} / {}", yard.at.production, yard.slots.production),
+            DeckStat::SlotsMod => format!("{} / {}", yard.at.module, yard.slots.module),
+            DeckStat::SlotsSens => format!("{} / {}", yard.at.sensors, yard.slots.sensors),
+            DeckStat::Modules => format!("{} / {}", yard.at.module, yard.slots.module),
+            DeckStat::CatName => views.cat.label().into(),
+            DeckStat::CatCount => format!("{} materials", view.bank.materials),
+            DeckStat::SubQueue => queue_line("Subsystem", yard.fits),
+            DeckStat::ShipQueue => queue_line("Ship", yard.hulls),
             DeckStat::Clock => format!(
                 "Game Time  {}:{:02}:{:02}",
                 secs / 3600,
@@ -411,7 +449,6 @@ pub(crate) fn deck_readouts(
                 format!("{:.0} / {} to jump", view.bank.fuel, view.drive.cost)
             }
             DeckStat::StripSub => format!("wing {} of {WING_MAX}", escorts.iter().count()),
-            DeckStat::Wing => format!("{} of {WING_MAX}", escorts.iter().count()),
             DeckStat::Ship => unit
                 .as_ref()
                 .map(|c| c.name.clone())
@@ -429,31 +466,6 @@ pub(crate) fn deck_readouts(
                 .as_ref()
                 .map(|c| c.cells.to_string())
                 .unwrap_or_else(|| "0".into()),
-            DeckStat::Flag => flag
-                .as_ref()
-                .map(|c| c.name.clone())
-                .unwrap_or_else(|| "no flagship".into()),
-            DeckStat::Cells => flag
-                .as_ref()
-                .map(|c| c.cells.to_string())
-                .unwrap_or_default(),
-            DeckStat::FlagGuns => flag
-                .as_ref()
-                .map(|c| c.guns.to_string())
-                .unwrap_or_default(),
-            DeckStat::Drives => flag
-                .as_ref()
-                .map(|_| {
-                    format!(
-                        "{:.0}%",
-                        flagship.single().map(|h| h.thrust() * 100.0).unwrap_or(0.0)
-                    )
-                })
-                .unwrap_or_default(),
-            DeckStat::Reactor => flag
-                .as_ref()
-                .map(|c| format!("{:.0}%", c.left * 100.0))
-                .unwrap_or_default(),
         };
         if t.0 != want {
             t.0 = want;
@@ -469,7 +481,7 @@ pub(crate) fn deck_bars(
     skin: Res<Skin>,
     hives: Query<(), (With<Hive>, Without<Wreck>)>,
     picked: Query<&Hull, (With<Selected>, Without<Hive>)>,
-    flagship: Query<&Hull, With<Flagship>>,
+    yards: Query<&Shipyard, With<Flagship>>,
     mut fills: Query<(&Fill, &mut Node, &mut BackgroundColor)>,
 ) {
     // The strip's bar is whatever the MODE is counting down to: a run is
@@ -486,13 +498,21 @@ pub(crate) fn deck_bars(
         ((all - hives.iter().count() as f32) / all).clamp(0.0, 1.0)
     };
     let unit = picked.iter().next().map(reactor_left).unwrap_or(0.0);
-    let flag = flagship.single().ok().map(reactor_left).unwrap_or(0.0);
+    let job = yards
+        .single()
+        .ok()
+        .and_then(|y| y.0.queue.first().map(Task::progress))
+        .unwrap_or(0.0);
     let tok = skin.tok();
     for (fill, mut n, mut c) in &mut fills {
         let share = match fill {
             Fill::Fuel => fuel,
             Fill::Unit => unit,
-            Fill::Flag => flag,
+            // What the yard is ACTUALLY doing, which is how far along the
+            // job at the front of its queue is. The flagship's reactor was
+            // there before the queue existed and said nothing about the
+            // panel it sits under.
+            Fill::Yard => job,
         };
         let want = Val::Percent(share * 100.0);
         if n.width != want {
@@ -619,20 +639,31 @@ pub(crate) fn deck_state(
 pub(crate) fn show_unit_shot(
     fleet: Res<Schematics>,
     sel: Query<&Hull, With<Selected>>,
-    mut shot: Query<&mut ImageNode, With<UnitShot>>,
+    flagship: Query<&Hull, With<Flagship>>,
+    mut shot: Query<&mut ImageNode, (With<UnitShot>, Without<YardShot>)>,
+    mut yard: Query<&mut ImageNode, With<YardShot>>,
 ) {
-    let Ok(mut node) = shot.single_mut() else {
-        return;
+    let pic = |h: Option<&Hull>| {
+        h.and_then(|h| h.class.as_deref())
+            .and_then(|c| fleet.of(c))
+            .map(|(big, _)| big)
+            .unwrap_or_default()
     };
-    let want = sel
-        .iter()
-        .next()
-        .and_then(|h| h.class.as_deref())
-        .and_then(|c| fleet.of(c))
-        .map(|(big, _)| big)
-        .unwrap_or_default();
-    if node.image != want {
-        node.image = want;
+    if let Ok(mut node) = shot.single_mut() {
+        let want = pic(sel.iter().next());
+        if node.image != want {
+            node.image = want;
+        }
+    }
+    // The build menu's own picture, which is the ship that carries the yard
+    // rather than whatever is selected: the panel is about what is BUILDING,
+    // and a stepper whose picture changed with the selection would be two
+    // controls fighting over one image.
+    if let Ok(mut node) = yard.single_mut() {
+        let want = pic(flagship.iter().next());
+        if node.image != want {
+            node.image = want;
+        }
     }
 }
 
