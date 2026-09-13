@@ -805,6 +805,14 @@ body {
         the sphere fills the frame either way instead of shrinking to a coin the flatter the camera gets.
         With a floor of two and a bit radii, because a disc framed to the pixel sits with its near rim
         against the lens and its near arc comes out four times its far one.</p>
+        <p>And the WHEEL widens the horizon rather than moving the camera, from the fitted view out to five
+        times it. That is the one control the two views share a gesture for and do not share a number:
+        scrolling in the field is the ship camera's distance and scrolling in the map is the map's own reach,
+        so coming back out of the map puts you at exactly the zoom you left the field at. The horizon is
+        what the wheel moves and everything is measured from it, so the rings, the bearing ticks and the fit
+        all follow one number, and the eye is placed by the same solve at every width. COVERAGE is the
+        exception and is deliberately NOT scaled by it: how much of the field a fleet is watching is a fact
+        about the fleet, and a percentage that moved when you scrolled would be a readout of the wheel.</p>
         <p>What it adds over the field is COVERAGE: every ship lays a soft bubble at its own class's sensor
         range and the bubbles ADD where they overlap, so the bright ground is the space the fleet holds and
         the dark is where something could be standing. The range is a field on the class beside its cap,
@@ -1863,7 +1871,11 @@ body {
   var renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   var scene = new THREE.Scene();
-  var camera = new THREE.PerspectiveCamera(46, 16 / 9, 1, 12000);
+  // Far enough for the widest sensor horizon: the eye stands at 2.2 radii and
+  // the far rim is another radius beyond it, so five times the base horizon
+  // wants better than fifteen thousand. A ring whose far half falls outside
+  // the frustum is a ring drawn as a crescent.
+  var camera = new THREE.PerspectiveCamera(46, 16 / 9, 1, 30000);
   // 420 rather than 300, because the fleet is spread over the area now: the
   // field camera has to show the ship you picked AND its neighbours, or every
   // question about two ships at once becomes a trip to the sensors map.
@@ -1885,6 +1897,7 @@ body {
   var sun = new THREE.DirectionalLight(0xffe6c4, 1.3); sun.position.set(0.5, 0.7, 0.35); scene.add(sun);
   var back = new THREE.DirectionalLight(0x4b7fb5, 0.55); back.position.set(-0.6, -0.2, -0.7); scene.add(back);
 
+  var stars = null;
   (function backdrop() {
     var c = document.createElement("canvas");
     c.width = 1024; c.height = 512;
@@ -1906,7 +1919,12 @@ body {
     }
     var sg = new THREE.BufferGeometry();
     sg.setAttribute("position", new THREE.Float32BufferAttribute(sp, 3));
-    scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xc6dcef, size: 2, sizeAttenuation: false })));
+    // The shell RIDES THE EYE, which is what makes it a sky rather than an
+    // object: fixed at the origin it is a ball 3200 units across, and the
+    // sensors map's own camera stands further out than that, so zooming out
+    // flew the whole star field behind the lens and the sky went empty.
+    stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xc6dcef, size: 2, sizeAttenuation: false }));
+    scene.add(stars);
   })();
 
   var hulls = [], cache = {};
@@ -2113,7 +2131,14 @@ body {
     // exp, because a wheel reporting pixels hands over a hundred a notch and
     // a linear factor takes the distance negative.
     var unit = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? 400 : 1);
-    orbit.dist = Math.max(70, Math.min(1100, orbit.dist * Math.exp(e.deltaY * unit * 0.0012)));
+    var f = Math.exp(e.deltaY * unit * 0.0012);
+    // In the sensors map the wheel is the MAP's zoom and leaves the field's
+    // alone, so coming back out of it puts the player at the zoom they left.
+    if (view === "sensors") {
+      sensorZoom = Math.max(1, Math.min(SENSOR_OUT, sensorZoom * f));
+    } else {
+      orbit.dist = Math.max(70, Math.min(1100, orbit.dist * f));
+    }
   }, { passive: false });
 
   var ray = new THREE.Raycaster();
@@ -2681,6 +2706,7 @@ body {
     camDist += (want - camDist) * (1 - Math.exp(-5.5 * dt));
     orbitEye(camera.position, camDist);
     camera.lookAt(orbit.focus);
+    if (stars) { stars.position.copy(camera.position); }
     poseOutline();
     // The frame clears itself rather than the renderer doing it, because the
     // selection is a SECOND pass and an automatic clear would wipe the first.
@@ -2811,7 +2837,15 @@ body {
   // Nine hundred puts it two thousand out, the fleet becomes the cluster it
   // actually is, and the empty space round it is the part worth seeing, since
   // empty space is where the swarm is not yet.
-  var SENSOR_R = 900;        // world units to the sensor horizon
+  var SENSOR_R = 900;        // world units to the sensor horizon at full zoom in
+  var SENSOR_OUT = 5;        // and how much further out the wheel may take it
+  // The wheel WIDENS THE HORIZON rather than only backing the camera off, so
+  // zooming out shows more battlefield and not more nothing: the rings and the
+  // bearings re-scale with it and the coverage bubbles do not, because a
+  // ship's range is a fact about the ship and the only honest thing it can do
+  // at five times the area is look smaller.
+  var sensorZoom = 1;
+  function sensorR() { return SENSOR_R * sensorZoom; }
   var SENSOR_FILL = 0.88;    // what share of the frame the horizon takes up
   var SENSOR_NEAR = 2.2;     // and never closer than this many radii
   var ink = {};
@@ -2846,14 +2880,14 @@ body {
     // most room, at SENSOR_FILL of the frame. Looking down the height binds,
     // edge on the width does.
     var fit = Math.max(
-      SENSOR_R / Math.tan(Math.atan(t * asp) * SENSOR_FILL),
-      SENSOR_R * Math.abs(Math.sin(orbit.pitch)) / Math.tan(Math.atan(t) * SENSOR_FILL)
+      sensorR() / Math.tan(Math.atan(t * asp) * SENSOR_FILL),
+      sensorR() * Math.abs(Math.sin(orbit.pitch)) / Math.tan(Math.atan(t) * SENSOR_FILL)
     );
     // And no nearer than SENSOR_NEAR radii whatever that says. A disc framed
     // to the pixel sits with its near rim almost against the lens, and the
     // near arc then comes out four times the far one: honest perspective, and
     // a horizon nobody can read a bearing off.
-    return Math.max(fit, SENSOR_R * SENSOR_NEAR);
+    return Math.max(fit, sensorR() * SENSOR_NEAR);
   }
   // Screen pixels from a world point, and NULL for anything behind the eye:
   // a point past the near plane projects to a mirrored position, which draws
@@ -2880,8 +2914,9 @@ body {
   function sensorGrid(g, w, h) {
     var r, a, p, q;
     g.lineWidth = 1;
-    for (r = SENSOR_R / 4; r <= SENSOR_R + 1; r += SENSOR_R / 4) {
-      g.strokeStyle = r === SENSOR_R ? ink["edge-lit"] : ink.edge;
+    var R = sensorR();
+    for (r = R / 4; r <= R + 1; r += R / 4) {
+      g.strokeStyle = r > R - 1 ? ink["edge-lit"] : ink.edge;
       planeRing(g, r, w, h); g.stroke();
     }
     // Bearings round the horizon, because a contact at nine o'clock is only
@@ -2890,9 +2925,9 @@ body {
     for (a = 0; a < 360; a += 15) {
       var t = a * Math.PI / 180, big = a % 90 === 0;
       var ox = Math.sin(t), oz = -Math.cos(t);
-      p = sp(orbit.focus.x + ox * SENSOR_R, orbit.focus.y, orbit.focus.z + oz * SENSOR_R, w, h);
-      q = sp(orbit.focus.x + ox * SENSOR_R * (big ? 0.94 : 0.97), orbit.focus.y,
-             orbit.focus.z + oz * SENSOR_R * (big ? 0.94 : 0.97), w, h);
+      p = sp(orbit.focus.x + ox * R, orbit.focus.y, orbit.focus.z + oz * R, w, h);
+      q = sp(orbit.focus.x + ox * R * (big ? 0.94 : 0.97), orbit.focus.y,
+             orbit.focus.z + oz * R * (big ? 0.94 : 0.97), w, h);
       if (!p || !q) { continue; }
       g.strokeStyle = big ? ink["edge-lit"] : ink.edge;
       g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke();
@@ -3037,16 +3072,20 @@ body {
     });
 
     document.getElementById("scount").innerHTML =
-      hulls.length + " contacts &#183; 1 field &#183; horizon " + SENSOR_R + "u";
+      hulls.length + " contacts &#183; 1 field &#183; horizon " + Math.round(sensorR()) + "u &#183; " +
+      (Math.round(sensorZoom * 10) / 10) + "x out";
     document.getElementById("scap").innerHTML =
       "Ashfall Reach &#183; pivot " + Math.round(orbit.focus.x) + ", " + Math.round(orbit.focus.y) +
       ", " + Math.round(orbit.focus.z) + " &#183; coverage " + Math.round(coverage()) +
-      "% &#183; <b>click</b> select &#183; <b>right click</b> move &#183; <b>space</b> back";
+      "% &#183; <b>click</b> select &#183; <b>right click</b> move &#183; <b>wheel</b> widen &#183; <b>space</b> back";
   }
 
   // What share of the horizon the fleet can see into, which is the one NUMBER
   // worth putting on the field: it is what moving a ship changes, and it goes
   // down the moment one dies.
+  // Against the base horizon and NOT the zoomed one: coverage is what share of
+  // the operational area the fleet can see into, and a number that changed
+  // because somebody scrolled would be a lie about the fleet.
   function coverage() {
     var tot = 0;
     hulls.forEach(function (hh) { tot += Math.pow(srOf(hh) / SENSOR_R, 2); });
