@@ -617,6 +617,9 @@ fn aim_camera(
             yaw: scene.yaw,
             pitch: scene.pitch,
             dist,
+            // Opens where the player's own zoom is: the sensors view is the
+            // only thing that moves it, and it eases.
+            eye: dist,
             target,
             follow: false,
         };

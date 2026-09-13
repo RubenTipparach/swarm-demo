@@ -141,6 +141,11 @@ struct Args {
     /// state, which goes critical once enough of it is gone.
     explode: u32,
     wreck: u32,
+    /// `--view mission|sensors|menu` opens one of the middle views at start,
+    /// since a headless run has no pointer to press its tab with. The sensors
+    /// manager is a camera MODE, so this is the only way to photograph what
+    /// the eye does when it is asked for.
+    view: String,
     /// `--build WHAT,TICK`: press one build row at that tick, so a hull coming
     /// off the queue can be photographed. WHAT is a class key or `fighter`.
     build: u32,
@@ -235,6 +240,7 @@ fn parse_args() -> Args {
         wreck: 0,
         build: 0,
         build_what: String::new(),
+        view: String::new(),
         cadence: 70,
         hives: 10,
         order: None,
@@ -302,6 +308,10 @@ fn parse_args() -> Args {
             }
             "--chewers" => {
                 a.chewers = next().parse().expect("--chewers N");
+                i += 1;
+            }
+            "--view" => {
+                a.view = next();
                 i += 1;
             }
             "--build" => {
@@ -631,6 +641,10 @@ fn main() {
                     // does, in that order so a press names the row that was
                     // actually drawn.
                     (fill_build_list, build_input).chain(),
+                    // The sensors furniture DRAWS, so it sits outside the run
+                    // gate with the nav disc: an overview with the world
+                    // stopped is worth exactly as much as an order is.
+                    draw_sensors,
                     slide_deck,
                     light_deck,
                     deck_readouts,
@@ -690,7 +704,15 @@ fn main() {
         .init_resource::<Wing>()
         .init_resource::<Docked>()
         .init_resource::<Rally>()
-        .init_resource::<Views>()
+        .insert_resource(Views {
+            open: match args.view.as_str() {
+                "mission" => Some(ViewTab::Mission),
+                "sensors" => Some(ViewTab::Sensors),
+                "menu" => Some(ViewTab::Menu),
+                _ => None,
+            },
+            ..default()
+        })
         .init_resource::<Offers>()
         .init_resource::<Deck>()
         .init_resource::<OrderMode>()

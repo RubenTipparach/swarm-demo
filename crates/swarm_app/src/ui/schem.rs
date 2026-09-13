@@ -165,6 +165,9 @@ pub(crate) fn bake_plan(model: &VoxelModel, plan: Plan, w: u32, h: u32) -> Image
         (iw as f32 - cw as f32 * scale) * 0.5,
         (ih as f32 - ch as f32 * scale) * 0.5,
     );
+    // Under two pixels a cell every pixel is a grid line, which is a wash
+    // rather than a lattice.
+    let grid = scale >= 2.0;
     let cell = |iz: i32, ix: i32| -> Top {
         if iz < 0 || ix < 0 || iz as usize >= cw || ix as usize >= ch {
             Top::Empty
@@ -187,6 +190,20 @@ pub(crate) fn bake_plan(model: &VoxelModel, plan: Plan, w: u32, h: u32) -> Image
                 plan.hull
             };
             over(&mut px, (y * iw + x) * 4, ink);
+            // And the LATTICE over it, one line a cell, wherever this pixel
+            // is the first of a new cell in either axis. That is the paper a
+            // plan is drawn on: it gives the fill a scale a reader can count,
+            // and it is what the prototype's own picture averages to once its
+            // line network is denser than the pixels it is drawn at.
+            if grid
+                && (cell(iz - 1, ix) != me || cell(iz, ix - 1) != me || {
+                    let fresh = |v: f32, o: f32| (v - o) / scale;
+                    fresh(x as f32, ox).floor() != fresh(x as f32 - 1.0, ox).floor()
+                        || fresh(y as f32, oy).floor() != fresh(y as f32 - 1.0, oy).floor()
+                })
+            {
+                over(&mut px, (y * iw + x) * 4, plan.grid);
+            }
         }
     }
     quad_lines(

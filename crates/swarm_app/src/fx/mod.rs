@@ -3,9 +3,11 @@
 
 mod lights;
 mod nav;
+mod sensors;
 
 pub(crate) use lights::*;
 pub(crate) use nav::*;
+pub(crate) use sensors::*;
 
 use crate::*;
 

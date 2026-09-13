@@ -116,6 +116,24 @@ fn spawn_fx_meshes(
     ));
     commands.insert_resource(NavHandle(nav_mesh));
 
+    // The sensors manager's furniture, on the same footing as the nav disc:
+    // additive, unlit and rebuilt every frame, because it is a function of
+    // where the eye is and where the contacts are.
+    let sensor_mesh = meshes.add(empty_mesh());
+    commands.spawn((
+        Mesh3d(sensor_mesh.clone()),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color: Color::WHITE,
+            unlit: true,
+            alpha_mode: AlphaMode::Add,
+            cull_mode: None,
+            ..default()
+        })),
+        Transform::IDENTITY,
+        bevy::camera::visibility::NoFrustumCulling,
+    ));
+    commands.insert_resource(SensorHandle(sensor_mesh));
+
     // The flames, on the same footing: geometry rebuilt every frame. Additive
     // and BACK FACE CULLED, which the nav disc is not, and the difference is
     // the whole look. Additive on a closed surface lays its colour down twice
@@ -330,6 +348,7 @@ fn spawn_camera(
         yaw: scene.yaw,
         pitch: scene.pitch,
         dist,
+        eye: dist,
         target: scene.target,
         follow: false,
     };

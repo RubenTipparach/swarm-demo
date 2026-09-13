@@ -123,6 +123,12 @@ pub(crate) struct Plan {
     pub(crate) line: Ink,
     pub(crate) lsub: Ink,
     pub(crate) rim: Ink,
+    /// The lattice itself, one line a CELL over the fill. It is what makes a
+    /// plan read as a plan rather than as a silhouette with panels on it, and
+    /// it is the scale: a reader can count cells off a hull and compare two
+    /// ships by the grid they are drawn on. Faint, because the panel lines
+    /// are the subject and this is the paper they are drawn on.
+    pub(crate) grid: Ink,
 }
 
 /// The four frames a skin bakes, and the palette they are drawn beside.
@@ -193,6 +199,7 @@ pub(crate) const COMMAND: SkinRow = SkinRow {
         line: Ink::hex(0x3fc8e8),
         lsub: Ink::hex(0xff9a3c),
         rim: Ink::hex(0x7eeaff),
+        grid: Ink::hex(0x7eeaff).a(0.10),
     },
 };
 

@@ -1207,6 +1207,30 @@ cell. The first cut baked the small one at the size it was displayed and the
 edge pass had nothing to draw on: a schematic came out as a silhouette with a
 rim round it, which is what a plan view looks like with the plan taken out.
 
+**The lines are the MESH's, and deriving them from the top face was wrong.**
+The rule was "a border wherever the column beside this one is a different
+material or stands at a different height", which reads as every greedy quad's
+edge arrived at from the other side and is not: a Terran's deck is a flat
+plateau twelve cells across at one height, so it drew no line inside itself
+and the hull came out as one dark shape in a bright rim. Adding the cell's
+colour and surface to that key changed nothing, measured, because the plateau
+is uniform in those too. The prototype draws `mesh.lin`, the mesher's own line
+network in three dimensions, so this walks the greedy quads and draws their
+borders. Two passes of that were wrong first, and both are the depth buffer a
+GPU bake has and a CPU one does not: every quad put the machinery's borders
+over the plating covering it, and up facing was not enough either, because the
+mesher meshes the INSIDE of the ship too. The top map this file already builds
+IS the depth test, and a quad is drawn when its own cell is the topmost solid
+one in its column. The bake went from 41 ms to 187 ms for all twenty three
+classes, once, at boot.
+
+**And the fill carries the LATTICE**, one faint line a cell. That is the paper
+a plan is drawn on: it gives the fill a scale a reader can count cells off and
+compare two ships by, and it is what the prototype's own picture averages to
+once its line network is denser than the pixels it is drawn at. Under two
+pixels a cell it is not drawn, because there every pixel is a grid line and
+that is a wash rather than a lattice.
+
 **A class is not a ship, so no ship can stand for one.** The six marks are the
 mockup's own line art, blocked out the way the lattice is, with no faction
 paint and no livery, and so are the command glyphs. They are rasterised rather
@@ -1339,6 +1363,52 @@ what a class IS and `build` answers what a yard DOES with one. `build`
 re-exports every name in `rung`, so nothing outside the crate learned a new
 path, which is exactly what `damage` did when `heat` and `wound` came out of
 it.
+
+## The sensors manager is a camera MODE, not a screen
+
+The mockup's own rule and the whole reason it is worth having: it does not
+open a map OVER the field, it pulls the eye BACK off it. So the ships on it
+are the real ships at their real size, a press is the same raycast the field
+uses, and the map cannot be out of register with the world because there is
+only one of them.
+
+**The angle and the pivot are the player's; the DISTANCE is the map's.** That
+is two numbers on the orbit rather than one saved and restored: `Orbit.dist`
+is the player's own zoom and is never touched, and `Orbit.eye` is where the
+camera is actually placed, eased toward whichever the mode asks for. Coming
+back out therefore lands on exactly the zoom that went in, with nothing to
+remember and nothing to get wrong.
+
+`SENSORS_EYE` is 2600 and the horizon it frames is 900, which is the
+operational area. The mockup specifies two thousand and that is measured
+wrong here: the eye looks ACROSS the plane at a pitch rather than straight
+down at it, so at two thousand the ring is cut hard at two corners. Five
+times the field camera's own four hundred is the point either way, because
+the fleet becoming the cluster it actually IS is what the view is for, and
+the empty space round it is the part worth seeing: empty space is where the
+swarm is not yet.
+
+**The furniture paints no ground of its own**, because the ground is the
+battle. A horizon, two rings inside it and four bearings, all on the PIVOT's
+plane, which is the plane a move order is already given on: two planes would
+be two answers to "where is that ship really". Then a STALK under every
+contact, which is what makes a position in three dimensions readable at all:
+a contact on its own is a dot whose height nobody can judge, and a line down
+to the plane with a ring at its foot says both where it is and how far above
+the plane it stands. A carrier gets one too, in violet, because this view
+exists to say where everything ELSE is.
+
+It is one mesh rebuilt every frame on the nav disc's own footing, additive
+and unlit, and it DRAWS, so it sits outside the run gate with the nav disc:
+an overview with the world stopped is worth exactly as much as an order is.
+
+**And it does not steal a key.** The mockup gives it space; space here is
+already the pause. The tab is the way in, which is the control a player can
+actually find, and `--view mission|sensors|menu` is the headless flag, since
+a harness has no pointer to press a tab with.
+
+Still to come on it: a press does not yet select through the view, and the
+Mission and Menu tabs still draw nothing.
 
 ## The controls are an RTS's now
 
@@ -2646,6 +2716,10 @@ cargo build --release -p swarm_app
 # this is the one that photographs a hull arriving rather than a bar filling.
 ./target/release/swarm_app --headless --fixed-dt --motes 800 --hives 2 --rocks 2 \
     --chewers 0 --hud --build fighter,20 --frames 200 --zoom 4 --out yard.png
+# The sensors manager, which is the camera pulling back rather than a screen:
+# `--view` is the tab, since a headless run has no pointer to press one with.
+./target/release/swarm_app --headless --fixed-dt --motes 900 --hives 5 --rocks 4 \
+    --chewers 0 --hud --view sensors --frames 60 --zoom 4 --out sensors.png
 # The screens, and the range: a scripted slug lands at tick thirty.
 ./target/release/swarm_app --headless --fixed-dt --motes 200 --frames 12 --screen menu --out menu.png
 ./target/release/swarm_app --headless --fixed-dt --motes 200 --frames 12 --screen setup --out setup.png
