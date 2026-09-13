@@ -36,6 +36,66 @@ pub(crate) enum SandboxAction {
     Disarm,
 }
 
+impl SandboxAction {
+    /// Every action the sandbox has, toggles then weapons.
+    pub(crate) const ALL: [SandboxAction; 11] = [
+        SandboxAction::Freeze,
+        SandboxAction::Slow,
+        SandboxAction::Invulnerable,
+        SandboxAction::Blast,
+        SandboxAction::Reset,
+        SandboxAction::Disarm,
+        SandboxAction::Arm(Weapon::Beam),
+        SandboxAction::Arm(Weapon::Flak),
+        SandboxAction::Arm(Weapon::Slug),
+        SandboxAction::Arm(Weapon::Torpedo),
+        SandboxAction::Arm(Weapon::Bite),
+    ];
+
+    /// The key that does the same thing.
+    ///
+    /// One table, because the handler and the label both need it and a key
+    /// written down twice is a key one copy will miss, which is the one clock
+    /// lesson this project keeps re-learning.
+    pub(crate) fn key(self) -> KeyCode {
+        match self {
+            SandboxAction::Freeze => KeyCode::KeyZ,
+            SandboxAction::Slow => KeyCode::KeyX,
+            SandboxAction::Invulnerable => KeyCode::KeyV,
+            SandboxAction::Blast => KeyCode::KeyB,
+            SandboxAction::Reset => KeyCode::KeyN,
+            SandboxAction::Disarm => KeyCode::Digit0,
+            SandboxAction::Arm(w) => w.key(),
+        }
+    }
+
+    /// That key as a player reads it.
+    pub(crate) fn hint(self) -> String {
+        match self {
+            SandboxAction::Freeze => "Z".into(),
+            SandboxAction::Slow => "X".into(),
+            SandboxAction::Invulnerable => "V".into(),
+            SandboxAction::Blast => "B".into(),
+            SandboxAction::Reset => "N".into(),
+            SandboxAction::Disarm => "0".into(),
+            SandboxAction::Arm(w) => w.number().to_string(),
+        }
+    }
+
+    /// Whether it is ON right now, for the toggles, and nothing for the two
+    /// that DO something rather than being a state.
+    pub(crate) fn lit(self, sb: &Sandbox) -> Option<bool> {
+        match self {
+            SandboxAction::Freeze => Some(sb.frozen),
+            SandboxAction::Slow => Some(sb.slow),
+            SandboxAction::Invulnerable => Some(sb.invulnerable),
+            SandboxAction::Arm(w) => Some(sb.weapon == Some(w)),
+            SandboxAction::Disarm => Some(sb.weapon.is_none()),
+            SandboxAction::Blast | SandboxAction::Reset => None,
+        }
+    }
+}
+
 /// What a torpedo does when it gets there.
 #[derive(Clone, Copy)]
 pub(crate) struct Landing {
@@ -68,21 +128,9 @@ pub(crate) fn sandbox_input(
         .filter(|(i, _)| **i == Interaction::Pressed)
         .map(|(_, a)| *a)
         .collect();
-    for (key, action) in [
-        (KeyCode::KeyZ, SandboxAction::Freeze),
-        (KeyCode::KeyX, SandboxAction::Slow),
-        (KeyCode::KeyV, SandboxAction::Invulnerable),
-        (KeyCode::KeyB, SandboxAction::Blast),
-        (KeyCode::KeyN, SandboxAction::Reset),
-        (KeyCode::Digit0, SandboxAction::Disarm),
-    ] {
-        if keys.just_pressed(key) {
+    for action in SandboxAction::ALL {
+        if keys.just_pressed(action.key()) {
             actions.push(action);
-        }
-    }
-    for w in Weapon::ALL {
-        if keys.just_pressed(w.key()) {
-            actions.push(SandboxAction::Arm(w));
         }
     }
     if keys.just_pressed(KeyCode::Escape) && *mode == OrderMode::Range {

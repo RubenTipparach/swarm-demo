@@ -923,6 +923,90 @@ And the ship that was is despawned: every cell of it is in a piece, in the
 dust or in the fireball now. A minute later the pieces go too, because ten
 carriers' wrecks are ten thousand bricks of mesh.
 
+## The command deck, built from the mockup
+
+The HUD was a call button, three lines of bindings and a dropdown. It is the
+RTS deck the mockup drew (`docs/ui/rts-mockup.html`), and the division it is
+built on is the mockup's own: the CHROME is the skin's, the LAYOUT is the
+deck's, and every number on it is read off the game rather than authored
+beside it.
+
+**A frame is one 48 pixel texture with a 16 pixel slice**, four of them
+(panel, well, button, button armed), baked at boot into an `Image` and worn as
+an `ImageNode` with `NodeImageMode::Sliced`. That is the mockup's own canvas
+baker rasterised: the same fill, the same hairline, the same inner rule and the
+same twelve pixel L at each corner, composited in sRGB because a canvas
+composites in sRGB and the picture has to match the one that was approved. The
+sampler is NEAREST, because a nine slice stretches its middle and a linear
+filter over a one pixel hairline is a hairline that fades out along the edge it
+was drawn to mark. An arm is twelve pixels inside a sixteen pixel corner, so it
+never reaches the stretched middle: a bracket that crossed the slice line would
+smear along the edge of every panel wider than the texture.
+
+**A builder may default what a caller omits and must never overwrite what a
+caller set.** `framed` listed `flex_direction` before `..node`, and Rust's
+struct update syntax means the listed field WINS: the resource strip asked for
+a row and got a column, silently, and so did every stat well. It sets the
+padding and nothing else now, and every panel says which way it runs.
+
+**Nothing on the deck is a control for a mechanic that does not exist.** There
+is no research row and no build queue, because a button that does nothing is
+worse than a missing one: a player spends a fight wondering what it was for.
+What the mockup draws as a factory is the REINFORCEMENT call here, which is a
+mechanic this game has: a row runs the same `call_one` that R runs, with the
+class as its argument rather than the flagship's, which is what makes the list
+a list instead of six copies of one button.
+
+**One panel, three contents, chosen by the mode.** A skirmish gets the wave, a
+run gets the field and the two buttons that end a system, and the sandbox gets
+what the range is shooting at. The resource strip is the same rule: a run is
+materials and the fuel a jump needs, a skirmish is the carriers left and the
+wing that is flying, and the bar under it is whichever of those the fight ends
+on. The strip's bar is never one of the three damage colours, because filling a
+tank is not damage.
+
+**Every button on the command bar is a key the game already has.** The Fleet
+page opens a move order, holds the selection, focuses, calls a wave and turns
+the bars and the counter on and off; Strike and Tactics are the range and the
+sandbox, and their cells carry `SandboxAction`, which `sandbox_input` was
+already reading off a button. So the two panels that used to sit in the top
+right are GONE and nothing was rewritten to replace them: they were the same
+five buttons twice, and one set here and one there is two writers for one
+state. What was left of each (the run's numbers, the dummy's mass and spin) is
+a section of the one panel.
+
+**A key lives in one table.** The sandbox panel spelled out which key armed
+what, and `sandbox_input` had its own copy; `SandboxAction::key` is that table
+now and both the handler and the label read it. Same lesson as the two clamps
+and the three scripted cues: a rule copied is a rule one copy will miss.
+
+**A move order OPENS from a flag rather than from a second code path.**
+`NavAsk` is what the Move button sets, and `nav_input` opens the disc from it
+in the same arm the right press opens from. It is read ABOVE the "the pointer
+over a button belongs to the button" guard, because the press that set it was
+on a button and that guard would eat every one of them.
+
+**One marker, one owner.** The older HUD recolours every `Button` that carries
+a `BackgroundColor`, and a deck row is one of those, so `Chromed` is what says
+the deck lights this itself and `hud_feedback` filters on `Without<Chromed>`.
+Two writers for one state is how a tab ends up saying something other than what
+is open, which the mockup shipped once already.
+
+**The two halves slide, on a time constant.** The side panel goes off the right
+edge by its own width plus the margin and the bottom deck goes down by its
+height, eased with `1 - exp(-dt / SLIDE)` so the slide takes the same wall time
+at twenty frames a second as at a hundred and twenty. An animation measured in
+frames is an animation that is a different length on every machine.
+
+**And a bar is three colours a player can name rather than a ramp**, over the
+REACTOR, which is the only thing that kills a ship and therefore the only
+honest thing to put on a bar.
+
+Still to come, and named here so the gap is visible rather than forgotten: the
+Mission, Sensors and Menu views the mockup carries on its middle tabs. The
+sensors manager is a camera MODE in the mockup rather than a screen, which is
+the part worth keeping when it lands.
+
 ## The controls are an RTS's now
 
 **Selection takes the left button, so the camera gave it up.** Orbit is the

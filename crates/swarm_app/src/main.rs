@@ -43,6 +43,8 @@ use bevy::{
         },
         view::screenshot::{save_to_disk, Screenshot, ScreenshotCaptured},
     },
+    sprite::{BorderRect, SliceScaleMode, TextureSlicer},
+    ui::widget::NodeImageMode,
     window::{ExitCondition, WindowPlugin},
     winit::WinitPlugin,
 };
@@ -554,23 +556,16 @@ fn main() {
     // way to PROVE it draws rather than assert it, which is the rule the
     // finishes and the window maps already keep.
     if !args.headless || args.hud {
+        app.add_systems(Startup, load_skin);
         // The menu, then the box, then the order, and each reads the mode the
         // one before left. `nav_input` is in the main chain below because it
         // runs headless too; the `before` is what keeps a left press from
         // being a confirm AND the start of a box in the same frame.
         app.add_systems(
-            OnEnter(AppState::Playing),
-            build_sandbox_panel.run_if(|s: Res<SceneSpec>| s.sandbox),
-        );
-        app.add_systems(
-            OnEnter(AppState::Playing),
-            build_retreat_panel.run_if(|s: Res<SceneSpec>| s.retreat),
-        )
-        .add_systems(
             Update,
             retreat_readouts.run_if(in_state(AppState::Playing).and(|s: Res<SceneSpec>| s.retreat)),
         );
-        app.add_systems(OnEnter(AppState::Playing), build_hud)
+        app.add_systems(OnEnter(AppState::Playing), (build_hud, build_deck))
             .add_systems(
                 Update,
                 (
@@ -589,6 +584,23 @@ fn main() {
                     draw_bars,
                     pick_hull,
                     quit_to_menu,
+                )
+                    .run_if(in_state(AppState::Playing)),
+            )
+            // The deck: its two inputs run before `nav_input` for the reason
+            // every input here does, which is that a press is read by exactly
+            // one system per frame and the mode decides which.
+            .add_systems(
+                Update,
+                (
+                    (deck_tabs, deck_commands).chain().before(nav_input),
+                    call_class,
+                    slide_deck,
+                    light_deck,
+                    deck_readouts,
+                    deck_bars,
+                    deck_roster,
+                    deck_state.run_if(|s: Res<SceneSpec>| s.sandbox),
                 )
                     .run_if(in_state(AppState::Playing)),
             );
@@ -631,6 +643,8 @@ fn main() {
         .init_resource::<SparkQueue>()
         .init_resource::<LiveFx>()
         .init_resource::<NavOrder>()
+        .init_resource::<NavAsk>()
+        .init_resource::<Deck>()
         .init_resource::<OrderMode>()
         .init_resource::<Pings>()
         .init_resource::<Ack>()

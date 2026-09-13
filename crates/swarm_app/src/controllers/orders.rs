@@ -105,6 +105,17 @@ pub(crate) struct Ack {
     pub(crate) left: f32,
 }
 
+/// A move order asked for by something that is not the right button.
+///
+/// The deck's Move button sets this and `nav_input` opens the disc from it, in
+/// the SAME arm the right press opens from, because what a move order is has
+/// one implementation and a second opener would be a second disc the day
+/// either learned anything. It is read before the "the pointer over a button
+/// belongs to the button" guard, since the press that set it was on a button
+/// and that guard would eat every one of them.
+#[derive(Resource, Default)]
+pub(crate) struct NavAsk(pub(crate) bool);
+
 /// Homeworld's own move flow, which is a MODE rather than a drag.
 ///
 /// Right button opens the disc on the selection, the cursor aims it on the
@@ -132,6 +143,7 @@ pub(crate) fn nav_input(
     cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     over_ui: Query<&Interaction>,
     mut mode: ResMut<OrderMode>,
+    mut ask: ResMut<NavAsk>,
     mut order: ResMut<NavOrder>,
     mut pings: ResMut<Pings>,
     mut ack: ResMut<Ack>,
@@ -202,6 +214,24 @@ pub(crate) fn nav_input(
         ack.text = "move order cancelled".into();
         ack.left = ACK_LIFE;
         return;
+    }
+
+    // Asked for by a button rather than by the right press. Opened here,
+    // above the pointer guard, and aimed on the next frame the cursor moves.
+    if core::mem::take(&mut ask.0) && *mode == OrderMode::Idle {
+        if chosen.is_empty() {
+            ack.text = "nothing to order: select a ship first".into();
+            ack.left = ACK_LIFE * 2.0;
+        } else {
+            *mode = OrderMode::Move;
+            *order = NavOrder {
+                anchor: centre,
+                on_plane: centre,
+                lift: 0.0,
+                lifting: false,
+                radius: radius.max(1e-3),
+            };
+        }
     }
 
     let Ok(window) = windows.single() else { return };
