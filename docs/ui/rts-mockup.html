@@ -789,6 +789,14 @@ body {
         though it were a button that had been pressed, and closed the thing. <b>An attribute that names an
         ACTION and an attribute that names STATE must not share a name</b>, because one selector matches both
         and the ancestor always wins. The action is <code>data-open</code> now.</p>
+        <p>And it goes WAY out. The horizon is the operational area, nine hundred units, which puts the eye
+        two thousand back against the field camera's four hundred and twenty: the fleet becomes the cluster
+        it actually is and the empty space round it is the part worth seeing, because empty space is where
+        the swarm is not yet. Three hundred was the first cut and it was a close look at the same battle
+        with rings on it. The placeholder fleet was SPREAD to match, because a battlefield whose whole fleet
+        fits in one screen is a battlefield that never needed an overview: the field camera shows the ship
+        you picked and its neighbours, the sensors map shows where everything else is, and that division is
+        what the two views are for.</p>
         <p>The ANGLE and the PIVOT are yours; the DISTANCE is the map's own, and that is the one thing it
         does not inherit: a sensors view that took the zoom as well would show a tenth of the horizon
         whenever you happened to be in close. It is solved rather than tuned, in angles, because that is what a perspective camera frames
@@ -1414,12 +1422,12 @@ body {
   // coverage, coverage is a property of the ship, and a picture that invented
   // it would be a picture nothing in the game agrees with.
   var CATS = [
-    { id: "fighter", name: "Fighter", icon: "cl-fighter", key: "F", cap: 18, sr: 52 },
-    { id: "corvette", name: "Corvette", icon: "cl-corvette", key: "C", cap: 12, sr: 64 },
-    { id: "frigate", name: "Frigate", icon: "cl-frigate", key: "R", cap: 21, sr: 86 },
-    { id: "capital", name: "Capital", icon: "cl-capital", key: "P", cap: 15, sr: 132 },
-    { id: "utility", name: "Utility", icon: "cl-utility", key: "T", cap: 50, sr: 58 },
-    { id: "platform", name: "Platform", icon: "cl-platform", key: "L", cap: 20, sr: 150 }
+    { id: "fighter", name: "Fighter", icon: "cl-fighter", key: "F", cap: 18, sr: 150 },
+    { id: "corvette", name: "Corvette", icon: "cl-corvette", key: "C", cap: 12, sr: 190 },
+    { id: "frigate", name: "Frigate", icon: "cl-frigate", key: "R", cap: 21, sr: 260 },
+    { id: "capital", name: "Capital", icon: "cl-capital", key: "P", cap: 15, sr: 400 },
+    { id: "utility", name: "Utility", icon: "cl-utility", key: "T", cap: 50, sr: 175 },
+    { id: "platform", name: "Platform", icon: "cl-platform", key: "L", cap: 20, sr: 450 }
   ];
   var byKey = {};
   SHIPS.forEach(function (s) { byKey[s.key] = s; });
@@ -1855,8 +1863,11 @@ body {
   var renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   var scene = new THREE.Scene();
-  var camera = new THREE.PerspectiveCamera(46, 16 / 9, 1, 8000);
-  var orbit = { yaw: 0.62, pitch: 0.28, dist: 300, focus: new THREE.Vector3() };
+  var camera = new THREE.PerspectiveCamera(46, 16 / 9, 1, 12000);
+  // 420 rather than 300, because the fleet is spread over the area now: the
+  // field camera has to show the ship you picked AND its neighbours, or every
+  // question about two ships at once becomes a trip to the sensors map.
+  var orbit = { yaw: 0.62, pitch: 0.28, dist: 420, focus: new THREE.Vector3() };
   var camDist = orbit.dist;   // what the eye is actually at, eased toward the goal
   // Where an orbit's eye stands, written ONCE. The field's camera and the
   // sensors map are the same orbit at two distances, and two copies of this
@@ -1923,15 +1934,22 @@ body {
     hulls.push(h);
     return h;
   }
+  // The fleet is spread over the AREA, not packed round the origin. It used to
+  // sit inside a hundred and sixty units because that is what the field camera
+  // shows at its default zoom, which made the sensors map one bright blob: a
+  // battlefield whose whole fleet fits in one screen is a battlefield that
+  // never needed an overview. Spread, the field camera shows the ship you
+  // picked and its neighbours and the sensors map shows where everything else
+  // is, which is the division of labour the two views exist for.
   spawn("carrier", 0, 0, 0, 0.42).mods = { prod: true, hangar: true };
-  spawn("destroyer", -140, 16, 70, 1.1);
-  spawn("ion", 110, -20, -46, -0.5);
-  spawn("flak", 146, 12, 34, 2.2);
-  spawn("collector", -80, -30, -80, 0.9);
-  spawn("collector", -110, -20, -50, 1.6);
-  spawn("lance", 56, 34, 96, 0.2);
-  spawn("lance", 72, 38, 104, 0.3);
-  spawn("scout", -46, 46, -126, 2.8);
+  spawn("destroyer", -330, 24, 170, 1.1);
+  spawn("ion", 265, -34, -110, -0.5);
+  spawn("flak", 350, 20, 82, 2.2);
+  spawn("collector", -420, -46, -390, 0.9);
+  spawn("collector", -470, -32, -330, 1.6);
+  spawn("lance", 130, 52, 225, 0.2);
+  spawn("lance", 168, 58, 250, 0.3);
+  spawn("scout", -110, 70, -520, 2.8);
 
   (function rock() {
     var g = new THREE.IcosahedronGeometry(44, 2);
@@ -1943,7 +1961,7 @@ body {
     }
     g.computeVertexNormals();
     var r = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0x4d443a, flatShading: true }));
-    r.position.set(-160, -40, -120);
+    r.position.set(-430, -56, -350);
     scene.add(r);
   })();
 
@@ -2786,7 +2804,14 @@ body {
   // order's triangle read the other way round: a picture of a battle in three
   // dimensions with no drop lines is a picture that cannot say how high
   // anything is.
-  var SENSOR_R = 300;        // world units to the sensor horizon
+  // The horizon is the OPERATIONAL AREA, not a ring round the fleet. Three
+  // hundred put the camera six hundred out, which is a close look at the same
+  // battle with rings on it: the ships were still ships and the picture still
+  // answered "what is my flagship doing" rather than "where is everything".
+  // Nine hundred puts it two thousand out, the fleet becomes the cluster it
+  // actually is, and the empty space round it is the part worth seeing, since
+  // empty space is where the swarm is not yet.
+  var SENSOR_R = 900;        // world units to the sensor horizon
   var SENSOR_FILL = 0.88;    // what share of the frame the horizon takes up
   var SENSOR_NEAR = 2.2;     // and never closer than this many radii
   var ink = {};
@@ -2799,7 +2824,7 @@ body {
   }
 
   var sv = new THREE.Vector3();
-  var ROCK = { x: -160, y: -40, z: -120, r: 50 };
+  var ROCK = { x: -430, y: -56, z: -350, r: 50 };
 
   // The ANGLE and the PIVOT are the player's; the DISTANCE is the map's own,
   // because a sensors manager exists to show the whole horizon and a view that
@@ -2855,7 +2880,7 @@ body {
   function sensorGrid(g, w, h) {
     var r, a, p, q;
     g.lineWidth = 1;
-    for (r = 75; r <= SENSOR_R; r += 75) {
+    for (r = SENSOR_R / 4; r <= SENSOR_R + 1; r += SENSOR_R / 4) {
       g.strokeStyle = r === SENSOR_R ? ink["edge-lit"] : ink.edge;
       planeRing(g, r, w, h); g.stroke();
     }
@@ -2971,7 +2996,10 @@ body {
         g.fillStyle = ink.edge;
         g.fillRect(foot[0] - 2.5, foot[1] - 1, 5, 2);
       }
-      var big = hh.spec.cat === "capital" ? 7 : hh.spec.cat === "frigate" ? 6 : 5;
+      // Bigger than they were, because at this range the hull under a blip is
+      // a few pixels of grey: the MARK is what a player reads now, and it has
+      // to be findable without being a blob that hides its own neighbours.
+      var big = hh.spec.cat === "capital" ? 9 : hh.spec.cat === "frigate" ? 7 : 6;
       g.fillStyle = hh === sel ? ink.gold : ink["ink-hot"];
       g.fillRect(q[0] - big / 2, q[1] - big / 2, big, big);
       if (hh === sel) {
