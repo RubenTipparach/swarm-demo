@@ -403,6 +403,18 @@ pub(crate) fn go_critical(
             f.kind = SparkKind::Blast;
         }
         sparks.extend(flash);
+        // And it LIGHTS what is standing round it. Fourteen hundred additive
+        // sparks are a great many bright pixels and not one lumen: a reactor
+        // going off a length from a carrier left that carrier exactly the
+        // colour it was on the frame before, which is a fireball painted on
+        // the picture rather than one happening in it.
+        flash_light(
+            &mut commands,
+            centre,
+            blast.radius,
+            REACTOR_LUMENS,
+            tick.tick,
+        );
         fx.blasts.push(blast);
         // And the hull that was is gone. Every cell of it is in a piece, in
         // the dust or in the fireball now, and its bricks go with it.

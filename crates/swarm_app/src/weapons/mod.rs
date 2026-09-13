@@ -83,7 +83,17 @@ pub(crate) struct BeamQuads(pub(crate) usize);
 /// was on that line at the tick it went off and nothing after. Sweeping it
 /// carves an ARC through the cloud over the nine ticks it lives, which is
 /// what sets off a line of kills a player can watch travel.
-pub(crate) const BEAM_WIDTH: f32 = 5.5;
+///
+/// HALVED, from 5.5, on the owner's call: it was too fat a bar of light. One
+/// number does both jobs here, because `Beam.radius` is what the mesh is built
+/// from AND what the swarm is handed as the capsule, so what is drawn is
+/// exactly what kills and the two cannot drift. The cost is therefore real and
+/// is not the same as the change: the width halves, so the capsule's cross
+/// section goes to a QUARTER, and a pass through the cloud kills about a
+/// quarter as many motes. What carries the weapon now is the sweep and the
+/// second it lives rather than its thickness, and both of those are what the
+/// note above was actually about.
+pub(crate) const BEAM_WIDTH: f32 = 2.75;
 
 pub(crate) const BEAM_SWEEP: f32 = 0.55;
 
