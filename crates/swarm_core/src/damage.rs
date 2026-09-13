@@ -463,6 +463,64 @@ impl DamageGrid {
     }
 }
 
+/// What is left of one of a hull's SUBSYSTEMS: the cells it was built with and
+/// the cells of those still alive.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Wear {
+    pub built: usize,
+    pub alive: usize,
+}
+
+impl Wear {
+    /// One when it is whole, nought when every cell of it is gone, and one for
+    /// a subsystem the hull never had: a ship with no ordnance bay is not a
+    /// ship whose ordnance bay is destroyed, and a readout that showed those
+    /// alike would put a red bar on every hull in the fleet for a system none
+    /// of them carries.
+    pub fn share(&self) -> f32 {
+        if self.built == 0 {
+            1.0
+        } else {
+            self.alive as f32 / self.built as f32
+        }
+    }
+
+    /// Whether the hull has this system at all, which is what decides if it is
+    /// worth a row.
+    pub fn fitted(&self) -> bool {
+        self.built > 0
+    }
+}
+
+/// What is left of every subsystem of a hull, indexed by `purpose`.
+///
+/// The export says what each cell is FOR, so what a subsystem is worth is a
+/// count over the cells that carry its purpose and nothing has to be authored
+/// beside the hull: a class with no ordnance has an empty bay by construction
+/// rather than by a table somebody kept up to date.
+///
+/// This is the readout that tells a reactor still at full from a ship eaten
+/// down to nothing, which is the one question a health bar over a hull cannot
+/// answer: the bar reads the core, and a hull can be most of the way to gone
+/// with its core untouched.
+pub fn wear_by_purpose(m: &VoxelModel, d: &DamageGrid) -> [Wear; 9] {
+    let mut out = [Wear::default(); 9];
+    for n in 0..m.len() {
+        if m.grid[n] == mat::EMPTY {
+            continue;
+        }
+        let p = m.purp[n] as usize;
+        if p >= out.len() {
+            continue;
+        }
+        out[p].built += 1;
+        if !d.is_dead(n) {
+            out[p].alive += 1;
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -571,6 +629,34 @@ mod tests {
         assert!(dirty.contains(&d.brick_of(m.index(7, 9, 8))));
         assert_eq!(dirty.len(), 3, "{dirty:?}");
         assert!(d.take_dirty().is_empty());
+    }
+
+    #[test]
+    fn a_subsystem_reports_what_is_left_of_its_own_cells() {
+        let mut m = slab();
+        // Two cells of propulsion in a slab that is otherwise structure.
+        for n in 0..m.len() {
+            if m.grid[n] != mat::EMPTY {
+                m.purp[n] = crate::voxel::purpose::STRUCTURE;
+            }
+        }
+        let a = m.index(3, 9, 3);
+        let b = m.index(4, 9, 3);
+        m.purp[a] = crate::voxel::purpose::PROPULSION;
+        m.purp[b] = crate::voxel::purpose::PROPULSION;
+        let mut d = DamageGrid::new(&m);
+        let w = wear_by_purpose(&m, &d);
+        assert_eq!(w[crate::voxel::purpose::PROPULSION as usize].built, 2);
+        assert!((w[crate::voxel::purpose::PROPULSION as usize].share() - 1.0).abs() < 1e-6);
+        // Half the drives gone is half the drives left.
+        d.chip(a, 1e9, 1, [0.0, 1.0, 0.0]);
+        let w = wear_by_purpose(&m, &d);
+        assert!((w[crate::voxel::purpose::PROPULSION as usize].share() - 0.5).abs() < 1e-6);
+        // A system the hull never had reads WHOLE, not destroyed: a ship with
+        // no ordnance bay is not a ship whose ordnance bay is wrecked.
+        let none = w[crate::voxel::purpose::ORDNANCE as usize];
+        assert!(!none.fitted());
+        assert_eq!(none.share(), 1.0);
     }
 
     #[test]

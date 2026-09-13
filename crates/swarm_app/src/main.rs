@@ -62,12 +62,12 @@ use swarm::{
     spawn_mote_mesh, spawn_spark_mesh, Capsule, FxTextures, Shots, SparkQueue, SwarmClock,
     SwarmConfig, SwarmPlugin, GRID,
 };
-use swarm_core::voxel::{mat, SURF_DRIVE};
+use swarm_core::voxel::{mat, purpose, SURF_DRIVE};
 use swarm_core::{
     alien::{generate, Archetype},
     body::Body,
     build::{self, Category, Module, Order, Slots, Task, Tier, Yard},
-    damage::{chunk_for, Breach, Chunk, DamageGrid, Vent},
+    damage::{chunk_for, wear_by_purpose, Breach, Chunk, DamageGrid, Vent, Wear},
     economy::{yield_of, Cube, Cut, Pack, Yield, DATA_CUBE, ORE_CUBE},
     formation::{self, Shape},
     fx::{

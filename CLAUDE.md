@@ -1582,6 +1582,24 @@ range, and a band box is in screen space by definition. Anything that has to
 hold its size in the WORLD stays a mesh, which is why the nav disc and the
 beams are not here.
 
+**And the bar is not the whole story, which is why the unit panel says what is
+LEFT of each subsystem.** A bar over a hull reads the reactor, and that is the
+right thing for it to read: the reactor is the only thing that kills a ship, so
+it is the only honest thing to put on a bar that means "about to die". What it
+cannot answer is the question a chewed ship actually raises. The teeth are
+spread over the sphere and the core is the most buried thing in the hull, so a
+frigate is eaten most of the way to gone with its reactor untouched and a green
+bar over it the whole time, which is exactly the picture that looked like the
+damage model had stopped working.
+
+`wear_by_purpose` counts what is left of each system off the cells the export
+said were FOR it, so nothing is authored beside the hull and a class with no
+ordnance bay has none by construction. Four of them sit under the reactor bar,
+drives, guns, command and structure, and a system the ship does not carry reads
+WHOLE rather than destroyed: a ship with no ordnance is not a ship whose
+ordnance is wrecked, and a readout that showed those alike would put a red bar
+on every hull in the fleet.
+
 **And a bar is placed in AUTHORED pixels, not window ones.** The deck is
 authored at 1600 by 900 and scaled by the window's height through `UiScale`, so
 a `Val::Px` is an authored pixel and what `world_to_viewport` hands back is a
