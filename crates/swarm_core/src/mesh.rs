@@ -16,7 +16,7 @@
 //! brick boundary, so a brick's mesh depends on its own cells and a one cell
 //! halo and on nothing further away.
 
-use crate::damage::{crust_alpha, ramp, DamageGrid, CHAR, HEAT_STEPS};
+use crate::damage::{crust_alpha, glow_of, ramp, DamageGrid, CHAR, HEAT_STEPS};
 use crate::fx::{ember_tile, ember_uv};
 use crate::rng::hash_cell;
 use crate::voxel::{mat, VoxelModel, SURF_COUNT};
@@ -339,7 +339,11 @@ pub fn mesh_region(
                     // cell, and two heats must never merge into one quad.
                     if let Some((dc, heat)) = dead_at(ni, nj, nk) {
                         let tile = ember_tile(dc);
+                        // The gain rides the heat: see `glow_of`. A constant
+                        // one on the material multiplied char up into a grey.
+                        let g_hot = glow_of(heat);
                         let [r, g, b] = ramp(heat);
+                        let (r, g, b) = (r * g_hot, g * g_hot, b * g_hot);
                         let mut euv = [[0.0f32; 2]; 4];
                         for c in 0..4 {
                             euv[c] = ember_uv(tile, duv[c]);

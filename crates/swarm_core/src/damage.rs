@@ -585,10 +585,13 @@ mod tests {
         // The dead plate cell had one face out. Its five live neighbours now
         // each show one face into the hole, and those are wound faces.
         assert_eq!(after.wound.quads(), 5);
+        // White hot AND over the bloom threshold, which is one fact: the gain
+        // rides the heat in the vertex colour rather than sitting as a
+        // constant on the material, so this pins the hot end of both.
         assert_eq!(
             after.wound.colours[0],
-            [1.0, 1.0, 1.0, 1.0],
-            "fresh is white hot"
+            [WOUND_GLOW, WOUND_GLOW, WOUND_GLOW, 1.0],
+            "fresh is white hot and over white"
         );
         assert_eq!(
             after.skin_all().quad_cells.len() + after.wound.quad_cells.len(),
@@ -596,7 +599,20 @@ mod tests {
         );
         let cooled = greedy_mesh(&m, Some((&d, 10 + COOL_TICKS)));
         assert_eq!(cooled.wound.quads(), 5);
-        assert!(cooled.wound.colours[0][0] < 0.2, "char after COOL_TICKS");
+        // CHAR, and the gain is one down here: a cold wound that came out at
+        // three and a half times its own colour was a grey wash rather than a
+        // burnt patch, and the hole stopped being visible the moment it
+        // stopped glowing.
+        let cold = cooled.wound.colours[0];
+        assert!(cold[0] < 0.2, "char after COOL_TICKS, not a grey");
+        assert!(
+            (cold[0] - CHAR[0]).abs() < 0.05,
+            "cold is the char it was authored as, not a multiple of it"
+        );
+        // And it COVERS what it burned: the machinery under a wound is lit and
+        // in the hull's own paint, so a crust that let most of it through left
+        // a cold crater looking like plating.
+        assert!(cold[3] > 0.75, "the crust is still a patch once it is cold");
         assert_eq!(d.heat_key(10), HEAT_STEPS);
         assert_eq!(d.heat_key(10 + COOL_TICKS), 0);
     }
