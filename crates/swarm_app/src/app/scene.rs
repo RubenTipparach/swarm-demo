@@ -80,6 +80,13 @@ pub(crate) struct SceneSpec {
     /// A playground rather than a fight: a target dummy, the range, the
     /// toggles, and no verdict.
     pub(crate) sandbox: bool,
+    /// A SIEGE rather than a battle scenario: a station you build from, rocks
+    /// to mine, and carriers arriving on a clock that never stops. The two
+    /// skirmish modes are the same field with two things to do on it, which
+    /// is why this is a flag on the scene rather than a second scene: the
+    /// swarm, the rocks, the yard and the tide are one set of machinery and
+    /// what changes is which of them the mode turns on.
+    pub(crate) base: bool,
     /// One for real time, a quarter for slow motion. Read by the CPU's step
     /// and copied to the swarm's clock, so both halves slow together.
     pub(crate) time_scale: f32,
@@ -135,6 +142,43 @@ impl Tick {
 }
 
 impl SceneSpec {
+    /// Whether the swarm arrives on a CLOCK rather than all at once, and
+    /// therefore whether killing every carrier can be a victory.
+    ///
+    /// A retreat and the base are the same siege: probes, then the swarm,
+    /// then the fleet, and one more carrier for ever after that. What differs
+    /// is the way out, and only one of them has one. Written once because
+    /// three systems ask it (what the field opens with, what the tide spawns,
+    /// and what `judge` calls a win) and a copy in each is the copy one of
+    /// them would have differently.
+    pub(crate) fn sieged(&self) -> bool {
+        self.retreat || self.base
+    }
+
+    /// Turn the base building mode ON, which is everything a siege needs that
+    /// a battle scenario does not.
+    ///
+    /// One implementation and two callers (the setup form's Launch and the
+    /// `--base` flag), because a mode set up one way on the form and another
+    /// way on the command line is a mode the harness cannot photograph.
+    ///
+    /// Three things, and each is the reason one of the other modes exists.
+    /// The carriers arrive on the TIDE, so the motherships row stops meaning
+    /// "what stands there at tick nought" and starts meaning what the fleet
+    /// phase brings. There are ROCKS, because a base with nothing to mine is
+    /// a build menu with an empty bank behind it. And the opening pair of
+    /// support ships is a miner and a tanker, which is the run's own, because
+    /// what fills the bank is a cutter and what turns crystal into fuel is a
+    /// tanker and neither is any use alone.
+    pub(crate) fn open_base(&mut self) {
+        self.tide = Tide {
+            carriers: self.hives.max(1),
+            ..Tide::default()
+        };
+        self.rocks = self.rocks.max(BASE_ROCKS);
+        self.support = vec![Role::Miner, Role::Tanker];
+    }
+
     /// One frame's worth of time for everything on the CPU that integrates
     /// anything: a sixtieth under `--fixed-dt`, so a headless render is a
     /// function of its frame count and not of the machine, and the frame's
@@ -337,7 +381,7 @@ fn spawn_hives(
     let want = radius * HIVE_RADIUS;
     // A retreat's carriers arrive on the tide rather than all at once, so
     // the field starts with whatever the first tick of it calls for.
-    let now = if scene.retreat {
+    let now = if scene.sieged() {
         scene.tide.carriers_at(0)
     } else {
         scene.hives
@@ -632,3 +676,10 @@ fn aim_camera(
         *xf = Transform::from_translation(eye).looking_at(target, Vec3::Y);
     }
 }
+
+/// The fewest asteroids a base is opened with.
+///
+/// A base is held by what it can build and what it builds is paid for out of
+/// the ground, so a field thinner than this is a mode whose economy runs out
+/// before its first carrier arrives. Eight is the run's own quiet system.
+pub(crate) const BASE_ROCKS: usize = 8;

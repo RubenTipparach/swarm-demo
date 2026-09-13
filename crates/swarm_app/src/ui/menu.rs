@@ -1,5 +1,4 @@
-//! The front door: Skirmish, Sandbox, Campaign (not yet), Quit, over the
-//! live sky.
+//! The front door: Skirmish, Sandbox, Campaign, Quit, over the live sky.
 
 use crate::*;
 
@@ -33,7 +32,7 @@ pub(crate) fn build_menu(mut commands: Commands) {
             });
             button(p, "Skirmish", TEXT, MenuAction::Skirmish);
             button(p, "Sandbox", TEXT, MenuAction::Sandbox);
-            button(p, "Campaign  (not yet)", DIM, MenuAction::Campaign);
+            button(p, "Campaign", TEXT, MenuAction::Campaign);
             button(p, "Quit", TEXT, MenuAction::Quit);
         });
     commands.spawn((
@@ -58,7 +57,10 @@ pub(crate) fn build_menu(mut commands: Commands) {
 pub(crate) fn menu_input(
     presses: Query<(&Interaction, &MenuAction), Changed<Interaction>>,
     keys: Res<ButtonInput<KeyCode>>,
+    fleet: Res<Fleet>,
     mut form: ResMut<SetupForm>,
+    mut run: ResMut<RunState>,
+    mut scene: ResMut<SceneSpec>,
     mut next: ResMut<NextState<AppState>>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -76,9 +78,30 @@ pub(crate) fn menu_input(
             form.sandbox = action == MenuAction::Sandbox;
             next.set(AppState::Setup);
         }
-        // Greyed until the campaign lands: a button that does nothing says
-        // so in its own label rather than by silence.
-        MenuAction::Campaign => {}
+        // The campaign is The Long Retreat, and its front door is the MAP
+        // rather than the setup form: what a system holds is the node's own
+        // answer (its tag decides the carriers, the rocks and which way the
+        // field leans), so a form asking for hives and asteroids would be a
+        // page of controls a run overwrites on the way in. The flagship is
+        // the one thing a player does pick, and the form already carries it.
+        MenuAction::Campaign => {
+            let hull = fleet
+                .0
+                .get(form.flagship)
+                .map(|h| h.key.clone())
+                .unwrap_or_else(|| scene.hull.clone());
+            // An LCG step off the seed the run is holding, so `--run-seed`
+            // still decides the first campaign and a second press is a
+            // different map rather than the same one again.
+            let seed = run
+                .seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            *run = RunState::new(seed, &hull);
+            run.write(&mut scene);
+            info!("{}", run.brief());
+            next.set(AppState::Map);
+        }
         MenuAction::Quit => {
             exit.write(AppExit::Success);
         }

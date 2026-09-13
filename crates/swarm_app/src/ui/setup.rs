@@ -10,6 +10,8 @@ use crate::*;
 #[derive(Resource)]
 pub(crate) struct SetupForm {
     pub(crate) sandbox: bool,
+    /// Which of the skirmish's two modes: a battle scenario, or the base.
+    pub(crate) base: bool,
     pub(crate) hives: usize,
     /// Small, medium, large: an index into `SWARMS`.
     pub(crate) swarm: usize,
@@ -42,6 +44,7 @@ impl SetupForm {
         };
         SetupForm {
             sandbox: scene.sandbox,
+            base: scene.base,
             hives: scene.hives.clamp(1, swarm::MAX_HIVES),
             swarm: nearest(&SWARMS.map(|s| s.1 as f32), scene.motes as f32),
             delay: scene.launch_delay.clamp(0.0, 20.0),
@@ -59,6 +62,12 @@ impl SetupForm {
     /// (the camera, the chewers, the cadence) stays as the arguments left it.
     pub(crate) fn apply(&self, scene: &mut SceneSpec, fleet: &Fleet) {
         scene.sandbox = self.sandbox;
+        scene.base = self.base && !self.sandbox;
+        if scene.base {
+            scene.open_base();
+        } else {
+            scene.support = Vec::new();
+        }
         scene.hives = self.hives;
         scene.motes = SWARMS[self.swarm].1;
         scene.launch_delay = self.delay;
@@ -96,6 +105,8 @@ impl SetupForm {
             Field::Target => self.target = ring(self.target, fleet.0.len().max(1)),
             Field::Escorts => self.escorts = clamp(self.escorts as i32, 0, WING_MAX as i32) as u32,
             Field::Fighters => self.fighters = clamp(self.fighters as i32, 0, 24) as u32,
+            Field::Mode => self.base = !self.base,
+            Field::ModeSays => {}
             Field::Facts => {}
         }
     }
@@ -118,6 +129,18 @@ impl SetupForm {
                 n => format!("{n} escorts"),
             },
             Field::Fighters => self.fighters.to_string(),
+            Field::Mode => if self.base {
+                "base building"
+            } else {
+                "battle scenario"
+            }
+            .to_string(),
+            Field::ModeSays => if self.base {
+                "hold a station against a tide that never stops: mine, build, research"
+            } else {
+                "destroy every mothership"
+            }
+            .to_string(),
             Field::Facts => facts.line(fleet.0.get(self.flagship).map_or("", |h| &h.key)),
         }
     }
@@ -125,6 +148,14 @@ impl SetupForm {
 
 #[derive(Component, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum Field {
+    /// Which of the two skirmish modes. A ring of two, so either arrow is the
+    /// other one: a mode is a choice between named things rather than a
+    /// number, and the arrows are what the whole form is built out of.
+    Mode,
+    /// The line under the mode: what winning it is. A mode is two words and
+    /// what those words COST a player is a sentence, which is the flagship's
+    /// own facts line arrived at for a different pick.
+    ModeSays,
     Hives,
     Swarm,
     Delay,
@@ -206,17 +237,20 @@ fn stepper_row(p: &mut ChildSpawnerCommands, label: &str, field: Field) {
     });
 }
 
-pub(crate) fn build_setup(mut commands: Commands, form: Res<SetupForm>) {
-    let column = |left: bool| {
-        panel(Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(40.0),
-            left: if left { Val::Px(40.0) } else { Val::Auto },
-            right: if left { Val::Auto } else { Val::Px(40.0) },
-            width: Val::Px(400.0),
-            ..default()
-        })
-    };
+/// A column of the form: the two panels either side.
+fn column(left: bool) -> impl Bundle {
+    panel(Node {
+        position_type: PositionType::Absolute,
+        top: Val::Px(40.0),
+        left: if left { Val::Px(40.0) } else { Val::Auto },
+        right: if left { Val::Auto } else { Val::Px(40.0) },
+        width: Val::Px(400.0),
+        ..default()
+    })
+}
+
+/// What the swarm brings.
+fn enemy_column(commands: &mut Commands) {
     commands
         .spawn((DespawnOnExit(AppState::Setup), column(true)))
         .with_children(|p| {
@@ -228,27 +262,68 @@ pub(crate) fn build_setup(mut commands: Commands, form: Res<SetupForm>) {
             stepper_row(p, "asteroids", Field::Rocks);
             stepper_row(p, "seed", Field::Seed);
         });
+}
+
+/// What you bring.
+fn your_column(commands: &mut Commands, sandbox: bool) {
     commands
         .spawn((DespawnOnExit(AppState::Setup), column(false)))
         .with_children(|p| {
             text(p, "YOUR SIDE", 12.0, MUTED);
             stepper_row(p, "flagship", Field::Flagship);
-            p.spawn((
-                Text::new(""),
-                TextFont {
-                    font_size: 12.0,
-                    ..default()
-                },
-                TextColor(MUTED),
-                Readout(Field::Facts),
-                Pickable::IGNORE,
-            ));
+            says(p, Field::Facts);
             stepper_row(p, "wing", Field::Escorts);
             stepper_row(p, "fighters", Field::Fighters);
-            if form.sandbox {
+            if sandbox {
                 stepper_row(p, "target dummy", Field::Target);
             }
         });
+}
+
+/// The MODE, in its OWN panel between the two columns, because it is not a
+/// setting of either: it is what the whole form is read in the light of. A
+/// battle scenario is won by killing the carriers and the base is held
+/// against a tide that never stops, and the first cut put the row under THE
+/// ENEMY, where it reads as one more thing the swarm brings.
+fn mode_panel(commands: &mut Commands) {
+    commands
+        .spawn((
+            DespawnOnExit(AppState::Setup),
+            panel(Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(40.0),
+                left: Val::Px(470.0),
+                width: Val::Px(340.0),
+                ..default()
+            }),
+        ))
+        .with_children(|p| {
+            text(p, "THE SKIRMISH", 12.0, MUTED);
+            stepper_row(p, "mode", Field::Mode);
+            says(p, Field::ModeSays);
+        });
+}
+
+/// A line under a row saying what the pick above it MEANS.
+///
+/// Two rows carry one (the flagship's cells and guns, and what winning the
+/// mode is), so it is one function: a readout is a marker and a size, and
+/// two copies is two places for the size to drift.
+fn says(p: &mut ChildSpawnerCommands, field: Field) {
+    p.spawn((
+        Text::new(""),
+        TextFont {
+            font_size: 12.0,
+            ..default()
+        },
+        TextColor(MUTED),
+        Readout(field),
+        Pickable::IGNORE,
+    ));
+}
+
+/// Back, Launch and the word for which form this is.
+fn setup_footer(commands: &mut Commands, sandbox: bool) {
     let corner = |left: bool| Node {
         position_type: PositionType::Absolute,
         bottom: Val::Px(40.0),
@@ -272,16 +347,12 @@ pub(crate) fn build_setup(mut commands: Commands, form: Res<SetupForm>) {
             Pickable::IGNORE,
         ))
         .with_children(|p| {
-            button(
-                p,
-                if form.sandbox {
-                    "Open the sandbox"
-                } else {
-                    "Launch"
-                },
-                GOLD_TEXT,
-                LaunchButton,
-            );
+            let go = if sandbox {
+                "Open the sandbox"
+            } else {
+                "Launch"
+            };
+            button(p, go, GOLD_TEXT, LaunchButton);
         });
     commands.spawn((
         DespawnOnExit(AppState::Setup),
@@ -294,7 +365,7 @@ pub(crate) fn build_setup(mut commands: Commands, form: Res<SetupForm>) {
         },
         Pickable::IGNORE,
         children![(
-            Text::new(if form.sandbox { "SANDBOX" } else { "SKIRMISH" }),
+            Text::new(if sandbox { "SANDBOX" } else { "SKIRMISH" }),
             TextFont {
                 font_size: 13.0,
                 ..default()
@@ -303,6 +374,15 @@ pub(crate) fn build_setup(mut commands: Commands, form: Res<SetupForm>) {
             Pickable::IGNORE,
         )],
     ));
+}
+
+pub(crate) fn build_setup(mut commands: Commands, form: Res<SetupForm>) {
+    enemy_column(&mut commands);
+    if !form.sandbox {
+        mode_panel(&mut commands);
+    }
+    your_column(&mut commands, form.sandbox);
+    setup_footer(&mut commands, form.sandbox);
 }
 
 /// The arrows, the two buttons and the keys, and the readouts kept in step

@@ -26,7 +26,7 @@ pub(crate) fn tide_carriers(
     tex: Res<Textures>,
     cfg: Res<SwarmConfig>,
 ) {
-    if !scene.retreat {
+    if !scene.sieged() {
         return;
     }
     let phase = scene.tide.phase_at(tick.tick);

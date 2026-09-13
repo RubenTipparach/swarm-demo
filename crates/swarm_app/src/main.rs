@@ -199,6 +199,9 @@ struct Args {
     /// A system of The Long Retreat: gather, hold, and jump out before the
     /// swarm's fleet arrives.
     retreat: bool,
+    /// `--base` opens the skirmish's base building mode, which is the siege:
+    /// a station, the rocks and a tide that never stops.
+    base: bool,
     /// The run's seed, which is the whole map.
     run_seed: u64,
     /// `--job TICK` puts every support ship to work at that tick, so a
@@ -258,6 +261,7 @@ fn parse_args() -> Args {
         fire: None,
         blast: None,
         retreat: false,
+        base: false,
         run_seed: 0xB0A7,
         job: None,
         support: Vec::new(),
@@ -341,13 +345,20 @@ fn parse_args() -> Args {
             }
             "--sandbox" => a.sandbox = true,
             "--retreat" => a.retreat = true,
+            "--base" => a.base = true,
             "--run-seed" => {
                 a.run_seed = next().parse().expect("--run-seed N");
                 i += 1;
             }
+            // `--job` is the right click that puts every support ship to
+            // work, and BOTH modes with support ships have one now: it used
+            // to turn a run on by itself, which made a base render into a
+            // retreat with a jump drive and a fuel gauge on it. A flag that
+            // quietly changes the mode is a flag that cannot photograph the
+            // other one, so the mode is named on the command line and this
+            // only says when the work starts.
             "--job" => {
                 a.job = Some(next().parse().expect("--job TICK"));
-                a.retreat = true;
                 i += 1;
             }
             "--onward" => {
@@ -506,6 +517,7 @@ fn main() {
         fixed_dt: args.fixed_dt,
         motes: args.motes,
         sandbox: args.sandbox,
+        base: args.base,
         time_scale: 1.0,
         seed: args.seed,
         stand: args.stand,
@@ -515,6 +527,11 @@ fn main() {
         support: Vec::new(),
         lean: Flavour::Ore,
     };
+    let mut scene = scene;
+    if scene.base {
+        scene.open_base();
+    }
+    let scene = scene;
     let mut run = RunState::new(args.run_seed, &scene.hull);
     if !args.support.is_empty() {
         run.fleet = args.support.clone();

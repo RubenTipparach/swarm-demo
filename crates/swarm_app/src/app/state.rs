@@ -244,7 +244,7 @@ pub(crate) fn judge(
     } else {
         ships == 0
     };
-    let verdict = if hives == 0 && !scene.retreat {
+    let verdict = if hives == 0 && !scene.sieged() {
         Some(true)
     } else if gone {
         Some(false)

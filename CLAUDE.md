@@ -1364,6 +1364,70 @@ re-exports every name in `rung`, so nothing outside the crate learned a new
 path, which is exactly what `damage` did when `heat` and `wound` came out of
 it.
 
+## Three ways to play, and the campaign's front door is the MAP
+
+`Skirmish`, `Sandbox` and `Campaign` on the menu, and the campaign button was
+a stub reading "(not yet)" for as long as the run it opens had been finished:
+every piece of The Long Retreat was built and the only thing missing was the
+press that starts one.
+
+**It opens on the MAP rather than on the setup form**, and that is the
+decision worth writing down. What a system holds is the NODE's own answer:
+its tag decides the carriers, the rocks, which way the field leans and what
+the tide brings, and `reset_retreat` writes every one of those into the scene
+on the way into `Playing`. So a form asking for motherships and asteroids
+would be a page of controls a run overwrites the moment it is pressed, which
+is this file's own rule about a control for a mechanic that does not exist,
+arrived at from the other side. The one thing a player does pick is the
+flagship, and the form already carries that.
+
+The seed is an LCG step off the one the run is holding, so `--run-seed` still
+decides the first campaign and a second press is a different map rather than
+the same one again.
+
+## A skirmish is two modes, and they are one field with a different job on it
+
+**Battle scenario** is what the skirmish always was: the carriers stand there
+at tick nought and killing every one of them is the win. **Base building** is
+the siege: the carriers arrive on the TIDE, there are rocks to mine and
+support ships to mine them with, and killing a carrier is never a victory
+because the tide brings more. What you do is build, research and hold.
+
+**It is a flag on the scene rather than a second scene**, because the swarm,
+the rocks, the yard and the tide are one set of machinery and what a mode
+changes is which of them is turned on. `SceneSpec::open_base` is the whole of
+it: the tide, a floor under the asteroids, and the opening pair of support
+ships, which is a miner and a tanker because what fills the bank is a cutter
+and what turns crystal into fuel is a tanker and neither is any use alone.
+One implementation and two callers (the form's Launch and `--base`), because
+a mode set up one way on the form and another way on the command line is a
+mode the harness cannot photograph.
+
+**`SceneSpec::sieged` is the one predicate**, and three systems ask it: what
+the field opens with, what the tide spawns, and what `judge` calls a win. A
+retreat and a base are the same siege and what differs is the way out, which
+only one of them has. Written once, because a copy in each is the copy one of
+them would have differently.
+
+**And `--job` stopped turning a run on by itself.** It is the right click
+that puts every support ship to work, and it used to set `retreat` as a
+convenience because a run was the only mode with support ships. A base render
+therefore came out as a retreat, with a fuel gauge and a JUMP OUT button on
+it: a flag that quietly changes the MODE is a flag that cannot photograph the
+other one. The mode is named on the command line now and `--job` only says
+when the work starts.
+
+**The mode is its own panel on the form**, between the two columns, with a
+line under it saying what winning is. The first cut put the row under THE
+ENEMY, where it reads as one more thing the swarm brings rather than as the
+light the whole form is read in.
+
+**And LAUNCH is greyed.** What launching a ship IS has not been decided,
+so the tab stays on the strip, says "(soon)" in its own label and does not
+open: `PanelTab::ready` is what the press reads. A tab that switched to a
+blank page would be the reinforcement panel's own defect again, which is a
+control a player spends a fight wondering about.
+
 ## The sensors manager is a camera MODE, not a screen
 
 The mockup's own rule and the whole reason it is worth having: it does not
@@ -2820,7 +2884,7 @@ is this one that answers "how much plating would a shot have to get through".
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 118, the core
+cargo test -p swarm_core                                   # 119, the core
 cargo test -p swarm_app                                    # 10, the run and the marks
 python3 tools/shape.py --check                             # no file over 900 lines, no function over 100
 cargo fmt --all -- --check                                 # the format
@@ -2862,6 +2926,12 @@ cargo build --release -p swarm_app
 # this is the one that photographs a hull arriving rather than a bar filling.
 ./target/release/swarm_app --headless --fixed-dt --motes 800 --hives 2 --rocks 2 \
     --chewers 0 --hud --build fighter,20 --frames 200 --zoom 4 --out yard.png
+# Base building: the siege, with a miner already cutting. `--job` is the right
+# click that puts the support ships to work and no longer turns a run on by
+# itself, so this is a BASE rather than a retreat: no jump drive, no fuel
+# gauge, the skirmish bank behind the build menu and a tide that never stops.
+./target/release/swarm_app --headless --fixed-dt --base --hud --motes 600 \
+    --chewers 0 --job 40 --frames 260 --zoom 5 --out base.png
 # The sensors manager, which is the camera pulling back rather than a screen:
 # `--view` is the tab, since a headless run has no pointer to press one with.
 # What to check is the dark wash, the patch the fleet lights on it, and the
