@@ -364,6 +364,94 @@ pub struct Gun {
 /// rather than two copies of it. `aft` is what separates them: a gun looks
 /// out from the hull's own axis, and a drive looks backwards along it,
 /// because that is what a drive is.
+/// How near the centreline the BOW GUN has to be, as a share of the hull's
+/// own half beam.
+///
+/// Measured across the fleet rather than guessed: every gun within 0.05 of
+/// the centreline is either a bow gun or a belly turret, and the next one out
+/// is a Benefactor cruiser's own starboard sponson at 0.48, so the band
+/// between them is empty and a quarter is the middle of it.
+///
+/// It is a test rather than part of the search because "farthest forward"
+/// alone picks a SPONSON on the hulls whose foremost deck mount is out on a
+/// flank, which is what half let through: the Benefactor's starboard battery
+/// came out pointing down the bow with its port twin still looking outboard.
+/// A pair on the foremost station is therefore refused outright rather than
+/// resolved, and only a hull with a genuine centreline mount has a bow gun.
+pub const BOW_BEAM: f32 = 0.25;
+
+/// And how high above the mid plane, as a share of the half depth.
+///
+/// Loose on purpose, because it is here to say TOP and nothing more: a bow
+/// gun under the keel should still look down and out rather than up the nose.
+/// The ones that qualify sit from 0.34 to 0.50, and the first cut had this at
+/// 0.35 and missed the Terran cruiser and destroyer by a hundredth. A
+/// threshold set from the FRIGATE is a threshold that is wrong on the rung
+/// nobody looked at.
+pub const BOW_DECK: f32 = 0.15;
+
+/// The half extents of a model's SOLID cells, which is what a share is of.
+///
+/// The lattice, not the ship: a hull drawn in a 32x32x64 box does not fill it,
+/// so a share of the lattice would mean something different on every rung.
+fn half_extents(m: &VoxelModel) -> [f32; 3] {
+    let mut h = [0.0f32; 3];
+    for c in 0..m.len() {
+        if m.grid[c] == mat::EMPTY {
+            continue;
+        }
+        let p = m.centre_of(c);
+        for a in 0..3 {
+            h[a] = h[a].max(p[a].abs());
+        }
+    }
+    [h[0].max(1e-6), h[1].max(1e-6), h[2].max(1e-6)]
+}
+
+/// Which of a hull's guns is its BOW GUN: the one on top, farthest in front.
+///
+/// ONE per ship, never two, which is what makes this a rule about a ship
+/// rather than about a region of one. It is the mount standing on the deck
+/// over the centreline with NO OTHER GUN ON THE SHIP forward of it; a hull
+/// with no such mount has no bow gun and every one of its guns keeps looking
+/// outboard.
+///
+/// **"Farthest in front" is measured against the other GUNS, not against a
+/// line drawn through the middle of the hull**, and the first cut got that
+/// wrong. Amidships reads as the obvious test and it threw out every corvette
+/// in the fleet: a corvette is a needle whose foremost deck mount sits a
+/// couple of cells abaft its own midpoint with the whole of its nose ahead of
+/// it carrying nothing at all. What that test was actually protecting against
+/// is a hull whose only centreline deck mount is at the STERN with its real
+/// battery out on the flanks forward of it, which is the Rogue and Benefactor
+/// destroyer, and "nothing is forward of it" refuses those by saying so.
+///
+/// It takes the clusters rather than the model because the answer is "which of
+/// these", and a second walk over the cells to ask it would be a second answer
+/// to the question of what a gun even is.
+///
+/// This is the same rule redux-tribes' own `bowRing` keeps, and it has to be:
+/// that project TURNS the cells and this one derives the facing they look
+/// along, so a hull the two disagree about is a barrel drawn one way and a
+/// beam leaving it another. `the_bow_gun_is_the_foremost_deck_mount_over_the_centreline`
+/// is what holds them together over the shipped fleet.
+pub fn bow_gun(m: &VoxelModel, guns: &[(Gun, [f32; 3], Vec<usize>)]) -> Option<usize> {
+    let h = half_extents(m);
+    let fore = guns
+        .iter()
+        .fold(f32::NEG_INFINITY, |z, (_, mid, _)| z.max(mid[2]));
+    guns.iter()
+        .enumerate()
+        .filter(|(_, (_, mid, _))| {
+            mid[2] >= fore && (mid[0] / h[0]).abs() < BOW_BEAM && mid[1] / h[1] > BOW_DECK
+        })
+        // A hull whose foremost station carries a PAIR has neither of them on
+        // the centreline, so the nearer to it wins and the beam test has
+        // already refused both if they are really a broadside.
+        .min_by(|a, b| (a.1 .1[0]).abs().total_cmp(&(b.1 .1[0]).abs()))
+        .map(|(i, _)| i)
+}
+
 fn clusters_of(
     m: &VoxelModel,
     surf: u8,
@@ -507,7 +595,28 @@ pub fn guns_of(m: &VoxelModel) -> Vec<Gun> {
 /// to, which means knowing which cells are the turret and where its pivot is.
 /// The cluster walk already found both and threw them away.
 pub fn gun_clusters(m: &VoxelModel) -> Vec<(Gun, [f32; 3], Vec<usize>)> {
-    clusters_of(m, SURF_WEAPON, None, 6, false)
+    let mut guns = clusters_of(m, SURF_WEAPON, None, 6, false);
+    // And the bow gun looks down the BOW. Radially it looked half up and half
+    // out, which puts a ship's foremost mount at the sky: a gun bolted to the
+    // foredeck fires over the nose, which is what every hull with one is for.
+    if let Some(n) = bow_gun(m, &guns) {
+        let (gun, mid, cells) = &mut guns[n];
+        gun.out = [0.0, 0.0, 1.0];
+        // The muzzle moves with it: it is the cluster's own middle carried out
+        // to its FORWARD face now rather than to whichever face the radial
+        // direction happened to reach, or the barrel would be drawn coming out
+        // of the side of its own turret.
+        let mut reach = 0.0f32;
+        for &c in cells.iter() {
+            let p = m.centre_of(c);
+            if p[2] - mid[2] > reach {
+                reach = p[2] - mid[2];
+                gun.cell = c as u32;
+            }
+        }
+        gun.at = [mid[0], mid[1], mid[2] + reach];
+    }
+    guns
 }
 
 #[cfg(test)]
@@ -753,10 +862,21 @@ mod tests {
             "{} guns is a cluster pass that has come apart",
             guns.len()
         );
-        for g in &guns {
+        // A muzzle looks AWAY from the hull's own axis, never into it, with
+        // the one exception every hull is allowed exactly one of: its BOW GUN,
+        // which looks down the bow and whose radial component is nought by
+        // construction rather than negative.
+        let clusters = gun_clusters(&m);
+        let bow = bow_gun(&m, &clusters);
+        let mut found = 0;
+        for (n, (g, _, _)) in clusters.iter().enumerate() {
             assert!((length(g.out) - 1.0).abs() < 1e-4);
             assert_eq!(m.surf[g.cell as usize], SURF_WEAPON);
-            // A muzzle looks AWAY from the hull's own axis, never into it.
+            if bow == Some(n) {
+                found += 1;
+                assert_eq!(g.out, [0.0, 0.0, 1.0], "the bow gun looks forward");
+                continue;
+            }
             let radial = normalise([g.at[0], g.at[1], 0.0]);
             if length([g.at[0], g.at[1], 0.0]) > 0.05 {
                 assert!(
@@ -767,6 +887,7 @@ mod tests {
                 );
             }
         }
+        assert_eq!(found, 1, "a hull has one bow gun, never two");
         assert_eq!(guns_of(&m), guns, "the same hull gives the same guns");
 
         // And its ENGINES, which are the same walk over a different surface
@@ -820,6 +941,132 @@ mod muzzle_tests {
     /// exposed this: every cell on its outer face ties for "furthest along the
     /// axis", so picking the winner picks a corner, and the flame was drawn
     /// half a bell up and half a bell across from where the engine is.
+    /// Put two guns on one hull, one on the deck over the centreline forward
+    /// and one out on a flank, and hold each to the facing its PLACE earns it.
+    ///
+    /// Built rather than loaded, because the rule is about where a gun stands
+    /// and not about any one class: a hull file would make this a test of the
+    /// Terran frigate, which is the thing it must not be.
+    #[test]
+    fn the_gun_on_top_farthest_in_front_looks_down_the_bow() {
+        let mut m = VoxelModel::new(16, 16, 32, 0.25);
+        // A body, so the half extents are the ship's rather than one turret's.
+        for k in 4..28 {
+            for j in 5..11 {
+                for i in 5..11 {
+                    let n = m.index(i, j, k);
+                    m.grid[n] = mat::PLATE;
+                    m.surf[n] = crate::voxel::SURF_ARMOUR;
+                }
+            }
+        }
+        let mut gun = |i0: usize, j0: usize, k0: usize| {
+            for k in k0..k0 + 2 {
+                for j in j0..j0 + 2 {
+                    for i in i0..i0 + 2 {
+                        let n = m.index(i, j, k);
+                        m.grid[n] = mat::MACHINE;
+                        m.surf[n] = SURF_WEAPON;
+                    }
+                }
+            }
+        };
+        // On the deck, on the centreline, well forward.
+        gun(7, 11, 23);
+        // And a sponson out on the port flank, amidships.
+        gun(3, 7, 14);
+        let guns = guns_of(&m);
+        assert_eq!(guns.len(), 2, "two blocks are two guns");
+        let bow = guns
+            .iter()
+            .max_by(|a, b| a.at[2].total_cmp(&b.at[2]))
+            .expect("a forward gun");
+        assert_eq!(
+            bow.out,
+            [0.0, 0.0, 1.0],
+            "the gun on top farthest in front looks down the bow"
+        );
+        assert_eq!(
+            guns.iter().filter(|g| g.out == [0.0, 0.0, 1.0]).count(),
+            1,
+            "and it is the only one: a hull has one bow gun, never two"
+        );
+        let flank = guns
+            .iter()
+            .min_by(|a, b| a.at[0].total_cmp(&b.at[0]))
+            .expect("a flank gun");
+        assert!(
+            flank.out[0] < -0.5,
+            "a sponson still looks outboard, not forward: {:?}",
+            flank.out
+        );
+        assert!(
+            flank.out[2].abs() < 0.5,
+            "and a sponson amidships has no business pointing down the bow: {:?}",
+            flank.out
+        );
+    }
+
+    /// The two cases "forward of amidships" got wrong, which is why the rule
+    /// measures against the other GUNS instead.
+    ///
+    /// A CORVETTE is a needle whose foremost mount sits abaft its own midpoint
+    /// with nothing ahead of it, and an amidships test threw every one of them
+    /// out. A hull whose only centreline deck mount is at the STERN with its
+    /// battery out on the flanks forward of it is what that test was actually
+    /// protecting against, and it is refused by saying exactly that.
+    #[test]
+    fn a_bow_gun_is_the_foremost_gun_rather_than_a_forward_one() {
+        let body = |m: &mut VoxelModel, k0: usize, k1: usize| {
+            for k in k0..k1 {
+                for j in 5..11 {
+                    for i in 5..11 {
+                        let n = m.index(i, j, k);
+                        m.grid[n] = mat::PLATE;
+                        m.surf[n] = crate::voxel::SURF_ARMOUR;
+                    }
+                }
+            }
+        };
+        let gun = |m: &mut VoxelModel, i0: usize, j0: usize, k0: usize| {
+            for k in k0..k0 + 2 {
+                for j in j0..j0 + 2 {
+                    for i in i0..i0 + 2 {
+                        let n = m.index(i, j, k);
+                        m.grid[n] = mat::MACHINE;
+                        m.surf[n] = SURF_WEAPON;
+                    }
+                }
+            }
+        };
+
+        // A needle with its one mount abaft the middle and a long bare nose.
+        let mut corvette = VoxelModel::new(16, 16, 32, 0.25);
+        body(&mut corvette, 4, 28);
+        gun(&mut corvette, 7, 11, 12);
+        let guns = guns_of(&corvette);
+        assert_eq!(guns.len(), 1);
+        assert_eq!(
+            guns[0].out,
+            [0.0, 0.0, 1.0],
+            "nothing is forward of it, so it is the bow gun wherever it sits"
+        );
+
+        // And a stern mount with a flank battery well forward of it.
+        let mut destroyer = VoxelModel::new(16, 16, 32, 0.25);
+        body(&mut destroyer, 4, 28);
+        gun(&mut destroyer, 7, 11, 6);
+        gun(&mut destroyer, 3, 7, 22);
+        gun(&mut destroyer, 11, 7, 22);
+        let guns = guns_of(&destroyer);
+        assert_eq!(guns.len(), 3, "three blocks are three guns");
+        assert!(
+            guns.iter().all(|g| g.out != [0.0, 0.0, 1.0]),
+            "a stern mount with a battery ahead of it is not a bow gun: {:?}",
+            guns.iter().map(|g| g.out).collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn a_drive_plumes_from_the_centre_of_its_bell() {
         let mut m = VoxelModel::new(16, 16, 16, 0.25);

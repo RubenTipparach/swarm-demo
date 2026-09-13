@@ -105,6 +105,38 @@ pub(crate) struct Ack {
     pub(crate) left: f32,
 }
 
+/// A move order asked for by something that is not the right button.
+///
+/// The deck's Move button sets this and `nav_input` opens the disc from it, in
+/// the SAME arm the right press opens from, because what a move order is has
+/// one implementation and a second opener would be a second disc the day
+/// either learned anything. It is read before the "the pointer over a button
+/// belongs to the button" guard, since the press that set it was on a button
+/// and that guard would eat every one of them.
+#[derive(Resource, Default)]
+pub(crate) struct NavAsk {
+    /// Open the disc.
+    pub(crate) open: bool,
+    /// What the commit does: an ORDER by default, or a rally point.
+    ///
+    /// The disc is the only way this game names a place in three dimensions,
+    /// and it took a prototype and four defects to get right. A second way to
+    /// pick a rally point would be that whole elevation flow written twice, so
+    /// the Rally cell opens the SAME disc and this is what the commit reads.
+    /// Cleared on commit and on cancel, or the next plain move order would
+    /// quietly set a rally instead.
+    pub(crate) rally: bool,
+}
+
+/// The Salvage cell asking for every support ship to be put to work.
+///
+/// A flag rather than the cell doing it, because what a job IS belongs to
+/// `retreat::work` and a button that assigned one itself would be a second
+/// picker: the scripted `--job` already found that out, when its own scan sent
+/// a salvager to a turret that had no cells in it.
+#[derive(Resource, Default)]
+pub(crate) struct WorkAsk(pub(crate) bool);
+
 /// Homeworld's own move flow, which is a MODE rather than a drag.
 ///
 /// Right button opens the disc on the selection, the cursor aims it on the
@@ -132,9 +164,11 @@ pub(crate) fn nav_input(
     cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     over_ui: Query<&Interaction>,
     mut mode: ResMut<OrderMode>,
+    mut ask: ResMut<NavAsk>,
     mut order: ResMut<NavOrder>,
     mut pings: ResMut<Pings>,
     mut ack: ResMut<Ack>,
+    mut rally: ResMut<Rally>,
     mut commands: Commands,
     mut hulls: Query<
         (
@@ -204,6 +238,24 @@ pub(crate) fn nav_input(
         return;
     }
 
+    // Asked for by a button rather than by the right press. Opened here,
+    // above the pointer guard, and aimed on the next frame the cursor moves.
+    if core::mem::take(&mut ask.open) && *mode == OrderMode::Idle {
+        if chosen.is_empty() {
+            ack.text = "nothing to order: select a ship first".into();
+            ack.left = ACK_LIFE * 2.0;
+        } else {
+            *mode = OrderMode::Move;
+            *order = NavOrder {
+                anchor: centre,
+                on_plane: centre,
+                lift: 0.0,
+                lifting: false,
+                radius: radius.max(1e-3),
+            };
+        }
+    }
+
     let Ok(window) = windows.single() else { return };
     let Ok((cam, cam_xf)) = cams.single() else {
         return;
@@ -216,8 +268,9 @@ pub(crate) fn nav_input(
 
     match *mode {
         // The left button is down on a band box, and nothing here may read
-        // the mouse until it comes back up. On the range the click is a shot.
-        OrderMode::Box | OrderMode::Range => return,
+        // the mouse until it comes back up. On the range the click is a shot,
+        // and in Guard it names the ship to guard: one system per press.
+        OrderMode::Box | OrderMode::Range | OrderMode::Guard => return,
         OrderMode::Idle => {
             if !(buttons.just_pressed(MouseButton::Right) && !alt) {
                 return;
@@ -240,11 +293,25 @@ pub(crate) fn nav_input(
         }
         OrderMode::Move => {
             if buttons.just_pressed(MouseButton::Left) && !alt {
+                let to = order.target();
+                // The SAME disc, committing somewhere else. A rally point is a
+                // place in three dimensions and this is the only flow in the
+                // game that can name one: it took a prototype and four defects
+                // to get right, so the Rally cell opens this rather than a
+                // second aimer of its own.
+                if core::mem::take(&mut ask.rally) {
+                    rally.0 = Some(to);
+                    pings.0.push((to, 0.0, order.radius));
+                    ack.text = "rally point set".into();
+                    ack.left = ACK_LIFE;
+                    *mode = OrderMode::Idle;
+                    info!("rally point at ({:.1}, {:.1}, {:.1})", to.x, to.y, to.z);
+                    return;
+                }
                 // The commit. Every selected ship gets the same point offset
                 // by where it already stands relative to the group, so a
                 // formation arrives as a formation instead of all piling
                 // onto one coordinate.
-                let to = order.target();
                 let mut n = 0;
                 for (e, mut hull, xf, sel, escort) in &mut hulls {
                     if sel.is_some() && !hull.dead_hull {

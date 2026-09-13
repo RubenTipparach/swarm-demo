@@ -1,0 +1,3206 @@
+<title>Swarm Command HUD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Share+Tech+Mono&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+:root {
+  --void: #04070c;
+  --gold: #f5c542;
+  --gold-dim: #8a6d18;
+  --teal: #49b6c8;
+  --cyan: #6ff0ff;
+  --ink: #cfe2ee;
+  --dim: #7e94a6;
+  --faint: #4e6274;
+  --green: #63d12b;
+  --red: #e8563c;
+  --ore: #e8a33c;
+  --cry: #58d8c4;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--ink);
+  font-family: "Barlow Semi Condensed", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1600px; margin: 0 auto; padding-block: 24px 64px; padding-left: 16px; padding-right: 16px; }
+
+/* ---------- page chrome ---------- */
+.masthead { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 24px; margin-bottom: 14px; }
+.masthead h1 {
+  font-size: clamp(20px, 3.4vw, 30px); font-weight: 700; margin: 0; line-height: 1;
+  letter-spacing: 0.07em; text-transform: uppercase;
+}
+.masthead h1 span { color: var(--gold); }
+.masthead p { margin: 5px 0 0; color: var(--dim); font-size: 14px; max-width: 64ch; line-height: 1.5; }
+.masthead .sp { flex: 1 1 20px; }
+.hint {
+  font-family: "Share Tech Mono", monospace; font-size: 11.5px; color: var(--faint);
+  border: 1px solid #1c2c3a; padding: 7px 11px; line-height: 1.8;
+}
+.hint b { color: var(--teal); font-weight: 400; }
+
+/* The skin picker belongs to the PAGE, not to the HUD: it is a thing this
+   document does to the mockup, and a control that wore the skin it sets would
+   be unreadable in exactly the moment somebody needed to press it again. */
+.skins { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.skins button {
+  font-family: inherit; font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 6px 11px; cursor: pointer; color: var(--dim);
+  background: #0a141c; border: 1px solid #1c2c3a;
+}
+.skins button:hover { color: var(--ink); border-color: #2e5f78; }
+.skins button[aria-pressed="true"] { color: var(--gold); border-color: var(--gold-dim); background: #17160b; }
+
+/* ---------- the game stage ---------- */
+.stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 9;
+  background: #02040a; overflow: hidden; border: 1px solid #16242f;
+  user-select: none; touch-action: none;
+}
+#world { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* The HUD's palette is a SCOPE, not a global, which is what lets a skin be a
+   skin. Every colour in the chrome was written where it was used (a hundred
+   and twenty five literals over three hundred lines) and a colour written a
+   hundred and twenty five times is a theme nobody can change: they are twenty
+   roles now, declared here, and a skin is a row that overwrites them on this
+   element alone. So the workbench under the stage keeps its own look while
+   the HUD wears whatever it was handed. */
+#hud {
+  position: absolute; left: 0; top: 0; width: 1600px; height: 900px;
+  transform-origin: 0 0; pointer-events: none; z-index: 2;
+  font-size: 13px; line-height: 1;
+  font-family: var(--hud-font);
+  /* Stated here and not left to the page. `color` is INHERITED as a computed
+     value, so `body { color: var(--ink) }` resolves against the root's ink and
+     hands every node inside the HUD that answer: a skin could set --ink all it
+     liked and the text stayed the colour the document booted in. A property
+     has to be re-resolved in the scope the token lives in. */
+  color: var(--ink);
+
+  /* One duration and one curve, so everything that moves moves together. The
+     curve decelerates hard: a panel that arrives gently and leaves at the same
+     rate reads as a thing with weight rather than as a fade. */
+  --dur: 260ms;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  --g-deep: #04121b;   /* the darkest ground: inside a box, behind a bar */
+  --g-fill: #0d2231;   /* a filled cell that is not a button */
+  --btn-a: #123549;    /* a button's top */
+  --btn-b: #0a1f2c;    /* a button's bottom */
+  --row: rgba(9,26,37,.85);      /* a list row over the world */
+  --row-hot: rgba(18,46,63,.82); /* the same row, pointed at */
+  --hover: rgba(90,170,200,.16); /* a wash where there is no row to light */
+  --tip: rgba(5,16,26,.94);      /* a tooltip, which may not be see through */
+  --edge: #1d3f52;     /* every ordinary border and divider */
+  --edge-hot: #2e5f78; /* a border that belongs to a control */
+  --edge-lit: #47869e; /* that border, pointed at */
+  --ink-hot: #7fd8ea;  /* the text on a control */
+  --gold-a: #3f3307;   /* armed: top */
+  --gold-b: #191504;   /* armed: bottom */
+  --go-a: #14501e;     /* launch: top */
+  --go-b: #07260d;     /* launch: bottom */
+  --go-lit: #1e8c2f;   /* launch: armed */
+  --go-edge: #2c8a3a;
+  --go-ink: #9df06f;
+  --go-ink-hot: #d4ffbe;
+}
+#hud > * { pointer-events: auto; }
+#hud button { font-family: inherit; color: inherit; cursor: pointer; padding: 0; }
+/* A skin that draws its controls as RAISED light rather than as a border gets
+   one line each. Windows 98 is a bevel and nothing else, and a bevel is an
+   inset shadow, so a skin with no opinion leaves both at none and every other
+   skin is untouched. */
+#hud button { box-shadow: var(--bevel, none); }
+#hud button[aria-pressed="true"] { box-shadow: var(--bevel-in, var(--bevel, none)); }
+#hud button:focus-visible { outline: 1px solid var(--cyan); outline-offset: -2px; }
+
+/* Nine sliced frames. The url is a 48 px texture baked at boot and the slice
+   is 16, so a corner bracket is the same size on a 24 px strip and on a 724 px
+   panel and nothing stretches that should not. */
+.nine   { border: 16px solid transparent; border-image: var(--n-panel) 16 fill / 16px var(--n-rep); }
+.nine-w { border: 12px solid transparent; border-image: var(--n-well) 16 fill / 12px var(--n-rep); }
+
+.ru { position: absolute; right: 6px; top: 2px; width: 428px; height: 44px;
+      display: flex; align-items: stretch; gap: 8px; }
+.ru .res { display: flex; align-items: center; gap: 7px; }
+.ru .res svg { width: 20px; height: 20px; flex: none; }
+.ru .ore { padding-right: 10px; border-right: 1px solid var(--edge); }
+.ru .ore svg { color: var(--ore); }
+.ru .ore .v { font-family: var(--hud-mono); font-size: 19px; color: var(--ore); }
+.ru .cry { flex: 1; min-width: 0; }
+.ru .cry svg { color: var(--cry); }
+.fuel { flex: 1; min-width: 0; }
+.fn { display: flex; align-items: baseline; gap: 5px; line-height: 1; }
+.fn b { font-family: var(--hud-mono); font-size: 16px; font-weight: 400; color: var(--cry); }
+.fn i { font-style: normal; font-family: var(--hud-mono); font-size: 11px; color: var(--faint); }
+.fbar { margin-top: 3px; height: 5px; background: var(--g-deep); border: 1px solid var(--edge); }
+.fbar span { display: block; height: 100%; width: 0; background: var(--cry); transition: width .3s; }
+.ru[data-jump="1"] .fbar span { background: var(--green); }
+.ru[data-jump="1"] .fn b, .ru[data-jump="1"] .fn i { color: var(--green); }
+
+/* The clock and the roster counts are the only readouts that sit on the WORLD
+   rather than on a panel, and space is black under every skin. So they have
+   their own ink: a parchment HUD writes in sepia on its own pages and in chalk
+   on the sky, because a skin may change what a panel is made of and may not
+   change what is behind the window. */
+.gt { position: absolute; left: 12px; top: 10px; font-family: var(--hud-mono);
+      font-size: 12.5px; color: var(--sky-ink); text-shadow: 0 0 6px #000; }
+
+/* left roster */
+.roster { position: absolute; left: 8px; top: 50px; width: 38px; }
+/* The thumb is baked three by two rather than square, so a plan view fills
+   its frame with no band above and below to waste. The row is then exactly
+   the picture and nothing overlaps its neighbours. */
+.rrow { position: relative; display: block; width: 38px; height: 27px;
+        background: transparent; border: 0; padding: 0 0 3px; font-family: inherit; }
+.rrow img { position: absolute; inset: 0 0 3px; width: 38px; height: 24px; object-fit: contain; }
+.rrow .c { position: absolute; right: 0; bottom: 1px; padding: 0 2px; line-height: 1.2;
+           background: var(--row); font-family: var(--hud-mono);
+           font-size: 10.5px; color: var(--green); text-shadow: 0 0 5px #000; }
+.rrow:hover { background: var(--hover); }
+.rtip { position: absolute; left: 42px; padding: 3px 7px; white-space: nowrap; pointer-events: none;
+        background: var(--tip); border: 1px solid var(--edge-hot);
+        font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); z-index: 8; }
+.rtip b { font-family: var(--hud-mono); letter-spacing: 0; color: var(--teal);
+          text-transform: none; margin-left: 6px; }
+
+/* A panel LEAVES the way it came, which is sideways off its own edge. Fading
+   alone would have it dissolve in place, and a player then has nowhere to
+   point at when they want it back; sliding says where it went. It is
+   `pointer-events: none` while it is gone, or a closed panel goes on
+   swallowing clicks over a third of the field. */
+.rpanel { position: absolute; right: 6px; top: 50px; width: 428px; height: 698px;
+          display: flex; flex-direction: column;
+          transition: transform var(--dur) var(--ease), opacity var(--dur) var(--ease); }
+#hud[data-panel="0"] .rpanel { transform: translateX(444px); opacity: 0; pointer-events: none; }
+
+/* The bottom is a STACK, not a panel: the readout drops away and everything
+   above it comes down to the edge, so what is left is the tab bar hugging the
+   bottom of the screen rather than floating a hundred pixels up it. */
+.ticker, .groups, .ltabs, .mtabs, .rtabs, .brow3, .btog {
+  transition: transform var(--dur) var(--ease), opacity var(--dur) var(--ease);
+}
+#hud[data-bottom="0"] .brow3 { transform: translateY(106px); opacity: 0; pointer-events: none; }
+#hud[data-bottom="0"] .ticker,
+#hud[data-bottom="0"] .groups,
+#hud[data-bottom="0"] .ltabs,
+#hud[data-bottom="0"] .mtabs,
+#hud[data-bottom="0"] .rtabs,
+#hud[data-bottom="0"] .btog { transform: translateY(92px); }
+
+/* A VIEW is a thing the middle tabs open OVER the field: the mission, the
+   sensors manager, the menu. One at a time, and `data-view` on the HUD says
+   which, exactly as `data-panel` says whether the build menu is out. A layer
+   that is not the current one is transparent AND unpickable, or a closed view
+   goes on swallowing every click on the map. */
+/* `#hud .vlayer` rather than `.vlayer`, and that is not a style: `#hud > *`
+   sets pointer-events AUTO on every direct child, and an id beats a class, so
+   a plain class rule here left all three closed views swallowing every click
+   over the whole stage while being invisible. It is the hidden Resume button
+   this project was caught by once already, arrived at through the cascade
+   instead of through a display property. */
+#hud .vlayer { position: absolute; inset: 0; opacity: 0; pointer-events: none;
+          transform: translateY(-10px);
+          transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease); }
+#hud[data-view="mission"] .vlayer[data-layer="mission"],
+#hud[data-view="sensors"] .vlayer[data-layer="sensors"],
+#hud[data-view="menu"] .vlayer[data-layer="menu"] {
+  opacity: 1; pointer-events: auto; transform: none;
+}
+/* The scrim dims the field rather than hiding it, because a sensors view with
+   nothing behind it is a diagram and the point is that it is the same battle.
+   The three layers sit EARLIER in the markup than the command bar, so every
+   tab, group and toggle paints over the scrim and stays lit and pickable: the
+   bar that opens a view is the bar that switches between them, and a scrim
+   that covered it would make Mission a room with the door painted out. */
+.scrim { position: absolute; inset: 0; background: rgba(2,6,11,.62); }
+.vpanel { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+          display: flex; flex-direction: column; gap: 8px; }
+.vpanel .phead { margin: -8px -8px 3px; }
+
+.mission { width: 620px; }
+.mission .brief { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--ink); }
+.obj { display: flex; flex-direction: column; gap: 4px; }
+.orow { display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 9px;
+        background: var(--row); border: 1px solid var(--edge); }
+.orow .tick { width: 15px; height: 15px; flex: none; border: 1px solid var(--edge-hot);
+              display: flex; align-items: center; justify-content: center; font-size: 10px;
+              color: var(--ink-hot); }
+.orow[data-done="1"] .tick { border-color: var(--go-edge); color: var(--go-ink); }
+.orow[data-done="1"] .n { color: var(--go-ink); }
+.orow[data-lock="1"] { opacity: .45; }
+.orow .n { font-size: 13.5px; color: var(--ink-hot); }
+.orow .pb { margin-left: auto; width: 148px; height: 6px; background: var(--g-deep); border: 1px solid var(--edge); }
+.orow .pb i { display: block; height: 100%; background: var(--gold); transition: width var(--dur) var(--ease); }
+.orow[data-done="1"] .pb i { background: var(--go-edge); }
+.orow .q { font-family: var(--hud-mono); font-size: 12px; color: var(--dim); min-width: 74px; text-align: right; }
+
+.tide { margin-top: 2px; }
+.tide .th { display: flex; align-items: baseline; justify-content: space-between; font-size: 12px;
+            letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+.tide .th b { color: var(--gold); }
+.tbar { position: relative; height: 9px; margin: 5px 0 3px; background: var(--g-deep); border: 1px solid var(--edge); }
+.tbar i { position: absolute; top: 0; bottom: 0; border-right: 1px solid var(--edge); }
+.tbar i:nth-child(1) { background: rgba(99,209,43,.22); }
+.tbar i:nth-child(2) { background: rgba(245,197,66,.22); }
+.tbar i:nth-child(3) { background: rgba(232,86,60,.26); border-right: 0; }
+.tbar span { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--gold);
+             transition: left var(--dur) linear; }
+.tl { display: flex; justify-content: space-between; font-family: var(--hud-mono);
+      font-size: 10.5px; color: var(--faint); }
+
+/* The sensors manager is not a screen OVER the field, it is the field seen
+   from further out: the camera pulls back and this canvas draws the furniture
+   on top of the real view, at the HUD's own 1600 by 900, which is the stage's
+   own size, so a ring drawn here lands exactly where the world camera would
+   put it. It paints NOTHING of its own ground, because the ground is the
+   battle. */
+.sensors { position: absolute; inset: 0; }
+.sensors canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* Clear of the clock on the left and the resource strip on the right, because
+   this view does not replace the HUD any more: it is the same screen with the
+   camera further out, so everything that was already there is still there. */
+.shead { position: absolute; left: 210px; right: 460px; top: 12px; display: flex;
+         align-items: baseline; gap: 12px; height: 22px; }
+.shead .t { font-weight: 700; font-size: 15px; letter-spacing: 0.1em; color: var(--gold); text-transform: uppercase; }
+.shead .sub { font-family: var(--hud-mono); font-size: 12px; color: var(--dim); }
+.shead .x { margin-left: auto; width: 20px; height: 18px; background: var(--gold-b);
+            border: 1px solid var(--gold-dim); color: var(--gold); font-size: 12px; line-height: 1;
+            align-self: center; }
+.scap { position: absolute; left: 0; right: 0; bottom: 190px; text-align: center;
+        font-size: 13px; letter-spacing: 0.06em; color: var(--ink); text-shadow: 0 0 8px #000; }
+.scap b { color: var(--gold); font-weight: 600; }
+
+.menu { width: 300px; }
+.mitems { display: flex; flex-direction: column; gap: 4px; }
+.mitems button { height: 32px; padding: 0 11px; text-align: left;
+                 background: linear-gradient(180deg,var(--btn-a),var(--btn-b));
+                 border: 1px solid var(--edge-hot); color: var(--ink-hot);
+                 font-size: 13.5px; letter-spacing: 0.06em; }
+.mitems button:hover { border-color: var(--edge-lit); }
+.mitems button.warn { color: var(--red); }
+.mitems .sep { height: 1px; background: var(--edge); margin: 3px 0; }
+
+/* The toggle sits in the empty column above the left tabs, which is the one
+   place on the bottom edge nothing else wants. */
+.btog { position: absolute; left: 6px; top: 752px; width: 142px; height: 22px;
+        display: flex; align-items: center; justify-content: center; gap: 7px;
+        background: linear-gradient(180deg,var(--btn-a),var(--btn-b));
+        border: 1px solid var(--edge-hot); color: var(--ink-hot);
+        font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.btog:hover { border-color: var(--edge-lit); }
+.btog .ca { display: inline-block; font-size: 9px; transition: transform var(--dur) var(--ease); }
+#hud[data-bottom="0"] .btog .ca { transform: rotate(180deg); }
+
+/* A control answers a press before anything else does, and 120 ms is under
+   what anybody reads as a delay. Gradients do not interpolate, so what this
+   actually buys is the borders and the text, which is where the state is. */
+#hud button { transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease,
+                          opacity 120ms ease, transform 90ms ease; }
+#hud button:active { transform: translateY(1px); }
+
+/* Somebody who has asked their machine to stop moving things is not asking
+   for a slower version of it. */
+@media (prefers-reduced-motion: reduce) {
+  #hud, #hud * { transition-duration: 0.01ms !important; }
+}
+.phead { display: flex; align-items: center; height: 26px; margin: -8px -8px 5px;
+         background: linear-gradient(180deg,var(--gold-a),var(--gold-b)); border: 1px solid var(--gold-dim); padding: 0 4px; }
+.phead .t { font-weight: 700; font-size: 15px; letter-spacing: 0.1em; color: var(--gold); text-transform: uppercase; }
+.phead .x { margin-left: auto; width: 20px; height: 18px; background: var(--gold-b);
+            border: 1px solid var(--gold-dim); color: var(--gold); font-size: 12px; line-height: 1; }
+.pbody { flex: 1; display: flex; flex-direction: column; gap: 4px; min-height: 0; }
+
+.sel1 { height: 21px; display: flex; align-items: center; padding: 0 6px;
+  background: linear-gradient(180deg,var(--btn-a),var(--btn-b)); border: 1px solid var(--edge-hot);
+  font-size: 13.5px; font-weight: 600; color: var(--ink-hot); letter-spacing: 0.04em; }
+.sel1 .ca { margin-left: auto; color: var(--gold); font-size: 9px; }
+.pstage { display: flex; align-items: stretch; gap: 4px; }
+.pstage .arw { width: 18px; background: var(--g-fill); border: 1px solid var(--edge); color: var(--teal); font-size: 10px; }
+.schembox { flex: 1; height: 124px; position: relative; background: var(--g-deep); border: 1px solid var(--edge); overflow: hidden; }
+.schembox img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.hbar { height: 6px; background: var(--g-deep); border: 1px solid var(--edge); }
+.hbar span { display: block; height: 100%; background: var(--green); }
+
+.slots div { display: flex; font-size: 13.5px; padding: 1px 3px; }
+.slots div .v { margin-left: auto; font-family: var(--hud-mono); font-size: 12.5px; color: var(--teal); }
+
+.wide { width: 100%; height: 21px; background: linear-gradient(180deg,var(--btn-a),var(--btn-b));
+        border: 1px solid var(--edge-hot); color: var(--ink-hot); font-weight: 600; font-size: 12.5px;
+        letter-spacing: 0.18em; text-transform: uppercase; }
+
+.cats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+.cats button { height: 42px; display: flex; align-items: center; gap: 5px; padding: 0 5px 0 2px;
+               background: var(--g-fill); border: 1px solid var(--edge); color: var(--dim); text-align: left; }
+.cats .ic { width: 46px; height: 28px; flex: none; }
+.cats .tx { min-width: 0; }
+.cats .tx b { display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.07em;
+              text-transform: uppercase; color: var(--ink); line-height: 1.2; }
+.cats .tx i { font-style: normal; font-family: var(--hud-mono); font-size: 10px; color: var(--faint); }
+.cats button:hover { border-color: var(--edge-lit); }
+.cats button[aria-pressed="true"] { background: linear-gradient(180deg,var(--gold-a),var(--gold-b));
+                                    border-color: var(--gold); color: var(--gold); }
+.cats button[aria-pressed="true"] .tx b { color: var(--gold); }
+.cats button[aria-pressed="true"] .tx i { color: var(--gold-dim); }
+
+.cathead { display: flex; align-items: center; height: 19px; padding: 0 3px;
+           background: var(--gold-b); border-bottom: 1px solid var(--gold-dim); }
+.cathead .t { font-weight: 700; font-size: 13.5px; letter-spacing: 0.08em; color: var(--gold); text-transform: uppercase; }
+.cathead .c { margin-left: auto; font-family: var(--hud-mono); font-size: 12.5px; color: var(--gold); }
+
+.list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
+.list::-webkit-scrollbar { width: 7px; }
+.list::-webkit-scrollbar-track { background: var(--g-deep); }
+.list::-webkit-scrollbar-thumb { background: var(--edge); }
+.brow { display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 6px 0 0;
+        background: var(--row); border: 1px solid var(--edge); width: 100%; text-align: left; }
+.brow:hover { border-color: var(--edge-lit); background: var(--row-hot); }
+.brow[data-on="1"] { border-color: var(--gold); background: linear-gradient(180deg,var(--gold-a),var(--btn-b)); }
+.brow[data-poor="1"] { opacity: .4; }
+.brow .go { width: 17px; align-self: stretch; background: var(--g-fill); border-right: 1px solid var(--edge);
+            color: var(--teal); font-size: 9px; display: flex; align-items: center; justify-content: center; }
+.brow img.ic { width: 96px; height: 34px; object-fit: contain; }
+.brow .pips { display: grid; grid-template-columns: repeat(3, 6px); gap: 2px; }
+.brow .pips i { width: 6px; height: 6px; background: var(--g-fill); display: block; }
+.brow .pips i.on { background: var(--teal); }
+.brow .nm { margin-left: auto; text-align: right; }
+.brow .nm b { display: block; font-weight: 700; font-size: 14px; color: var(--ink-hot); letter-spacing: 0.03em; }
+.brow[data-on="1"] .nm b { color: var(--gold); }
+.brow .nm i { font-style: normal; font-family: var(--hud-mono); font-size: 13px; color: var(--ink-hot); }
+.brow[data-poor="1"] .nm i { color: var(--red); }
+.empty { padding: 10px 6px; font-size: 13px; color: var(--faint); }
+
+.qhead { display: flex; align-items: center; height: 19px; padding: 0 2px 0 5px;
+         background: var(--row); border: 1px solid var(--edge); font-size: 13px; color: var(--dim); }
+.qhead .b { margin-left: auto; display: flex; gap: 2px; }
+.qhead .b button { width: 17px; height: 15px; background: var(--btn-a); border: 1px solid var(--edge-hot);
+                   color: var(--ink-hot); font-size: 8px; line-height: 1; }
+.queue { height: 104px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 3px; overflow: hidden; }
+.qslot { position: relative; width: 98px; height: 30px; background: var(--row); border: 1px solid var(--edge);
+         display: flex; align-items: center; gap: 4px; padding: 0 3px; overflow: hidden; }
+.qslot img { width: 40px; height: 20px; object-fit: contain; flex: none; }
+.qslot .qi { width: 18px; height: 18px; flex: none; color: var(--gold); }
+.qslot.sub { border-color: var(--gold-dim); }
+.qslot.sub .f { background: var(--gold); }
+.qslot[data-wait="1"] { opacity: .48; border-style: dashed; }
+.queue { overflow-y: auto; }
+.queue::-webkit-scrollbar { width: 6px; }
+.queue::-webkit-scrollbar-track { background: var(--g-deep); }
+.queue::-webkit-scrollbar-thumb { background: var(--edge); }
+.qslot .qn { font-size: 10px; line-height: 1.05; color: var(--ink); overflow: hidden; }
+.qslot .f { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--green); }
+
+/* bottom rows */
+.groups { position: absolute; left: 452px; top: 752px; width: 700px; height: 22px; display: flex; gap: 1px; }
+.groups button { flex: 1; background: linear-gradient(180deg,var(--btn-a),var(--btn-b)); border: 1px solid var(--edge-hot);
+                 font-family: var(--hud-mono); font-size: 12px; color: var(--ink-hot); }
+.groups button[aria-pressed="true"] { background: linear-gradient(180deg,var(--gold-a),var(--gold-b)); border-color: var(--gold); color: var(--gold); }
+
+.tabs { display: flex; gap: 2px; }
+.tabs button { height: 24px; background: linear-gradient(180deg,var(--btn-a),var(--btn-b));
+               border: 1px solid var(--edge-hot); color: var(--ink-hot); font-weight: 700; font-size: 13px;
+               letter-spacing: 0.14em; text-transform: uppercase; }
+.tabs button[aria-pressed="true"] { background: linear-gradient(180deg,var(--gold-a),var(--gold-b)); border-color: var(--gold); color: var(--gold); }
+.ltabs { position: absolute; left: 6px; top: 776px; }
+.ltabs button { width: 142px; }
+.mtabs { position: absolute; left: 452px; top: 776px; width: 700px; }
+.mtabs button { flex: 1; }
+.rtabs { position: absolute; right: 6px; top: 776px; }
+.rtabs button { width: 140px; }
+.rtabs button.go { background: linear-gradient(180deg,var(--go-a),var(--go-b)); border-color: var(--go-edge); color: var(--go-ink); }
+.rtabs button.go[aria-pressed="true"] { background: linear-gradient(180deg,var(--go-lit),var(--go-b)); color: var(--go-ink-hot); }
+
+.brow3 { position: absolute; left: 6px; right: 6px; top: 802px; height: 92px; display: flex; gap: 6px; }
+.cmd { width: 344px; display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: repeat(2, 1fr); gap: 3px; }
+.cmd button { background: radial-gradient(circle at 50% 28%, var(--btn-a), var(--btn-b)); border: 1px solid var(--edge-hot);
+              display: flex; align-items: center; justify-content: center; }
+.cmd button svg { width: 23px; height: 23px; color: var(--ink-hot); }
+.cmd button[aria-pressed="true"] { border-color: var(--gold); background: radial-gradient(circle at 50% 28%, var(--gold-a), var(--gold-b)); }
+.cmd button[aria-pressed="true"] svg { color: var(--gold); }
+
+.unit { width: 520px; display: flex; flex-direction: column; gap: 4px; }
+.unit .kv { display: flex; gap: 10px; font-size: 15px; }
+.unit .kv .k { width: 56px; font-weight: 600; letter-spacing: 0.08em; color: var(--dim); text-transform: uppercase; font-size: 13px; padding-top: 1px; }
+.unit .kv .v { color: var(--gold); font-weight: 600; }
+.unit .kv .v.t { color: var(--ink-hot); }
+.unit .stats { margin-top: auto; display: flex; gap: 4px; }
+.unit .stats div { flex: 1; height: 22px; display: flex; align-items: center; gap: 6px; padding: 0 6px;
+                   background: var(--row); border: 1px solid var(--edge); }
+.unit .stats svg { width: 13px; height: 13px; color: var(--teal); flex: none; }
+.unit .stats b { font-family: var(--hud-mono); font-size: 13px; font-weight: 400; color: var(--ink); }
+
+.thumb { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.thumb .box { flex: 1; position: relative; background: var(--g-deep); border: 1px solid var(--edge); overflow: hidden; }
+.thumb .box img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+
+.mods { width: 428px; display: flex; flex-direction: column; gap: 3px; }
+.mh { display: flex; align-items: center; height: 12px; font-size: 10px; letter-spacing: 0.16em;
+      text-transform: uppercase; color: var(--dim); }
+.mh b { margin-left: auto; font-family: var(--hud-mono); font-size: 10px;
+        font-weight: 400; color: var(--teal); }
+.mgrid { flex: 1; display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
+.mgrid button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+                background: linear-gradient(180deg,var(--btn-a),var(--btn-b)); border: 1px solid var(--edge-hot); color: var(--dim); }
+.mgrid button svg { width: 19px; height: 19px; }
+.mgrid button span { font-size: 8px; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600; }
+.mgrid button:hover { border-color: var(--edge-lit); }
+.mgrid button[data-on="in"] { border-color: var(--gold); color: var(--gold);
+                              background: linear-gradient(180deg,var(--gold-a),var(--gold-b)); }
+.mgrid button[data-on="work"] { border-color: var(--cyan); color: var(--cyan); }
+.mgrid button[data-on="no"] { opacity: .28; cursor: default; }
+
+.ticker { position: absolute; left: 452px; top: 726px; width: 700px; height: 20px;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 13.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold);
+          opacity: 0; transition: opacity .2s; pointer-events: none; text-shadow: 0 0 8px #000; }
+.ticker[data-on="1"] { opacity: 1; }
+
+/* ---------- workbench ---------- */
+.sect { margin-top: 42px; }
+.sect h2 {
+  font-size: 14px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--gold); margin: 0; padding-bottom: 9px; border-bottom: 1px solid #1c2c3a;
+}
+.sect .lede { margin: 12px 0 18px; color: var(--dim); font-size: 14px; line-height: 1.65; max-width: 80ch; }
+.sect code { font-family: "Share Tech Mono", monospace; color: var(--teal); font-size: 13px; }
+
+.bench { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.bcell { border: 1px solid #1c2c3a; background: #070d14; padding: 8px; }
+.bcell .sh { width: 100%; aspect-ratio: 22/7; background: #04121b; border: 1px solid #12303f; display: block; }
+.bcell .ft { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.bcell .ft img { background: #04121b; border: 1px solid #12303f; }
+.sub2 { font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+        color: var(--ink); margin: 32px 0 0; }
+.marks { display: flex; gap: 10px; flex-wrap: wrap; }
+.mark { width: 134px; padding: 12px 8px 9px; border: 1px solid #1c2c3a; background: #070d14;
+        text-align: center; color: var(--teal); }
+.mark svg { width: 78px; height: 47px; }
+.mark b { display: block; margin-top: 7px; font-size: 12px; font-weight: 600; letter-spacing: 0.1em;
+          text-transform: uppercase; color: var(--ink); }
+.bcell .ft .m { margin-left: auto; text-align: right; }
+.bcell .ft .m b { display: block; font-size: 13px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+.bcell .ft .m i { font-style: normal; font-family: "Share Tech Mono", monospace; font-size: 11px; color: var(--faint); }
+
+.slices { display: flex; gap: 20px; flex-wrap: wrap; }
+.slice { text-align: center; }
+.slice .img { position: relative; width: 144px; height: 144px;
+              border: 1px solid #1c2c3a;
+              background: repeating-conic-gradient(#0b1219 0 25%, #101822 0 50%) 0 0 / 18px 18px; }
+.slice .img img { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+.slice .img i { position: absolute; background: rgba(245,197,66,.5); }
+.slice .cap { margin-top: 7px; font-family: "Share Tech Mono", monospace; font-size: 11px; color: var(--faint); }
+.slice .cap b { display: block; color: var(--ink); font-family: "Barlow Semi Condensed", sans-serif;
+                font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; margin-bottom: 2px; }
+
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(275px, 1fr)); gap: 18px 28px; }
+.grid2 h3 { font-size: 13px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin: 0 0 6px; }
+.grid2 p { margin: 0; font-size: 13.5px; line-height: 1.65; color: var(--dim); }
+.grid2 p + p { margin-top: 8px; }
+
+.foot { margin-top: 34px; padding-top: 14px; border-top: 1px solid #1c2c3a;
+        font-size: 13px; color: var(--faint); line-height: 1.65; }
+@media (prefers-reduced-motion: reduce) { * { transition-duration: .01ms !important; } }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+
+<symbol id="cl-fighter" viewBox="0 0 40 24"><g fill="currentColor">
+<path d="M37 12L25 9v6z"/><rect x="17" y="9.5" width="9" height="5"/>
+<path d="M20 10L8 3 4 5l12 6z"/><path d="M20 14L8 21l-4-2 12-6z"/>
+<rect x="10" y="10.5" width="8" height="3" opacity=".7"/>
+<rect x="4.5" y="10.5" width="5" height="3" opacity=".45"/></g></symbol>
+
+<symbol id="cl-corvette" viewBox="0 0 40 24"><g fill="currentColor">
+<path d="M36 12l-9-4v8z"/><rect x="14" y="7.5" width="13" height="9"/>
+<rect x="16" y="2" width="9" height="4" opacity=".8"/>
+<rect x="16" y="18" width="9" height="4" opacity=".8"/>
+<rect x="8" y="9" width="6" height="6" opacity=".75"/>
+<rect x="3.5" y="9.5" width="4.5" height="2" opacity=".5"/>
+<rect x="3.5" y="12.5" width="4.5" height="2" opacity=".5"/></g></symbol>
+
+<symbol id="cl-frigate" viewBox="0 0 40 24"><g fill="currentColor">
+<rect x="30" y="10.5" width="8" height="3"/>
+<path d="M30 8l-6-2v12l6-2z"/><rect x="12" y="6" width="12" height="12"/>
+<rect x="14" y="2" width="7" height="4" opacity=".8"/>
+<rect x="14" y="18" width="7" height="4" opacity=".8"/>
+<rect x="7" y="7.5" width="5" height="9" opacity=".75"/>
+<rect x="2.5" y="8" width="4.5" height="3" opacity=".5"/>
+<rect x="2.5" y="13" width="4.5" height="3" opacity=".5"/></g></symbol>
+
+<symbol id="cl-capital" viewBox="0 0 40 24"><g fill="currentColor">
+<path d="M38 12l-7-5v10z"/><rect x="18" y="5" width="13" height="14"/>
+<rect x="21" y="1" width="8" height="4" opacity=".8"/>
+<rect x="21" y="19" width="8" height="4" opacity=".8"/>
+<rect x="23" y="9" width="7" height="6" opacity=".5"/>
+<rect x="10" y="6.5" width="8" height="11" opacity=".8"/>
+<rect x="3.5" y="6" width="6.5" height="3.4" opacity=".5"/>
+<rect x="3.5" y="10.3" width="6.5" height="3.4" opacity=".5"/>
+<rect x="3.5" y="14.6" width="6.5" height="3.4" opacity=".5"/></g></symbol>
+
+<symbol id="cl-utility" viewBox="0 0 40 24"><g fill="currentColor">
+<rect x="33" y="5.5" width="4.5" height="4"/><rect x="33" y="14.5" width="4.5" height="4"/>
+<rect x="28" y="9" width="6" height="6" opacity=".8"/>
+<rect x="15" y="5" width="13" height="14"/>
+<rect x="18" y="8" width="7" height="8" opacity=".45"/>
+<rect x="9" y="7.5" width="6" height="9" opacity=".8"/>
+<rect x="3.5" y="9" width="5.5" height="6" opacity=".5"/></g></symbol>
+
+<symbol id="cl-platform" viewBox="0 0 40 24"><g fill="currentColor">
+<rect x="28" y="10.5" width="10" height="3"/>
+<path d="M28 6H16l-4 6 4 6h12z"/>
+<rect x="18" y="9" width="8" height="6" opacity=".45"/>
+<rect x="16" y="1" width="5" height="5" opacity=".7"/>
+<rect x="16" y="18" width="5" height="5" opacity=".7"/>
+<rect x="5.5" y="10" width="6.5" height="4" opacity=".6"/></g></symbol>
+
+<symbol id="c-move" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20L18 6"/><path d="M11 6h7v7"/></g></symbol>
+<symbol id="c-attack" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></g></symbol>
+<symbol id="c-guard" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="c-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" fill="currentColor"/></symbol>
+<symbol id="c-form" viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 3l3 5H9z"/><path d="M5 13l3 5H2z"/><path d="M19 13l3 5h-6z"/></g></symbol>
+<symbol id="c-stance" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18h18"/><path d="M6 18V9M12 18V5M18 18v-6"/></g></symbol>
+<symbol id="c-dock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v11"/><path d="M7 9l5 5 5-5"/><path d="M4 20h16"/></g></symbol>
+<symbol id="c-launch" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V10"/><path d="M7 15l5-5 5 5"/><path d="M4 4h16"/></g></symbol>
+<symbol id="c-rally" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M6 21V4l12 4-12 4"/></g></symbol>
+<symbol id="c-salv" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4v6a7 7 0 0 0 14 0V4"/><path d="M12 17v4"/></g></symbol>
+<symbol id="c-hyper" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h5l3-7 3 14 3-7h4"/></g></symbol>
+<symbol id="c-scut" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M6.5 6.5l11 11"/></g></symbol>
+
+<symbol id="m-prod" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="10"/><path d="M8 8V5h8v3"/></g></symbol>
+<symbol id="m-hangar" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18V9l9-5 9 5v9"/><path d="M9 18v-5h6v5"/></g></symbol>
+<symbol id="m-arm" viewBox="0 0 24 24"><path d="M4 7h16v5a8 8 0 0 1-16 0z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="m-eng" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="12" height="10"/><path d="M9 14l-2 6M15 14l2 6"/></g></symbol>
+<symbol id="m-sens" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></g></symbol>
+<symbol id="m-res" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></g></symbol>
+
+<symbol id="s-speed" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18L18 6"/><path d="M11 6h7v7"/></g></symbol>
+<symbol id="s-gun" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><path d="M12 3v3"/></g></symbol>
+<symbol id="s-arm" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="r-ore" viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 2l9 5-9 5-9-5z"/><path d="M12 12l9-5v10l-9 5z" opacity=".6"/><path d="M12 12v10l-9-5V7z" opacity=".35"/></g></symbol>
+<symbol id="r-crystal" viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 1l6 7-6 15-6-15z" opacity=".32"/><path d="M12 1l6 7h-6z"/><path d="M12 1L6 8h6z" opacity=".72"/><path d="M12 8h6l-6 15z" opacity=".55"/></g></symbol>
+</defs></svg>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div>
+      <h1>Swarm <span>Command</span></h1>
+      <p>The skirmish HUD in Homeworld's own shape: nine sliced translucent frames over the live field, every ship shown by a schematic baked off its own voxel model and every class by a drawn mark that serves any navy. Everything on it works, and the row under this one
+      reskins the whole of it.</p>
+    </div>
+    <div class="sp"></div>
+    <div class="hint">
+      <b>drag</b> orbit &nbsp;&nbsp;<b>wheel</b> zoom &nbsp;&nbsp;<b>click a hull</b> select<br>
+      <b>build row</b> queue it &nbsp;&nbsp;<b>1..0</b> control group &nbsp;&nbsp;<b>tabs</b> build, research, launch<br>
+      <b>X or B</b> close the panel &nbsp;&nbsp;<b>PANEL or C</b> drop the bottom &nbsp;&nbsp;<b>M</b> mission
+      &nbsp;&nbsp;<b>S</b> sensors &nbsp;&nbsp;<b>esc</b> close what is open, then the menu
+    </div>
+  </header>
+
+  <div class="skins" id="skins" aria-label="HUD skin"></div>
+
+  <div class="stage" id="stage">
+    <canvas id="world"></canvas>
+    <div id="hud">
+      <div class="gt" id="gt">Game Time: 0: 0:00</div>
+
+      <div class="ru nine">
+        <div class="res ore">
+          <svg aria-hidden="true"><use href="#r-ore"></use></svg>
+          <span class="v" id="ore">3000</span>
+        </div>
+        <div class="res cry">
+          <svg aria-hidden="true"><use href="#r-crystal"></use></svg>
+          <div class="fuel">
+            <div class="fn"><b id="fuel">190</b><i>/ <span id="need">550</span> to jump</i></div>
+            <div class="fbar"><span id="fbar"></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="roster" id="roster"><div class="rtip" id="rtip" hidden></div></div>
+
+      <div class="rpanel nine">
+        <div class="phead"><span class="t" id="ptitle">Build Menu</span><button class="x" type="button" data-act="panel" title="Close (a tab reopens it)">X</button></div>
+        <div class="pbody">
+          <div class="sel1"><span id="prodname">Carrier</span><span class="ca">&#9660;</span></div>
+          <div class="pstage">
+            <button class="arw" type="button" data-prod="-1">&#9664;</button>
+            <div class="schembox"><img id="prodschem" alt="Producing ship schematic"></div>
+            <button class="arw" type="button" data-prod="1">&#9654;</button>
+          </div>
+          <div class="hbar"><span id="prodhp" style="width:96%"></span></div>
+          <div class="slots" id="slots"></div>
+          <button class="wide" type="button" id="showall">Show All</button>
+          <div class="cats" id="cats"></div>
+          <div class="cathead"><span class="t" id="catname">Fighter</span><span class="c" id="catcount">0 / 18</span></div>
+          <div class="list" id="list"></div>
+          <div class="qhead"><span id="qsubtxt">Subsystem Queue (Empty)</span><span class="b"><button type="button">&#10074;&#10074;</button><button type="button">+</button></span></div>
+          <div class="qhead"><span id="qshiptxt">Ship Queue (Empty)</span><span class="b"><button type="button">&#10074;&#10074;</button><button type="button">&minus;</button></span></div>
+          <div class="queue nine-w" id="queue"></div>
+        </div>
+      </div>
+
+      <button class="btog" id="btog" type="button" data-act="bottom" aria-expanded="true">
+        <span class="ca">&#9660;</span><span>Panel</span>
+      </button>
+
+      <div class="vlayer" data-layer="mission">
+        <div class="scrim" data-act="close-view"></div>
+        <div class="vpanel nine mission">
+          <div class="phead"><span class="t">Mission &#183; Ashfall Reach</span><button class="x" type="button" data-act="close-view" title="Close">X</button></div>
+          <p class="brief">The tide is four minutes out. Cut what the drive needs, screen the harvesters
+          while they work, and be inside the field when it fires. What you leave here is gone.</p>
+          <div class="obj" id="obj"></div>
+          <div class="tide">
+            <div class="th"><span>Swarm tide</span><b id="tidephase">Probes</b></div>
+            <div class="tbar"><i style="left:0;width:33%"></i><i style="left:33%;width:34%"></i><i style="left:67%;width:33%"></i><span id="tidenow"></span></div>
+            <div class="tl"><span>Probes</span><span>Swarm</span><span>Fleet</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="vlayer" data-layer="sensors">
+        <div class="sensors">
+          <canvas id="sensorcv" width="1600" height="900"></canvas>
+          <div class="shead"><span class="t">Sensors Manager</span><span class="sub" id="scount"></span><button class="x" type="button" data-act="close-view" title="Close">X</button></div>
+          <div class="scap" id="scap"></div>
+        </div>
+      </div>
+
+      <div class="vlayer" data-layer="menu">
+        <div class="scrim" data-act="close-view"></div>
+        <div class="vpanel nine menu">
+          <div class="phead"><span class="t">Menu</span><button class="x" type="button" data-act="close-view" title="Close">X</button></div>
+          <div class="mitems" id="mitems"></div>
+        </div>
+      </div>
+
+      <div class="ticker" id="ticker"></div>
+      <div class="groups" id="groups"></div>
+
+      <div class="tabs ltabs" id="ltabs">
+        <button type="button" aria-pressed="true">Fleet</button>
+        <button type="button" aria-pressed="false">Strike</button>
+        <button type="button" aria-pressed="false">Tactics</button>
+      </div>
+      <div class="tabs mtabs" id="mtabs">
+        <button type="button" data-open="mission" aria-pressed="false">Mission</button>
+        <button type="button" data-open="sensors" aria-pressed="false">Sensors</button>
+        <button type="button" data-open="menu" aria-pressed="false">Menu</button>
+      </div>
+      <div class="tabs rtabs" id="rtabs">
+        <button type="button" data-tab="build" aria-pressed="true">Build</button>
+        <button type="button" data-tab="research" aria-pressed="false">Research</button>
+        <button type="button" data-tab="launch" class="go" aria-pressed="false">Launch</button>
+      </div>
+
+      <div class="brow3">
+        <div class="cmd" id="cmd"></div>
+        <div class="unit nine">
+          <div class="kv"><span class="k">Unit</span><span class="v" id="uname">Carrier</span></div>
+          <div class="kv"><span class="k">Role</span><span class="v t" id="urole">Ship Production</span></div>
+          <div class="stats">
+            <div><svg aria-hidden="true"><use href="#s-speed"></use></svg><b id="uspd">75</b></div>
+            <div><svg aria-hidden="true"><use href="#s-gun"></use></svg><b id="ugun">40</b></div>
+            <div><svg aria-hidden="true"><use href="#s-arm"></use></svg><b id="uarm">55000</b></div>
+          </div>
+        </div>
+        <div class="thumb">
+          <div class="box"><img id="uschem" alt="Selected ship schematic"></div>
+          <div class="hbar"><span id="uhp" style="width:96%"></span></div>
+        </div>
+        <div class="mods nine-w">
+          <div class="mh"><span>Modules</span><b id="modcount">0 / 0</b></div>
+          <div class="mgrid" id="mods"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="sect">
+    <h2>Baked off the voxel model, and drawn beside it</h2>
+    <p class="lede">
+      Every picture of a SHIP in that HUD is generated rather than drawn. One function meshes a model with the
+      same greedy pass the battlefield uses, renders it to an offscreen target under an orthographic camera,
+      reads the pixels back and runs one rim pass over the alpha. One bake per hull, shown at five sizes, so
+      nothing can drift between the list and the panel. On the Rust side this is the
+      <code>ship_export</code> example writing PNGs beside the hulls, off <code>greedy_mesh</code> and the
+      <code>purpose</code> byte the export already carries.
+    </p>
+    <div class="bench" id="bench"></div>
+
+    <h3 class="sub2">And the six class marks, which are DRAWN</h3>
+    <p class="lede">
+      A class is not a ship, so no ship can stand for one: a carrier's picture on the capital button says
+      that navy's carrier rather than capital. These are authored line art in the same plan view the
+      schematics are baked in, blocked out the way the lattice is, carrying no faction paint and no livery,
+      and they are <code>currentColor</code> so a button tints them with its own state. Six marks serve every
+      navy in the game and every hull added to one.
+    </p>
+    <div class="marks" id="marks"></div>
+  </section>
+
+  <section class="sect">
+    <h2>The frames are nine sliced</h2>
+    <p class="lede">
+      Every panel and well is one 48 pixel texture with a 16 pixel slice, so a corner bracket is the same size on
+      the resource strip and on the build menu and nothing stretches that should not. These are baked at boot on a
+      2D canvas. In Bevy they are an <code>ImageNode</code> with <code>ImageScaleMode::Sliced</code> and the same
+      four numbers; the checker behind them is the transparency, since a HUD that was opaque would be a HUD that
+      took the field away.
+    </p>
+    <div class="slices" id="slices"></div>
+  </section>
+
+  <section class="sect">
+    <h2>What each decision is</h2>
+    <div class="grid2">
+      <div>
+        <h3>The middle tabs are VIEWS: mission, sensors, menu</h3>
+        <p>Events was a word for nothing, so it is MISSION: what this fight is for, as a brief and five
+        objectives that READ live state rather than being ticked off by a script. The fuel one is the jump
+        bar, the wing one counts the fighters actually in the fleet, the carrier one is its own integrity,
+        and Jump out is dim until the tank is full. An objective is a row and what it reads is a function, so
+        a goal that tracks something and a goal that is simply ticked are the same kind of thing. Under them
+        is the swarm tide, three phases with a marker where the run actually is, because when to leave is the
+        decision the whole mode turns on.</p>
+        <p><b>The SENSORS manager is a camera MODE, not a screen.</b> It does not open over the field, it
+        pulls the camera back off it: the eye eases out to whatever frames the horizon and eases back to your
+        own zoom on the way out, and the whole time it is the same camera on the same battle. So the ships on
+        it are the real ships at their real size, a press is the same raycast the field uses, and the map
+        cannot be out of register with the world because there is only one of them. The furniture (the
+        horizon, the rings, the bearings, the coverage, the stalks) is drawn on top of the live view and
+        paints no ground of its own, because the ground IS the battle. Space toggles it, which is the key
+        Homeworld gives its own.</p>
+        <p><b>And you can work in it.</b> A press selects, right click orders the selection to a point on the
+        pivot's plane, and a drag turns the orbit, which turns the map and the world together. Nothing in the
+        view closes it: a sensors manager that shut every time somebody pressed the empty space between two
+        contacts is a mode nobody can work in, so the ways out are the ones a player chose, the tab, space,
+        escape or the X.</p>
+        <p>That was a real defect and its cause is worth keeping. The tabs carried <code>data-view</code> as
+        the action and the HUD carries <code>data-view</code> as its STATE, so a press anywhere inside an
+        open view found no button, walked all the way up to <code>#hud</code>, read the open view off it as
+        though it were a button that had been pressed, and closed the thing. <b>An attribute that names an
+        ACTION and an attribute that names STATE must not share a name</b>, because one selector matches both
+        and the ancestor always wins. The action is <code>data-open</code> now.</p>
+        <p>And it goes WAY out. The horizon is the operational area, nine hundred units, which puts the eye
+        two thousand back against the field camera's four hundred and twenty: the fleet becomes the cluster
+        it actually is and the empty space round it is the part worth seeing, because empty space is where
+        the swarm is not yet. Three hundred was the first cut and it was a close look at the same battle
+        with rings on it. The placeholder fleet was SPREAD to match, because a battlefield whose whole fleet
+        fits in one screen is a battlefield that never needed an overview: the field camera shows the ship
+        you picked and its neighbours, the sensors map shows where everything else is, and that division is
+        what the two views are for.</p>
+        <p>The ANGLE and the PIVOT are yours; the DISTANCE is the map's own, and that is the one thing it
+        does not inherit: a sensors view that took the zoom as well would show a tenth of the horizon
+        whenever you happened to be in close. It is solved rather than tuned, in angles, because that is what a perspective camera frames
+        with: the horizon is 2R across on screen at every angle and 2R sin(pitch) tall, and the distance is
+        whichever of those needs the most room. Looking down the height binds, edge on the width does, and
+        the sphere fills the frame either way instead of shrinking to a coin the flatter the camera gets.
+        With a floor of two and a bit radii, because a disc framed to the pixel sits with its near rim
+        against the lens and its near arc comes out four times its far one.</p>
+        <p>And the WHEEL widens the horizon rather than moving the camera, from the fitted view out to five
+        times it. That is the one control the two views share a gesture for and do not share a number:
+        scrolling in the field is the ship camera's distance and scrolling in the map is the map's own reach,
+        so coming back out of the map puts you at exactly the zoom you left the field at. The horizon is
+        what the wheel moves and everything is measured from it, so the rings, the bearing ticks and the fit
+        all follow one number, and the eye is placed by the same solve at every width. COVERAGE is the
+        exception and is deliberately NOT scaled by it: how much of the field a fleet is watching is a fact
+        about the fleet, and a percentage that moved when you scrolled would be a readout of the wheel.</p>
+        <p>What it adds over the field is COVERAGE: every ship lays a soft bubble at its own class's sensor
+        range and the bubbles ADD where they overlap, so the bright ground is the space the fleet holds and
+        the dark is where something could be standing. The range is a field on the class beside its cap,
+        because coverage is a property of the ship. And a contact rides a STALK to the pivot's own plane,
+        which is the move order's triangle read the other way round: a picture of a battle in three
+        dimensions with no drop lines cannot say how high anything is. A press that did not drag selects
+        that ship, because picking one out of the whole field is why you opened this.</p>
+        <p>The MENU is the way out, and Escape reaches it LAST: escape closes a view, then the panel, then
+        the bottom, and only with nothing left open does it open the menu. A menu a stray key drops you into
+        is a menu that interrupts the fight it was meant to leave.</p>
+        <p>Two defects, both found by driving the thing rather than by reading it. Every closed view was
+        swallowing clicks over the entire stage: <code>#hud &gt; *</code> sets pointer-events to auto on
+        every direct child, an id beats a class, and the <code>.vlayer</code> rule that turned them off never
+        applied. That is the invisible Resume button this project was caught by once already, arrived at
+        through the cascade instead of through a display property. And the middle tabs had TWO writers for
+        their pressed state, the new one and a leftover placeholder that also echoed the label onto the
+        ticker: one attribute, one owner, or the light lands on what was clicked rather than on what is
+        open.</p>
+      </div>
+      <div>
+        <h3>Both panels COLLAPSE, and the motion is the whole point</h3>
+        <p>The X on the build menu closes it and a tab brings it back, so the control that put it away is
+        never the only one that can fetch it: press Build with the panel shut and it returns on Build. PANEL
+        at the bottom left drops the readout and brings the control groups and the tab bar down to the edge,
+        which leaves the tabs hugging the bottom of the screen rather than floating a hundred pixels up it.
+        Both are a button first and a key second (B and C, escape closes whatever is open, panel before
+        bottom), because a control that is only a key is a feature nobody can find.</p>
+        <p>A panel LEAVES the way it came, which is sideways off its own edge. Fading alone would have it
+        dissolve in place and leave a player with nowhere to point when they want it back; sliding says where
+        it went. It is <code>pointer-events: none</code> while it is gone, or a closed panel goes on
+        swallowing clicks over a third of the field, which is the invisible Resume button this project has
+        already been caught by once.</p>
+        <p>One duration and one curve for everything that moves, 260 ms on a hard deceleration, because a
+        panel that arrives gently and leaves at the same rate reads as a thing with weight rather than as a
+        fade. Measured off the live transforms rather than off a screenshot, since a screenshot on a software
+        rasteriser lands whenever it lands: the bottom travels 0, 51, 89, 102, 106 px and the panel 0, 216,
+        371, 428, 444, both settled by about 316 ms, and the steps getting smaller IS the curve. Controls
+        answer in 120 ms, which is under what anybody reads as a delay, and they take a one pixel press.
+        Gradients do not interpolate, so what that actually buys is the borders and the text, which is where
+        the state is. And somebody who has asked their machine to stop moving things is not asking for a
+        slower version of it, so <code>prefers-reduced-motion</code> takes every duration to nothing.</p>
+        <p>What is OPEN is one attribute on the HUD element and nothing else. The transitions are declared in
+        the stylesheet, so opening a panel is setting a flag and the motion is not that code's business at
+        all: no tween, no clock, nothing per frame.</p>
+      </div>
+      <div>
+        <h3>A SKIN is a row, and the chrome had to become a layer first</h3>
+        <p>Seven of them, above the stage: the fleet's own, Windows 98, Vista, wood, parchment, brushed steel
+        and the swarm's chitin. A skin owns the palette, the two typefaces, the four frame textures and the
+        style they are drawn in, whether a frame's middle stretches or tiles, and the ink a schematic is baked
+        in. It owns nothing else. The layout, the rules and every number are the same on all seven, which is
+        the claim the picker exists to let you check rather than take on trust.</p>
+        <p>What it cost was finding out the chrome was NOT a layer. A hundred and twenty five colours were
+        written where they were used, over three hundred lines of stylesheet, and a colour written a hundred
+        and twenty five times is a theme nobody can change. They are twenty roles now (a ground, a fill, a
+        button's two ends, a row and the row pointed at, three grades of edge, the ink on a control, armed,
+        launch) declared on the HUD element alone, so the workbench you are reading keeps its own look while
+        the HUD wears whatever it was handed.</p>
+        <p>Two things caught by the pictures rather than by the code. <b>Colour is inherited as a COMPUTED
+        value</b>, so the page's own <code>body { color: var(--ink) }</code> resolved against the document's
+        ink and handed it to every node in the HUD: a skin could set that token all it liked and the text
+        stayed the colour the page booted in. A property has to be re-resolved in the scope its token lives
+        in. And <b>the clock and the roster counts sit on the WORLD</b>, not on a panel, and space is black
+        under every skin, so they have an ink of their own: a parchment HUD writes in sepia on its own pages
+        and in chalk on the sky.</p>
+        <p>Wood, parchment, steel and chitin TILE their middles rather than stretching them, because a grain
+        pulled across a seven hundred pixel panel is a smear. That is why every texture here is whole numbers
+        of cycles across its tile: it wraps by construction, so there is no seam down the centre of a panel.
+        Windows 98 is the one that needed something other than a texture, since a 98 frame is not a border, it
+        is two rings of light and shade and an inset shadow on every control, and <code>sunk</code> swapping
+        both rings is the whole difference between a button and a field.</p>
+        <p>The honest cost is that a schematic is a BAKE, so the only way to draw one in another ink is to
+        draw it again: a skin change re-renders all eighteen ship pictures and the four frames, measured at
+        about 1.2 seconds in this software rasterised container and far less on a GPU. That is the boot cost
+        paid over, and paying it is better than a picture that disagrees with the panel it sits in.</p>
+      </div>
+      <div>
+        <h3>One layer at a fixed design size</h3>
+        <p>The HUD is authored at 1600 by 900 and scaled to whatever the viewport is, which is how a game does it
+        and why every hairline stays a hairline. Nothing reflows, so a screenshot at one size is a screenshot at
+        all of them.</p>
+      </div>
+      <div>
+        <h3>A schematic is a PLAN, in two materials</h3>
+        <p>Straight down, with the length across the frame, because a ship seen from above is its layout and
+        the layout is what the panel is asking a player to read. It is also the one view every hull in a
+        fleet can be held against another in.</p>
+        <p>Hull quads fill dark and outline cyan; any cell with a purpose (propulsion, gun, ordnance, command)
+        fills and outlines orange. That is the export's own byte, so a ship says what it is made of without
+        anybody labelling it, and a hull shot to pieces will read as one.</p>
+      </div>
+      <div>
+        <h3>A class is DRAWN, a ship is BAKED</h3>
+        <p>One rule, and it holds everywhere. A ship is shown by its own schematic, in the build row, the
+        queue slot, the roster line, the producer and the unit readout, so a hull looks the same in all five.
+        A class is shown by a drawn mark, because a class is every navy's version of a thing and a picture of
+        one navy's carrier is not that.</p>
+      </div>
+      <div>
+        <h3>The greedy mesher is what draws the panel lines</h3>
+        <p>Every quad's own border is a line segment, so a big plate is one rectangle and a greebled stern is
+        dozens. The schematic gets its detail from the mesher rather than from an artist, which is the only way
+        twenty seven hulls get one.</p>
+      </div>
+      <div>
+        <h3>A class is told apart by its SHIPS</h3>
+        <p>Six drawn marks, in the same plan view the schematics are baked in and blocked out the way the
+        lattice is: a swept dart, a hull with two pods, a hull with a bow gun, a broad hull with three
+        drives, a hauler with clamps, and a mount with no drives at all. They carry no faction paint, so
+        they serve every navy in the game and every hull added to one.</p>
+        <p>The roster is half the size it was and carries no words at all: a line is a schematic and a
+        quantity, and a rule between classes does the grouping a heading used to. The cap came off with the
+        label, because what a class is ALLOWED is a number nobody reads in a fight and what it HAS is the
+        only thing that moves. It is read off the fleet rather than typed beside it, so a class added
+        tomorrow is on it tomorrow, and a line of it PICKS: clicking one selects that ship.</p>
+        <p>A class the fleet has none of is not on it AT ALL. A dimmed schematic with x0 beside it is a
+        picture of a ship that does not exist, and the roster is for finding a hull: a hull nobody built
+        cannot be found, so the line was a row of pixels that could only ever be passed over. What the
+        fleet COULD have is the build menu's question and it is already on the screen.</p>
+      </div>
+
+      <div>
+        <h3>The row under Build is the MODULES</h3>
+        <p>Not the build menu a second time. It is what bolts ON to the hull that is selected: production,
+        hangar, armour, drives, sensors, refinery. Gold is installed, cyan is on the subsystem queue, and dim
+        is a fit this class cannot take or a hull with no slot left. Clicking an available one spends resource
+        units and puts it on that queue, which is what the Subsystem Queue line above the yard was always
+        for.</p>
+        <p>It sits under Build, Research and Launch because those three decide what the YARD does and this
+        decides what one SHIP is. The header counts the slots, because a module row with no count is six
+        buttons whose refusal has no reason on screen.</p>
+      </div>
+
+      <div>
+        <h3>Two resources, and the second one is a countdown</h3>
+        <p>Ore is a number. Crystal is not: it is fuel against what a JUMP costs, so it is a bar with the
+        need written over it. The need is the drive plus every other hull standing in the field, which is the
+        Long Retreat's own rule, so laying down an escort visibly sets the jump back and the bar answers "can
+        I leave yet" without a player doing arithmetic. It goes green when it can.</p>
+      </div>
+
+      <div>
+        <h3>Queueing is real</h3>
+        <p>A row costs resource units, lands in the ship queue with a bar, and when it finishes the hull is
+        spawned into the field and the class strip and the roster both count it. A row you cannot afford is
+        dim with its price in red, and the producer's production slots are the cap. The producer is a hull
+        standing in the field rather than a class, so the slots it reports are that ship's own.</p>
+        <p>Nothing refuses a purchase but the bank. What a yard cannot do is WORK on two hulls of a class
+        at once, which is a fact about the slip rather than about the queue: the earliest entry of each
+        class advances, up to the producer's production slots, and the rest stand in line with a dashed
+        edge. So you spend every unit the moment you have it, the order you spent it in is the order it
+        arrives, and the row counts what you have stacked.</p>
+      </div>
+      <div>
+        <h3>Selection is an OUTLINE, drawn on the ship</h3>
+        <p>Brackets, rings and lines are all a shape drawn NEAR a hull, sized off a bounding box that on a
+        long ship is mostly empty: a frigate seen end on wore a mark three times its own width. The
+        selected hull is outlined instead, which is the one mark that is always exactly the ship.</p>
+        <p>The same geometry a second time, back faces only, swollen, depth tested and drawn after the hull,
+        so the inside fails against the ship's own depth and only the ring outside its silhouette survives.
+        The thickness is set in PIXELS and converted per frame, because a marker nobody can see at the zoom
+        they are actually at is a marker that is not there.</p>
+        <p>Swollen along the SURFACE NORMAL, which is the whole of it. Scaling the geometry about its centre
+        was the first cut and it outlined the INSIDE of the ship: a scale moves every point radially, so a
+        terrace half way down a stepped hull slides along the hull's own length and comes out from behind
+        the step in front of it, and a voxel hull is nothing but steps. Pushing each surface perpendicular
+        to itself moves that terrace straight up, where the step in front goes on covering it. It needs a
+        normal the mesher does not have, since its quads share no vertices, so the shell welds one averaged
+        direction per position: at a corner that is the diagonal, and the surface stays closed as it grows.</p>
+        <p>The integrity bar sits ABOVE the hull and on the selected one alone. It stays in screen space
+        because a bar has to be the same number of pixels tall at every range; the outline is the ship's own
+        shape, so it does not.</p>
+      </div>
+    </div>
+    <p class="foot">
+      Placeholder hulls, generated in the page from a voxel lattice on the same material and purpose codes the
+      game uses. The real fleet is twenty three stock hulls and four alien archetypes; the baker reads the hull
+      directory rather than a list, so they arrive without anything here changing.
+    </p>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ===================================================================
+  // 1. The voxel model, in the lattice the game keeps.
+  // ===================================================================
+  var MAT = { EMPTY: 0, PLATE: 1, FRAME: 2, GLASS: 3, DRIVE: 4, GUN: 5, ORD: 6, CMD: 7 };
+  // Anything with a PURPOSE is a subsystem, and a subsystem is what a
+  // schematic picks out in orange. Straight off the export's own byte.
+  var SUBS = { 4: 1, 5: 1, 6: 1, 7: 1 };
+  var PAINT = {
+    1: [0.50, 0.53, 0.57], 2: [0.32, 0.35, 0.38], 3: [0.30, 0.70, 0.86],
+    4: [0.92, 0.48, 0.16], 5: [0.60, 0.28, 0.26], 6: [0.72, 0.60, 0.22], 7: [0.28, 0.62, 0.74]
+  };
+
+  function newModel(nx, ny, nz) { return { nx: nx, ny: ny, nz: nz, g: new Uint8Array(nx * ny * nz) }; }
+  function idx(m, x, y, z) { return (z * m.ny + y) * m.nx + x; }
+  function get(m, x, y, z) {
+    if (x < 0 || y < 0 || z < 0 || x >= m.nx || y >= m.ny || z >= m.nz) { return 0; }
+    return m.g[idx(m, x, y, z)];
+  }
+  function box(m, x0, x1, y0, y1, z0, z1, v) {
+    for (var z = Math.max(0, z0); z <= Math.min(m.nz - 1, z1); z++) {
+      for (var y = Math.max(0, y0); y <= Math.min(m.ny - 1, y1); y++) {
+        for (var x = Math.max(0, x0); x <= Math.min(m.nx - 1, x1); x++) { m.g[idx(m, x, y, z)] = v; }
+      }
+    }
+  }
+  // Every hull is symmetric about x, so half is authored and half is a copy.
+  function mirror(m) {
+    for (var z = 0; z < m.nz; z++) {
+      for (var y = 0; y < m.ny; y++) {
+        for (var x = 0; x < m.nx >> 1; x++) { m.g[idx(m, m.nx - 1 - x, y, z)] = m.g[idx(m, x, y, z)]; }
+      }
+    }
+  }
+
+  // One builder, parameterised. A class is a row of numbers, never a branch.
+  function buildHull(p) {
+    var m = newModel(p.nx, p.ny, p.nz);
+    var cx = (p.nx >> 1) - 1, cy = p.ny >> 1, z, t, prof, hw, hh;
+    for (z = 0; z < p.nz; z++) {
+      t = z / (p.nz - 1);
+      prof = Math.pow(Math.sin(Math.PI * Math.min(0.995, 0.09 + t * 0.87)), p.full);
+      hw = Math.round(p.beam * 0.5 * prof);
+      hh = Math.round(p.depth * 0.5 * prof);
+      if (hw < 1 || hh < 1) { continue; }
+      box(m, cx - hw, cx + hw, cy - hh, cy + hh, z, z, MAT.PLATE);
+    }
+    var halfD = Math.round(p.depth * 0.5), halfB = Math.round(p.beam * 0.5);
+    if (p.spine) {
+      box(m, cx - p.spine, cx + p.spine, cy + halfD - 1, cy + halfD + 1,
+        Math.round(p.nz * 0.20), Math.round(p.nz * 0.64), MAT.FRAME);
+    }
+    if (p.sponson) {
+      box(m, cx - halfB - p.sponson, cx - halfB + 1, cy - 1, cy + 1,
+        Math.round(p.nz * 0.30), Math.round(p.nz * 0.54), MAT.FRAME);
+    }
+    var bw = Math.max(1, Math.round(p.beam / (p.bells * 2 + 2)));
+    for (var b = 0; b < p.bells; b++) {
+      var bx = cx - Math.round(p.beam * 0.30) +
+        Math.round(b * p.beam * 0.60 / Math.max(1, p.bells - 1));
+      box(m, bx - bw, bx + bw, cy - bw, cy + bw, 0, Math.round(p.nz * 0.08), MAT.DRIVE);
+    }
+    for (var i = 0; i < p.guns; i++) {
+      var gz = Math.round(p.nz * (0.30 + 0.44 * (p.guns === 1 ? 0.5 : i / (p.guns - 1))));
+      box(m, cx - 2, cx + 2, cy + halfD - 1, cy + halfD + 2, gz - 2, gz + 2, MAT.GUN);
+      if (p.ventral) { box(m, cx - 2, cx + 2, cy - halfD - 2, cy - halfD + 1, gz - 2, gz + 2, MAT.GUN); }
+    }
+    box(m, cx - 2, cx + 2, cy + 1, cy + Math.max(2, Math.round(p.depth * 0.42)),
+      Math.round(p.nz * 0.72), Math.round(p.nz * 0.79), MAT.CMD);
+    box(m, cx - 3, cx + 3, cy - 2, cy + 2, Math.round(p.nz * 0.42), Math.round(p.nz * 0.52), MAT.ORD);
+    // Windows down the flanks, which is where redux-tribes puts them: never
+    // on the deck and never on the keel.
+    for (z = Math.round(p.nz * 0.22); z < Math.round(p.nz * 0.78); z += 3) {
+      for (var y2 = cy - 1; y2 <= cy + 1; y2 += 2) {
+        for (var x2 = 0; x2 < p.nx; x2++) {
+          if (get(m, x2, y2, z) === MAT.PLATE && get(m, x2 - 1, y2, z) === 0) {
+            m.g[idx(m, x2, y2, z)] = MAT.GLASS; break;
+          }
+        }
+      }
+    }
+    mirror(m);
+    return m;
+  }
+
+  // ===================================================================
+  // 2. The greedy mesher, the pass the battlefield already draws with.
+  //    It is also what gives a schematic its panel lines: a big plate is
+  //    one quad and one outline, a greebled stern is dozens.
+  // ===================================================================
+  function greedy(m) {
+    var dims = [m.nx, m.ny, m.nz];
+    var pos = [], col = [], nor = [], sub = [], lin = [], lsub = [];
+    var d, u, v, i, j, k, l, n, w, h, c, stop, x = [0, 0, 0], q;
+
+    function emit(o, du, dv, dd, front, mat) {
+      var p0 = [o[0], o[1], o[2]];
+      var p1 = [o[0] + du[0], o[1] + du[1], o[2] + du[2]];
+      var p2 = [o[0] + du[0] + dv[0], o[1] + du[1] + dv[1], o[2] + du[2] + dv[2]];
+      var p3 = [o[0] + dv[0], o[1] + dv[1], o[2] + dv[2]];
+      var nv = [0, 0, 0]; nv[dd] = front ? 1 : -1;
+      var ord = front ? [p0, p1, p2, p0, p2, p3] : [p0, p2, p1, p0, p3, p2];
+      var rgb = PAINT[mat] || [0.5, 0.5, 0.5];
+      var s = SUBS[mat] ? 1 : 0;
+      for (var t = 0; t < 6; t++) {
+        pos.push(ord[t][0], ord[t][1], ord[t][2]);
+        nor.push(nv[0], nv[1], nv[2]);
+        col.push(rgb[0], rgb[1], rgb[2]);
+        sub.push(s);
+      }
+      var ring = [p0, p1, p2, p3];
+      for (var e = 0; e < 4; e++) {
+        var A = ring[e], B = ring[(e + 1) % 4];
+        lin.push(A[0], A[1], A[2], B[0], B[1], B[2]);
+        lsub.push(s, s);
+      }
+    }
+
+    for (d = 0; d < 3; d++) {
+      u = (d + 1) % 3; v = (d + 2) % 3;
+      q = [0, 0, 0]; q[d] = 1;
+      var mask = new Int32Array(dims[u] * dims[v]);
+      for (x[d] = -1; x[d] < dims[d];) {
+        n = 0;
+        for (x[v] = 0; x[v] < dims[v]; x[v]++) {
+          for (x[u] = 0; x[u] < dims[u]; x[u]++) {
+            var a = x[d] >= 0 ? get(m, x[0], x[1], x[2]) : 0;
+            var b = x[d] < dims[d] - 1 ? get(m, x[0] + q[0], x[1] + q[1], x[2] + q[2]) : 0;
+            mask[n++] = (a !== 0) === (b !== 0) ? 0 : (a !== 0 ? a : -b);
+          }
+        }
+        x[d]++;
+        n = 0;
+        for (j = 0; j < dims[v]; j++) {
+          for (i = 0; i < dims[u];) {
+            c = mask[n];
+            if (!c) { i++; n++; continue; }
+            w = 1;
+            while (i + w < dims[u] && mask[n + w] === c) { w++; }
+            h = 1; stop = false;
+            for (; j + h < dims[v]; h++) {
+              for (k = 0; k < w; k++) { if (mask[n + k + h * dims[u]] !== c) { stop = true; break; } }
+              if (stop) { break; }
+            }
+            x[u] = i; x[v] = j;
+            var du = [0, 0, 0]; du[u] = w;
+            var dv = [0, 0, 0]; dv[v] = h;
+            emit(x, du, dv, d, c > 0, Math.abs(c));
+            for (l = 0; l < h; l++) { for (k = 0; k < w; k++) { mask[n + k + l * dims[u]] = 0; } }
+            i += w; n += w;
+          }
+        }
+      }
+    }
+    return {
+      pos: new Float32Array(pos), col: new Float32Array(col), nor: new Float32Array(nor),
+      sub: new Float32Array(sub), lin: new Float32Array(lin), lsub: new Float32Array(lsub),
+      quads: pos.length / 18
+    };
+  }
+
+  // The solid cells' own box, which is what a picture of a ship should be
+  // framed and centred on.
+  function bounds(m) {
+    var lo = [m.nx, m.ny, m.nz], hi = [-1, -1, -1], x, y, z, p;
+    for (z = 0; z < m.nz; z++) {
+      for (y = 0; y < m.ny; y++) {
+        for (x = 0; x < m.nx; x++) {
+          if (!get(m, x, y, z)) { continue; }
+          p = [x, y, z];
+          for (var a = 0; a < 3; a++) {
+            if (p[a] < lo[a]) { lo[a] = p[a]; }
+            if (p[a] > hi[a]) { hi[a] = p[a]; }
+          }
+        }
+      }
+    }
+    if (hi[0] < 0) { return { c: [0, 0, 0], h: [1, 1, 1] }; }
+    return {
+      c: [(lo[0] + hi[0] + 1) / 2, (lo[1] + hi[1] + 1) / 2, (lo[2] + hi[2] + 1) / 2],
+      h: [(hi[0] - lo[0] + 1) / 2, (hi[1] - lo[1] + 1) / 2, (hi[2] - lo[2] + 1) / 2]
+    };
+  }
+
+  // The position array is COPIED, because `translate` mutates the attribute
+  // in place and one mesh is turned into three geometries: the schematic, the
+  // roster thumb and the hull in the field. Sharing it moved the model once
+  // per geometry, so the second bake of a ship was centred twice as far out
+  // as the first and the third further still.
+  function geomOf(mesh, m) {
+    var g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(mesh.pos.slice(), 3));
+    g.setAttribute("color", new THREE.BufferAttribute(mesh.col, 3));
+    g.setAttribute("normal", new THREE.BufferAttribute(mesh.nor, 3));
+    g.setAttribute("sub", new THREE.BufferAttribute(mesh.sub, 1));
+    var b = m.bb || (m.bb = bounds(m));
+    g.translate(-b.c[0], -b.c[1], -b.c[2]);
+    return g;
+  }
+  function lineGeomOf(mesh, m) {
+    var g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(mesh.lin.slice(), 3));
+    g.setAttribute("sub", new THREE.BufferAttribute(mesh.lsub, 1));
+    var b = m.bb || (m.bb = bounds(m));
+    g.translate(-b.c[0], -b.c[1], -b.c[2]);
+    return g;
+  }
+
+  // ===================================================================
+  // 3. The baker. A schematic and an icon are ONE function: same mesh,
+  //    same orthographic frame, different palette and camera.
+  // ===================================================================
+  var SCHEM_VS =
+    "attribute float sub; varying float vS; varying vec3 vN;" +
+    "void main(){ vS=sub; vN=normalize(normalMatrix*normal);" +
+    "gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
+  var SCHEM_FS =
+    "varying float vS; varying vec3 vN; uniform vec3 hull; uniform vec3 subs;" +
+    "void main(){ float f=0.42+0.58*max(0.0,dot(vN,normalize(vec3(0.35,0.78,0.52))));" +
+    "gl_FragColor=vec4(mix(hull,subs,step(0.5,vS))*f,1.0); }";
+  var LINE_VS =
+    "attribute float sub; varying float vS;" +
+    "void main(){ vS=sub; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }";
+  var LINE_FS =
+    "varying float vS; uniform vec3 hull; uniform vec3 subs;" +
+    "void main(){ gl_FragColor=vec4(mix(hull,subs,step(0.5,vS)),1.0); }";
+
+  var baker = null;
+  function bakerInit() {
+    if (baker) { return baker; }
+    var r = new THREE.WebGLRenderer({ canvas: document.createElement("canvas"), antialias: true, alpha: true });
+    r.setPixelRatio(1);
+    var sc = new THREE.Scene();
+    var key = new THREE.DirectionalLight(0xffffff, 1.0); key.position.set(0.45, 0.85, 0.55);
+    var fill = new THREE.DirectionalLight(0x8fb6d8, 0.4); fill.position.set(-0.6, -0.3, -0.5);
+    sc.add(key, fill, new THREE.AmbientLight(0x46525e, 0.7));
+    baker = { r: r, scene: sc, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, -500, 500) };
+    return baker;
+  }
+
+  // Frame the model orthographically. One function, three views, because a
+  // schematic, an icon and a class silhouette are the same bake pointed
+  // differently. A frame that cropped a bow would be one nobody could hold
+  // against another.
+  //
+  // PLAN is what a schematic is: straight down, with the ship's LENGTH across
+  // the frame. A ship seen from above is its layout, which is the thing the
+  // panel is asking a player to read, and it is the one view every hull in a
+  // fleet can be compared in.
+  function frame(cam, m, o, w, h) {
+    var bb = m.bb || (m.bb = bounds(m));
+    var r = Math.sqrt(bb.h[0] * bb.h[0] + bb.h[1] * bb.h[1] + bb.h[2] * bb.h[2]);
+    if (o.view === "plan") {
+      cam.up.set(1, 0, 0);
+      cam.position.set(0, r * 2, 0);
+    } else if (o.view === "side") {
+      cam.up.set(0, 1, 0);
+      cam.position.set(r * 2, 0, 0);
+    } else {
+      cam.up.set(0, 1, 0);
+      cam.position.set(Math.sin(o.yaw) * Math.cos(o.pitch), Math.sin(o.pitch),
+        Math.cos(o.yaw) * Math.cos(o.pitch)).multiplyScalar(r * 2);
+    }
+    cam.lookAt(0, 0, 0);
+    cam.updateMatrixWorld(true);
+    // Fit the model's own EXTENTS in this view's axes rather than its bounding
+    // sphere. A plan view of a frigate is long and thin, and a sphere that
+    // contains it is set by the length alone: framing on one drew every ship
+    // at a third of the room it had. Eight corners, two dot products each.
+    var right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
+    var up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
+    var hw = 0, hh = 0, c = new THREE.Vector3();
+    for (var i = 0; i < 8; i++) {
+      c.set((i & 1 ? 1 : -1) * bb.h[0], (i & 2 ? 1 : -1) * bb.h[1], (i & 4 ? 1 : -1) * bb.h[2]);
+      hw = Math.max(hw, Math.abs(c.dot(right)));
+      hh = Math.max(hh, Math.abs(c.dot(up)));
+    }
+    var asp = w / h;
+    var k = Math.max(hw / asp, hh) * o.pad;
+    cam.left = -k * asp; cam.right = k * asp; cam.top = k; cam.bottom = -k;
+    cam.near = -r * 4; cam.far = r * 4;
+    cam.updateProjectionMatrix();
+  }
+
+  // Grow a rim outward from any opaque pixel. This is the one honest way to
+  // get a hard outline off a voxel silhouette in a BAKE: a shader would want
+  // the depth buffer, and a bake already has the pixels in hand.
+  function rim(img, w, h, colour, rings) {
+    if (!colour) { return; }
+    var a = new Uint8Array(w * h), i, x, y;
+    for (i = 0; i < w * h; i++) { a[i] = img.data[i * 4 + 3] > 8 ? 1 : 0; }
+    var cur = a;
+    for (var pass = 0; pass < rings; pass++) {
+      var next = new Uint8Array(cur);
+      var al = pass === 0 ? 1 : 0.34;
+      for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+          i = y * w + x;
+          if (cur[i]) { continue; }
+          if ((x > 0 && cur[i - 1]) || (x < w - 1 && cur[i + 1]) ||
+              (y > 0 && cur[i - w]) || (y < h - 1 && cur[i + w])) {
+            img.data[i * 4] = colour[0]; img.data[i * 4 + 1] = colour[1];
+            img.data[i * 4 + 2] = colour[2]; img.data[i * 4 + 3] = Math.round(255 * al);
+            next[i] = 1;
+          }
+        }
+      }
+      cur = next;
+    }
+  }
+
+  function bake(model, mesh, o) {
+    var B = bakerInit(), w = o.w, h = o.h;
+    var rt = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat
+    });
+    var grp = new THREE.Group();
+    var geo = geomOf(mesh, model);
+    // The body fills dark and the subsystems fill in the machinery's colour;
+    // the lines are every greedy quad's own border, which is where the panel
+    // detail comes from. Every one of those four is the SKIN's, because a
+    // schematic is drawn in the HUD's own ink: a cyan readout on parchment is
+    // a picture somebody pasted on rather than a page.
+    var P = skin.plan;
+    grp.add(new THREE.Mesh(geo, new THREE.ShaderMaterial({
+      vertexShader: SCHEM_VS, fragmentShader: SCHEM_FS,
+      uniforms: { hull: { value: new THREE.Color(P.hull) }, subs: { value: new THREE.Color(P.subs) } }
+    })));
+    grp.add(new THREE.LineSegments(lineGeomOf(mesh, model), new THREE.ShaderMaterial({
+      vertexShader: LINE_VS, fragmentShader: LINE_FS,
+      uniforms: { hull: { value: new THREE.Color(P.line) }, subs: { value: new THREE.Color(P.lsub) } }
+    })));
+    B.scene.add(grp);
+    frame(B.cam, model, o, w, h);
+    B.r.setSize(w, h, false);
+    B.r.setRenderTarget(rt);
+    B.r.setClearColor(0x000000, 0);
+    B.r.clear();
+    B.r.render(B.scene, B.cam);
+    var buf = new Uint8Array(w * h * 4);
+    B.r.readRenderTargetPixels(rt, 0, 0, w, h, buf);
+    B.r.setRenderTarget(null);
+    B.scene.remove(grp);
+    geo.dispose(); rt.dispose();
+
+    var cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    var g = cv.getContext("2d");
+    var img = g.createImageData(w, h);
+    var y, xx, s, t;
+    for (y = 0; y < h; y++) {
+      for (xx = 0; xx < w; xx++) {
+        s = ((h - 1 - y) * w + xx) * 4; t = (y * w + xx) * 4;
+        img.data[t] = buf[s]; img.data[t + 1] = buf[s + 1];
+        img.data[t + 2] = buf[s + 2]; img.data[t + 3] = buf[s + 3];
+      }
+    }
+    rim(img, w, h, P.rim, o.rings);
+    g.putImageData(img, 0, 0);
+    // Scanlines: what says "a readout of a ship" rather than "a picture of
+    // one". SOURCE-ATOP, or the pass paints the whole canvas and every pixel
+    // of the asset comes out opaque: the icon then has a grey frame round it
+    // and object-fit has nothing left to trim, which is what made two ships
+    // in one square box come out two sizes.
+    g.globalCompositeOperation = "source-atop";
+    g.globalAlpha = 0.17; g.fillStyle = "#000";
+    for (y = 0; y < h; y += 3) { g.fillRect(0, y, w, 1); }
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = "source-over";
+    return cv;
+  }
+
+  // ===================================================================
+  // 4. The fleet. A class is a row, so one added tomorrow is on the build
+  //    menu tomorrow, which is the rule the setup form already keeps.
+  // ===================================================================
+  var SHIPS = [
+    { key: "scout", name: "Survey Scout", cat: "fighter", cost: 350, role: "Reconnaissance",
+      spd: 320, gun: 2, arm: 900, cap: 8, slots: 1, build: 7,
+      p: { nx: 12, ny: 8, nz: 18, beam: 8, depth: 5, full: 0.7, bells: 2, guns: 1, spine: 0, sponson: 0, ventral: 0 } },
+    { key: "lance", name: "Lance Fighter", cat: "fighter", cost: 500, role: "Interceptor",
+      spd: 300, gun: 8, arm: 1100, cap: 10, slots: 1, build: 9,
+      p: { nx: 14, ny: 8, nz: 20, beam: 10, depth: 5, full: 0.55, bells: 2, guns: 2, spine: 0, sponson: 1, ventral: 0 } },
+    { key: "bomber", name: "Bomber", cat: "fighter", cost: 550, role: "Anti capital strike",
+      spd: 240, gun: 14, arm: 1600, cap: 8, slots: 1, build: 11,
+      p: { nx: 16, ny: 9, nz: 22, beam: 12, depth: 6, full: 0.6, bells: 2, guns: 2, spine: 1, sponson: 1, ventral: 1 } },
+    { key: "pulsar", name: "Pulsar Corvette", cat: "corvette", cost: 625, role: "Anti fighter screen",
+      spd: 190, gun: 18, arm: 3400, cap: 8, slots: 1, build: 13,
+      p: { nx: 18, ny: 10, nz: 30, beam: 13, depth: 7, full: 0.7, bells: 3, guns: 2, spine: 1, sponson: 2, ventral: 0 } },
+    { key: "minelayer", name: "Minelayer Corvette", cat: "corvette", cost: 700, role: "Area denial",
+      spd: 170, gun: 8, arm: 3800, cap: 5, slots: 1, build: 15,
+      p: { nx: 20, ny: 11, nz: 32, beam: 15, depth: 9, full: 0.85, bells: 3, guns: 1, spine: 1, sponson: 2, ventral: 1 } },
+    { key: "ion", name: "Ion Cannon Frigate", cat: "frigate", cost: 1000, role: "Anti capital line",
+      spd: 120, gun: 34, arm: 14800, cap: 12, slots: 2, build: 21,
+      p: { nx: 22, ny: 13, nz: 46, beam: 16, depth: 10, full: 0.75, bells: 3, guns: 3, spine: 2, sponson: 2, ventral: 1 } },
+    { key: "flak", name: "Flak Frigate", cat: "frigate", cost: 900, role: "Point defence",
+      spd: 130, gun: 28, arm: 13200, cap: 12, slots: 2, build: 19,
+      p: { nx: 22, ny: 14, nz: 42, beam: 17, depth: 11, full: 0.95, bells: 4, guns: 4, spine: 2, sponson: 3, ventral: 1 } },
+    { key: "destroyer", name: "Destroyer", cat: "capital", cost: 2200, role: "Line of battle",
+      spd: 95, gun: 62, arm: 42000, cap: 5, slots: 3, build: 34,
+      p: { nx: 28, ny: 17, nz: 64, beam: 21, depth: 13, full: 0.8, bells: 4, guns: 4, spine: 3, sponson: 3, ventral: 1 } },
+    { key: "carrier", name: "Carrier", cat: "capital", cost: 3500, role: "Ship Production",
+      spd: 75, gun: 40, arm: 55000, cap: 6, slots: 4, build: 46,
+      p: { nx: 32, ny: 20, nz: 76, beam: 25, depth: 16, full: 0.9, bells: 5, guns: 3, spine: 4, sponson: 4, ventral: 1 } },
+    { key: "collector", name: "Resource Collector", cat: "utility", cost: 400, role: "Harvesting",
+      spd: 110, gun: 0, arm: 5200, cap: 20, slots: 1, build: 11,
+      p: { nx: 18, ny: 14, nz: 26, beam: 14, depth: 12, full: 1.3, bells: 2, guns: 0, spine: 1, sponson: 2, ventral: 0 } },
+    { key: "refinery", name: "Mobile Refinery", cat: "utility", cost: 800, role: "Processing",
+      spd: 80, gun: 4, arm: 12000, cap: 4, slots: 2, build: 23,
+      p: { nx: 24, ny: 18, nz: 36, beam: 19, depth: 16, full: 1.4, bells: 3, guns: 1, spine: 2, sponson: 3, ventral: 0 } },
+    { key: "probe", name: "Probe", cat: "utility", cost: 150, role: "Sensor picket",
+      spd: 400, gun: 0, arm: 400, cap: 10, slots: 1, build: 5,
+      p: { nx: 10, ny: 10, nz: 12, beam: 8, depth: 8, full: 1.5, bells: 1, guns: 0, spine: 0, sponson: 0, ventral: 0 } },
+    { key: "gunplat", name: "Gun Platform", cat: "platform", cost: 300, role: "Static defence",
+      spd: 0, gun: 30, arm: 9000, cap: 12, slots: 0, build: 15,
+      p: { nx: 22, ny: 18, nz: 24, beam: 17, depth: 14, full: 1.7, bells: 0, guns: 2, spine: 2, sponson: 2, ventral: 1 } },
+    { key: "array", name: "Sensor Array", cat: "platform", cost: 250, role: "Detection",
+      spd: 0, gun: 0, arm: 4000, cap: 8, slots: 0, build: 11,
+      p: { nx: 18, ny: 20, nz: 18, beam: 13, depth: 17, full: 1.9, bells: 0, guns: 0, spine: 1, sponson: 1, ventral: 0 } }
+  ];
+  // A class is told apart by the SHAPE OF THE SHIPS IN IT, which is the one
+  // thing a player already knows how to read. A triangle and a diamond are
+  // two abstractions somebody has to be taught; a fighter's silhouette beside
+  // a carrier's is the fleet saying what it is. The mark is a silhouette of
+  // that class's largest hull, baked by the same baker as everything else and
+  // worn as a CSS mask so the button tints it with its own state.
+  // `sr` is how far a class SEES, in world units. It belongs on the class for
+  // the reason every other number here does: the sensors manager draws
+  // coverage, coverage is a property of the ship, and a picture that invented
+  // it would be a picture nothing in the game agrees with.
+  var CATS = [
+    { id: "fighter", name: "Fighter", icon: "cl-fighter", key: "F", cap: 18, sr: 150 },
+    { id: "corvette", name: "Corvette", icon: "cl-corvette", key: "C", cap: 12, sr: 190 },
+    { id: "frigate", name: "Frigate", icon: "cl-frigate", key: "R", cap: 21, sr: 260 },
+    { id: "capital", name: "Capital", icon: "cl-capital", key: "P", cap: 15, sr: 400 },
+    { id: "utility", name: "Utility", icon: "cl-utility", key: "T", cap: 50, sr: 175 },
+    { id: "platform", name: "Platform", icon: "cl-platform", key: "L", cap: 20, sr: 450 }
+  ];
+  var byKey = {};
+  SHIPS.forEach(function (s) { byKey[s.key] = s; });
+
+  SHIPS.forEach(function (s) {
+    s.model = buildHull(s.p);
+    s.mesh = greedy(s.model);
+    s.cells = 0;
+    for (var i = 0; i < s.model.g.length; i++) { if (s.model.g[i]) { s.cells++; } }
+  });
+
+  // A class needs the class's LEAD for the roster to pick with, and nothing
+  // else: its mark is drawn, not baked.
+  CATS.forEach(function (c) {
+    var rows = SHIPS.filter(function (s) { return s.cat === c.id; });
+    c.lead = rows.reduce(function (a, b) { return b.cells > a.cells ? b : a; }, rows[0]).key;
+  });
+
+  // ===================================================================
+  // 5. Nine slice frames, and the SKIN that decides what one looks like.
+  //
+  //    Four frames (a panel, a well, a button and an armed button) and one
+  //    baker. What a skin changes is the DESCRIPTOR handed to that baker and
+  //    the style it is drawn in, never the baker: a new look is a row here
+  //    and at most one entry in CHROME, which is the same rule the weapons,
+  //    the hulls and the missions already keep.
+  // ===================================================================
+  var FRAMES = [
+    { id: "panel", name: "Panel" },
+    { id: "well", name: "Well" },
+    { id: "btn", name: "Button" },
+    { id: "hot", name: "Button armed" }
+  ];
+
+  // A frame's FILL is the same question in every style and its EDGE is not,
+  // so the fill is written once and the edge is written seven times.
+  function paintFill(g, s, o) {
+    if (o.grad) {
+      var lg = g.createLinearGradient(0, 0, 0, s);
+      lg.addColorStop(0, o.grad[0]); lg.addColorStop(1, o.grad[1]);
+      g.fillStyle = lg;
+    } else { g.fillStyle = o.fill; }
+    g.fillRect(0, 0, s, s);
+  }
+
+  // Every texture here has to TILE, because a skin whose middle repeats
+  // (wood, parchment, steel) shows a seam down the centre of a panel
+  // otherwise. So the noise is whole numbers of cycles across the tile and
+  // nothing else, which wraps by construction.
+  function wave(u, k, ph) { return Math.sin(u * Math.PI * 2 * k + ph); }
+
+  function roundPath(g, x, y, w, h, r) {
+    g.beginPath();
+    g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r);
+    g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+  }
+
+  // One ring of a bevel: light along the top and left, dark along the bottom
+  // and right. Two of these ARE a Windows 98 frame.
+  function bevelRing(g, s, i, lt, dk) {
+    var n = s - i * 2;
+    g.fillStyle = lt;
+    g.fillRect(i, i, n, 1); g.fillRect(i, i, 1, n);
+    g.fillStyle = dk;
+    g.fillRect(i, s - i - 1, n, 1); g.fillRect(s - i - 1, i, 1, n);
+  }
+
+  var CHROME = {
+    // The sci fi frame: a hairline box with an L at each corner, which is
+    // what says "instrument" without drawing an instrument.
+    bracket: function (g, s, o) {
+      paintFill(g, s, o);
+      g.strokeStyle = o.line; g.lineWidth = 1;
+      g.strokeRect(0.5, 0.5, s - 1, s - 1);
+      if (o.inner) { g.strokeStyle = o.inner; g.strokeRect(3.5, 3.5, s - 7, s - 7); }
+      g.strokeStyle = o.corner; g.lineWidth = 2;
+      var L = 11;
+      [[1, 1, 1, 1], [s - 1, 1, -1, 1], [1, s - 1, 1, -1], [s - 1, s - 1, -1, -1]].forEach(function (k) {
+        g.beginPath();
+        g.moveTo(k[0], k[1] + k[3] * L);
+        g.lineTo(k[0], k[1]);
+        g.lineTo(k[0] + k[2] * L, k[1]);
+        g.stroke();
+      });
+    },
+    // Windows 98: the frame IS the light. Two rings, the outer hard pair and
+    // the inner soft one, and `sunk` swaps both, which is the whole of the
+    // difference between a button and a field somebody types into.
+    bevel: function (g, s, o) {
+      paintFill(g, s, o);
+      bevelRing(g, s, 0, o.sunk ? o.line : o.corner, o.sunk ? o.corner : o.line);
+      bevelRing(g, s, 1, o.sunk ? o.mid : o.inner, o.sunk ? o.inner : o.mid);
+    },
+    // Aero: a rounded pane with a sheen over its top half and a light rim.
+    // The sheen stops at 46 percent because that HARD line across the glass
+    // is what the eye reads as a curved surface rather than as a gradient.
+    gloss: function (g, s, o) {
+      var r = 7;
+      g.save();
+      roundPath(g, 0, 0, s, s, r); g.clip();
+      paintFill(g, s, o);
+      var sh = g.createLinearGradient(0, 0, 0, s * 0.46);
+      sh.addColorStop(0, o.inner); sh.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = sh; g.fillRect(0, 0, s, s * 0.46);
+      g.restore();
+      g.lineWidth = 1;
+      g.strokeStyle = o.line; roundPath(g, 0.5, 0.5, s - 1, s - 1, r); g.stroke();
+      g.strokeStyle = o.corner; roundPath(g, 1.5, 1.5, s - 3, s - 3, r - 1); g.stroke();
+    },
+    // Wood: bands that RUN, which means the noise has to be stretched along
+    // one axis rather than isotropic. A ring is the same wave displaced by a
+    // slower one, which is what makes a grain wander instead of striping.
+    grain: function (g, s, o) {
+      paintFill(g, s, o);
+      var x, y, v, u;
+      for (y = 0; y < s; y++) {
+        for (x = 0; x < s; x++) {
+          u = x / s + 0.06 * wave(y / s, 1, 0.9) + 0.03 * wave(y / s, 2, 2.4);
+          v = wave(u, 3, 0) * 0.6 + wave(u, 7, 1.3) * 0.3 + wave(y / s, 11, 2.2) * 0.1;
+          if (v > 0.45) { g.fillStyle = o.inner; g.fillRect(x, y, 1, 1); }
+          else if (v < -0.55) { g.fillStyle = o.line; g.fillRect(x, y, 1, 1); }
+        }
+      }
+      g.strokeStyle = o.line; g.lineWidth = 2; g.strokeRect(1, 1, s - 2, s - 2);
+      g.fillStyle = o.corner;
+      [[2, 2], [s - 7, 2], [2, s - 7], [s - 7, s - 7]].forEach(function (k) {
+        g.fillRect(k[0], k[1], 5, 5);
+      });
+    },
+    // Parchment: fibres rather than grain, so the noise is isotropic and
+    // SPARSE. A dense speckle at this size reads as dirt; what says paper is
+    // a few long fibres and a rim that has soaked up its own ink.
+    fibre: function (g, s, o) {
+      paintFill(g, s, o);
+      var x, y, v;
+      for (y = 0; y < s; y++) {
+        for (x = 0; x < s; x++) {
+          v = wave(x / s, 5, 0.4) * wave(y / s, 3, 1.1) + wave(x / s, 2, 2.7) * wave(y / s, 9, 0.2);
+          if (v > 1.15) { g.fillStyle = o.inner; g.fillRect(x, y, 1, 1); }
+        }
+      }
+      g.strokeStyle = o.line; g.lineWidth = 1; g.strokeRect(2.5, 2.5, s - 5, s - 5);
+      g.strokeStyle = o.corner; g.lineWidth = 1; g.strokeRect(4.5, 4.5, s - 9, s - 9);
+    },
+    // Steel: streaks ALONG one axis and rivets at the corners. The streak is
+    // per row rather than per pixel, because a brushed finish is a direction
+    // and per pixel noise is sand.
+    brushed: function (g, s, o) {
+      paintFill(g, s, o);
+      var y, a;
+      for (y = 0; y < s; y++) {
+        a = wave(y / s, 7, 0.3) * 0.5 + wave(y / s, 17, 2.1) * 0.3 + wave(y / s, 23, 4.0) * 0.2;
+        g.globalAlpha = Math.abs(a) * 0.22;
+        g.fillStyle = a > 0 ? o.inner : o.line;
+        g.fillRect(0, y, s, 1);
+      }
+      g.globalAlpha = 1;
+      bevelRing(g, s, 0, o.inner, o.line);
+      g.fillStyle = o.corner;
+      [[5, 5], [s - 5, 5], [5, s - 5], [s - 5, s - 5]].forEach(function (k) {
+        g.beginPath(); g.arc(k[0], k[1], 2.1, 0, Math.PI * 2); g.fill();
+      });
+    },
+    // Chitin: a plate rather than a panel. Lumps where the shell is thick,
+    // veins in the seams, and a lit node at each corner, which is the one
+    // thing on an alien that is ALIVE rather than armour.
+    chitin: function (g, s, o) {
+      paintFill(g, s, o);
+      var x, y, v;
+      for (y = 0; y < s; y++) {
+        for (x = 0; x < s; x++) {
+          v = wave(x / s, 2, 0.5) * wave(y / s, 2, 1.4) + 0.5 * wave(x / s, 5, 2.2) * wave(y / s, 3, 0.8);
+          g.globalAlpha = Math.min(0.5, Math.abs(v) * 0.4);
+          g.fillStyle = v > 0 ? o.inner : o.line;
+          g.fillRect(x, y, 1, 1);
+        }
+      }
+      g.globalAlpha = 1;
+      g.strokeStyle = o.line; g.lineWidth = 2;
+      roundPath(g, 1, 1, s - 2, s - 2, 9); g.stroke();
+      g.fillStyle = o.corner;
+      [[4, 4], [s - 4, 4], [4, s - 4], [s - 4, s - 4]].forEach(function (k) {
+        g.beginPath(); g.arc(k[0], k[1], 2.6, 0, Math.PI * 2); g.fill();
+      });
+    }
+  };
+
+  function sliceTex(o, style) {
+    var s = 48, c = document.createElement("canvas");
+    c.width = c.height = s;
+    (CHROME[style] || CHROME.bracket)(c.getContext("2d"), s, o);
+    return c.toDataURL();
+  }
+
+  // A skin is a ROW. It owns the palette the HUD's twenty roles resolve to,
+  // the two typefaces, the four frame descriptors and the style they are
+  // drawn in, how the middle of a frame repeats, and the ink a schematic is
+  // baked in. It owns nothing else: the world under it, the layout, and
+  // every rule about what a control DOES are the same on all seven.
+  var SKINS = [
+    { id: "command", name: "Fleet Command", style: "bracket", rep: "stretch",
+      font: '"Barlow Semi Condensed", system-ui, sans-serif',
+      mono: '"Share Tech Mono", monospace',
+      tok: { "sky-ink": "#cfe2ee", gold: "#f5c542", "gold-dim": "#8a6d18", teal: "#49b6c8", cyan: "#6ff0ff",
+             ink: "#cfe2ee", dim: "#7e94a6", faint: "#4e6274", green: "#63d12b",
+             red: "#e8563c", ore: "#e8a33c", cry: "#58d8c4",
+             "g-deep": "#04121b", "g-fill": "#0d2231", "btn-a": "#123549", "btn-b": "#0a1f2c",
+             row: "rgba(9,26,37,.85)", "row-hot": "rgba(18,46,63,.82)",
+             hover: "rgba(90,170,200,.16)", tip: "rgba(5,16,26,.94)",
+             edge: "#1d3f52", "edge-hot": "#2e5f78", "edge-lit": "#47869e", "ink-hot": "#7fd8ea",
+             "gold-a": "#3f3307", "gold-b": "#191504",
+             "go-a": "#14501e", "go-b": "#07260d", "go-lit": "#1e8c2f",
+             "go-edge": "#2c8a3a", "go-ink": "#9df06f", "go-ink-hot": "#d4ffbe" },
+      slice: {
+        panel: { fill: "rgba(5,16,26,0.88)", line: "rgba(96,158,188,0.42)",
+                 inner: "rgba(96,158,188,0.16)", corner: "#f5c542" },
+        well: { fill: "rgba(2,9,15,0.86)", line: "rgba(60,112,142,0.36)",
+                inner: null, corner: "rgba(73,182,200,0.55)" },
+        btn: { grad: ["rgba(22,64,86,0.9)", "rgba(7,24,35,0.9)"],
+               line: "rgba(120,200,220,0.5)", inner: null, corner: "rgba(140,224,244,0.75)" },
+        hot: { grad: ["rgba(96,76,10,0.92)", "rgba(30,23,4,0.92)"],
+               line: "rgba(245,197,66,0.7)", inner: null, corner: "#ffd964" }
+      },
+      plan: { hull: 0x0d3a52, subs: 0x8e3d05, line: 0x3fc8e8, lsub: 0xff9a3c, rim: [126, 234, 255] } },
+
+    // Opaque on purpose. Nothing in 1998 was translucent, and a 98 frame with
+    // the battle showing through it is a mood board rather than a skin.
+    { id: "win98", name: "Windows 98", style: "bevel", rep: "stretch",
+      bevel: "inset 1px 1px 0 #fff, inset -1px -1px 0 #000, inset 2px 2px 0 #dfdfdf, inset -2px -2px 0 #808080",
+      bevelIn: "inset 1px 1px 0 #000, inset -1px -1px 0 #fff, inset 2px 2px 0 #808080, inset -2px -2px 0 #dfdfdf",
+      font: 'Tahoma, "MS Sans Serif", Verdana, system-ui, sans-serif',
+      mono: '"Courier New", Courier, monospace',
+      tok: { "sky-ink": "#ffffff", gold: "#000080", "gold-dim": "#000080", teal: "#000080", cyan: "#000080",
+             ink: "#000", dim: "#3a3a3a", faint: "#6a6a6a", green: "#008000",
+             red: "#a80000", ore: "#804000", cry: "#000080",
+             "g-deep": "#fff", "g-fill": "#c0c0c0", "btn-a": "#c0c0c0", "btn-b": "#c0c0c0",
+             row: "#c0c0c0", "row-hot": "#d6d6d6", hover: "rgba(0,0,128,.12)", tip: "#ffffe1",
+             edge: "#808080", "edge-hot": "#808080", "edge-lit": "#000080", "ink-hot": "#000080",
+             "gold-a": "#000080", "gold-b": "#1084d0",
+             "go-a": "#c0c0c0", "go-b": "#c0c0c0", "go-lit": "#c0c0c0",
+             "go-edge": "#808080", "go-ink": "#006000", "go-ink-hot": "#008000" },
+      slice: {
+        panel: { fill: "#c0c0c0", line: "#000", mid: "#808080", inner: "#dfdfdf", corner: "#fff" },
+        well: { fill: "#fff", line: "#000", mid: "#808080", inner: "#dfdfdf", corner: "#fff", sunk: true },
+        btn: { fill: "#c0c0c0", line: "#000", mid: "#808080", inner: "#dfdfdf", corner: "#fff" },
+        hot: { fill: "#c0c0c0", line: "#000", mid: "#808080", inner: "#dfdfdf", corner: "#fff", sunk: true }
+      },
+      plan: { hull: 0x9a9a9a, subs: 0x000080, line: 0x000000, lsub: 0x000080, rim: [0, 0, 0] } },
+
+    { id: "vista", name: "Windows Vista", style: "gloss", rep: "stretch",
+      font: '"Segoe UI", Frutiger, Calibri, system-ui, sans-serif',
+      mono: 'Consolas, "Courier New", monospace',
+      tok: { "sky-ink": "#eaf6ff", gold: "#ffd45e", "gold-dim": "#9a7a22", teal: "#7fc8ff", cyan: "#b9e6ff",
+             ink: "#eaf6ff", dim: "#a8c6dc", faint: "#7191a8", green: "#78e83c",
+             red: "#ff7a5e", ore: "#ffc061", cry: "#7fe6ff",
+             "g-deep": "rgba(10,28,46,0.55)", "g-fill": "rgba(40,86,130,0.5)",
+             "btn-a": "rgba(120,190,240,0.55)", "btn-b": "rgba(24,64,104,0.55)",
+             row: "rgba(18,48,80,0.5)", "row-hot": "rgba(90,160,220,0.42)",
+             hover: "rgba(255,255,255,.18)", tip: "rgba(12,34,56,.92)",
+             edge: "rgba(190,225,255,0.35)", "edge-hot": "rgba(210,240,255,0.6)",
+             "edge-lit": "#cfefff", "ink-hot": "#d8f2ff",
+             "gold-a": "rgba(255,208,96,0.55)", "gold-b": "rgba(120,86,10,0.5)",
+             "go-a": "rgba(120,230,110,0.55)", "go-b": "rgba(20,86,30,0.55)",
+             "go-lit": "rgba(150,250,140,0.7)", "go-edge": "rgba(190,255,180,0.6)",
+             "go-ink": "#e2ffd6", "go-ink-hot": "#fff" },
+      slice: {
+        panel: { grad: ["rgba(36,84,130,0.62)", "rgba(10,30,52,0.72)"],
+                 line: "rgba(200,235,255,0.42)", inner: "rgba(255,255,255,0.34)",
+                 corner: "rgba(255,255,255,0.22)" },
+        well: { grad: ["rgba(8,24,40,0.66)", "rgba(6,18,32,0.74)"],
+                line: "rgba(170,210,240,0.3)", inner: "rgba(255,255,255,0.16)",
+                corner: "rgba(255,255,255,0.1)" },
+        btn: { grad: ["rgba(96,170,226,0.62)", "rgba(22,62,104,0.66)"],
+               line: "rgba(220,245,255,0.55)", inner: "rgba(255,255,255,0.5)",
+               corner: "rgba(255,255,255,0.3)" },
+        hot: { grad: ["rgba(255,206,104,0.7)", "rgba(122,76,10,0.7)"],
+               line: "rgba(255,236,180,0.7)", inner: "rgba(255,255,255,0.55)",
+               corner: "rgba(255,255,255,0.3)" }
+      },
+      plan: { hull: 0x1b4a68, subs: 0xa04a08, line: 0x8fe0ff, lsub: 0xffc06a, rim: [180, 232, 255] } },
+
+    // Wood and parchment REPEAT their middles rather than stretching them:
+    // a grain pulled across a seven hundred pixel panel is a smear, and the
+    // seam that would show is the reason every texture here tiles.
+    { id: "wood", name: "Wood", style: "grain", rep: "repeat",
+      font: 'Georgia, "Iowan Old Style", "Times New Roman", serif',
+      mono: '"Courier New", Courier, monospace',
+      tok: { "sky-ink": "#f2e2c4", gold: "#e0b34a", "gold-dim": "#8a6a22", teal: "#c9a86a", cyan: "#f0d9a8",
+             ink: "#f2e2c4", dim: "#bda684", faint: "#8a7255", green: "#8fbf4a",
+             red: "#d4552f", ore: "#e0a040", cry: "#7fc4b0",
+             "g-deep": "#2a1b10", "g-fill": "#4a3018", "btn-a": "#6b4423", "btn-b": "#3d2512",
+             row: "rgba(58,36,18,.88)", "row-hot": "rgba(96,62,30,.9)",
+             hover: "rgba(230,190,120,.14)", tip: "#2a1b10",
+             edge: "#5a3c1e", "edge-hot": "#8a5c2a", "edge-lit": "#c8912f", "ink-hot": "#f0cf8a",
+             "gold-a": "#8a6a22", "gold-b": "#3a2c0c",
+             "go-a": "#4a6a20", "go-b": "#22300c", "go-lit": "#6f9a2c",
+             "go-edge": "#8fbf4a", "go-ink": "#d8f0a0", "go-ink-hot": "#f0ffd0" },
+      slice: {
+        panel: { fill: "#563519", line: "#2e1b0c", inner: "#6f4522", corner: "#c8912f" },
+        well: { fill: "#35200f", line: "#1d1107", inner: "#482c15", corner: "#8a6a22" },
+        btn: { fill: "#6b4423", line: "#331d0d", inner: "#8a5c30", corner: "#d9a440" },
+        hot: { fill: "#8a5a24", line: "#40230c", inner: "#b07a34", corner: "#ffd06a" }
+      },
+      plan: { hull: 0x6b4423, subs: 0xc8912f, line: 0xf0cf8a, lsub: 0xffe0a0, rim: [240, 207, 138] } },
+
+    { id: "parchment", name: "Parchment", style: "fibre", rep: "repeat",
+      font: '"Iowan Old Style", Georgia, "Times New Roman", serif',
+      mono: '"Courier New", Courier, monospace',
+      tok: { "sky-ink": "#f0e4c8", gold: "#8a5a12", "gold-dim": "#b08a44", teal: "#6a5230", cyan: "#3c2c14",
+             ink: "#2e2414", dim: "#6a5a40", faint: "#8a7a60", green: "#3c6a20",
+             red: "#9a2c18", ore: "#8a5a12", cry: "#2c5a6a",
+             "g-deep": "#efe2c4", "g-fill": "#e2d3b0", "btn-a": "#e8dbbc", "btn-b": "#d4c29c",
+             row: "rgba(236,223,193,.94)", "row-hot": "rgba(222,204,166,.96)",
+             hover: "rgba(120,90,40,.12)", tip: "#3c2c14",
+             edge: "#b9a67e", "edge-hot": "#8a7450", "edge-lit": "#5c4420", "ink-hot": "#5c3a10",
+             "gold-a": "#d9c08a", "gold-b": "#b99a5e",
+             "go-a": "#c6d0a0", "go-b": "#a2b078", "go-lit": "#b6c88a",
+             "go-edge": "#6a7a3a", "go-ink": "#2c4410", "go-ink-hot": "#1c3006" },
+      slice: {
+        panel: { fill: "#eee0c0", line: "#8a7450", inner: "#cfbc94", corner: "#b9a67e" },
+        well: { fill: "#e2d3ae", line: "#a08a62", inner: "#c4ad82", corner: "#8a7450" },
+        btn: { fill: "#e8dbbc", line: "#8a7450", inner: "#cbb890", corner: "#b9a67e" },
+        hot: { fill: "#d8c48e", line: "#6a5430", inner: "#b9a06a", corner: "#8a6a30" }
+      },
+      plan: { hull: 0xc9b48a, subs: 0x8a5a12, line: 0x3c2c14, lsub: 0x7a3a08, rim: [60, 44, 20] } },
+
+    { id: "steel", name: "Brushed Steel", style: "brushed", rep: "repeat",
+      font: '"Barlow Semi Condensed", "Roboto Condensed", system-ui, sans-serif',
+      mono: '"Share Tech Mono", monospace',
+      tok: { "sky-ink": "#e6edf2", gold: "#ffb000", "gold-dim": "#8a6000", teal: "#9fb4c4", cyan: "#dceaf4",
+             ink: "#e6edf2", dim: "#a4b0ba", faint: "#7a868f", green: "#4ad24a",
+             red: "#e8402c", ore: "#ffa22c", cry: "#5ec8e0",
+             "g-deep": "#232729", "g-fill": "#3a4044", "btn-a": "#5c6469", "btn-b": "#3c4246",
+             row: "rgba(48,53,57,.92)", "row-hot": "rgba(74,82,88,.94)",
+             hover: "rgba(255,255,255,.1)", tip: "#1c1f21",
+             edge: "#5a6469", "edge-hot": "#7c888f", "edge-lit": "#b4c2cc", "ink-hot": "#dbe6ee",
+             "gold-a": "#7a5400", "gold-b": "#2e2000",
+             "go-a": "#2c6a2c", "go-b": "#143414", "go-lit": "#3f9a3f",
+             "go-edge": "#4ad24a", "go-ink": "#c6f0c6", "go-ink-hot": "#e8ffe8" },
+      slice: {
+        panel: { fill: "#42484c", line: "#22262a", inner: "#8e9aa2", corner: "#c0ccd4" },
+        well: { fill: "#2a2e31", line: "#16191b", inner: "#5c656b", corner: "#8e9aa2" },
+        btn: { fill: "#565e63", line: "#2a2e31", inner: "#a4b0b8", corner: "#d0dae0" },
+        hot: { fill: "#7a5400", line: "#2e2000", inner: "#d09a20", corner: "#ffc74a" }
+      },
+      plan: { hull: 0x565e63, subs: 0xb06000, line: 0xdbe6ee, lsub: 0xffb000, rim: [219, 230, 238] } },
+
+    // The swarm's own colours: chitin violet with the acid green every living
+    // cell on an alien is lit in. This is the one skin that is a FACTION
+    // rather than a material, and it is what the HUD would look like if the
+    // cloud were reading it.
+    { id: "alien", name: "Alien", style: "chitin", rep: "repeat",
+      font: '"Barlow Semi Condensed", system-ui, sans-serif',
+      mono: '"Share Tech Mono", monospace',
+      tok: { "sky-ink": "#e4d2f4", gold: "#6fb835", "gold-dim": "#3d6a1c", teal: "#b07ae0", cyan: "#d6a8ff",
+             ink: "#e4d2f4", dim: "#a98cc4", faint: "#6f5a88", green: "#6fb835",
+             red: "#ff6a2c", ore: "#c88a3c", cry: "#9ce0c0",
+             "g-deep": "#160a24", "g-fill": "#2c1442", "btn-a": "#46215e", "btn-b": "#22103a",
+             row: "rgba(34,14,52,.9)", "row-hot": "rgba(62,28,90,.92)",
+             hover: "rgba(160,110,220,.18)", tip: "#1a0c2a",
+             edge: "#4a2470", "edge-hot": "#7038a8", "edge-lit": "#a86ae0", "ink-hot": "#c8a0f0",
+             "gold-a": "#2e5a16", "gold-b": "#16290a",
+             "go-a": "#3d6a1c", "go-b": "#1a2e0c", "go-lit": "#5a9a28",
+             "go-edge": "#6fb835", "go-ink": "#b8f080", "go-ink-hot": "#e0ffc0" },
+      slice: {
+        panel: { fill: "rgba(38,16,58,0.9)", line: "#16082a", inner: "#5c2a86", corner: "#6fb835" },
+        well: { fill: "rgba(20,8,32,0.9)", line: "#0e0420", inner: "#3c1a5c", corner: "#3d6a1c" },
+        btn: { fill: "rgba(60,28,88,0.92)", line: "#1c0a30", inner: "#7c3cb0", corner: "#6fb835" },
+        hot: { fill: "rgba(52,84,26,0.92)", line: "#16290a", inner: "#8fd048", corner: "#d6ff90" }
+      },
+      plan: { hull: 0x3c1a5c, subs: 0x3d6a1c, line: 0xb07ae0, lsub: 0x6fb835, rim: [176, 122, 224] } }
+  ];
+
+  var byId = {};
+  SKINS.forEach(function (k) { byId[k.id] = k; });
+  var skin = SKINS[0];
+  var sliceUrl = {};
+
+  // Every ship's two pictures, in the skin's own ink. A schematic is a BAKE,
+  // so the only way to draw one in another colour is to draw it again: this
+  // is the boot cost paid over, and paying it is the honest answer.
+  //
+  // The roster's is SQUARE, and that is what normalises them: the wide bake
+  // fits a hull's extents into a 3:1 frame, so a long frigate filled it and a
+  // squat platform came out a third the size in the same row. In a square
+  // every ship fills the same box, whichever way it is long.
+  function bakeFleet() {
+    SHIPS.forEach(function (s) {
+      s.schem = bake(s.model, s.mesh, { w: 440, h: 140, view: "plan", pad: 1.05, rings: 2 }).toDataURL();
+      s.thumb = bake(s.model, s.mesh, { w: 96, h: 64, view: "plan", pad: 1.04, rings: 1 }).toDataURL();
+    });
+  }
+
+  // Wearing a skin is: the palette on the HUD element, the two typefaces, the
+  // four frames rebaked, the ship pictures rebaked, and every panel redrawn
+  // because the pictures are in their markup. Nothing else moves, and that is
+  // the claim the picker exists to test.
+  function applySkin(id) {
+    skin = byId[id] || SKINS[0];
+    var h = document.getElementById("hud");
+    Object.keys(skin.tok).forEach(function (n) { h.style.setProperty("--" + n, skin.tok[n]); });
+    h.style.setProperty("--hud-font", skin.font);
+    h.style.setProperty("--hud-mono", skin.mono);
+    h.style.setProperty("--n-rep", skin.rep);
+    h.style.setProperty("--bevel", skin.bevel || "none");
+    h.style.setProperty("--bevel-in", skin.bevelIn || skin.bevel || "none");
+    FRAMES.forEach(function (f) {
+      sliceUrl[f.id] = sliceTex(skin.slice[f.id], skin.style);
+      h.style.setProperty("--n-" + f.id, "url(" + sliceUrl[f.id] + ")");
+    });
+    bakeFleet();
+    drawRoster(); drawCats(); drawList(); drawProducer(); drawQueue();
+    drawBank(); drawMods(); drawSlices(); drawUnitShot(); drawBench();
+    drawObjectives(); drawMenu(); sensorInk();
+    // The selection ring belongs to the HUD rather than to the world, so it
+    // wears the skin too. Everything else in the field is the GAME and is the
+    // same picture whatever the panels are made of.
+    outline.material.uniforms.tint.value.set(skin.tok.cyan);
+    document.querySelectorAll("#skins button").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.skin === skin.id));
+    });
+  }
+
+  // ===================================================================
+  // 6. The field.
+  // ===================================================================
+  var stage = document.getElementById("stage");
+  var cv = document.getElementById("world");
+  var renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  var scene = new THREE.Scene();
+  // Far enough for the widest sensor horizon: the eye stands at 2.2 radii and
+  // the far rim is another radius beyond it, so five times the base horizon
+  // wants better than fifteen thousand. A ring whose far half falls outside
+  // the frustum is a ring drawn as a crescent.
+  var camera = new THREE.PerspectiveCamera(46, 16 / 9, 1, 30000);
+  // 420 rather than 300, because the fleet is spread over the area now: the
+  // field camera has to show the ship you picked AND its neighbours, or every
+  // question about two ships at once becomes a trip to the sensors map.
+  var orbit = { yaw: 0.62, pitch: 0.28, dist: 420, focus: new THREE.Vector3() };
+  var camDist = orbit.dist;   // what the eye is actually at, eased toward the goal
+  // Where an orbit's eye stands, written ONCE. The field's camera and the
+  // sensors map are the same orbit at two distances, and two copies of this
+  // expression is two cameras that can disagree about which way the player is
+  // looking, which is the one thing a map must never do.
+  function orbitEye(out, d) {
+    return out.set(
+      orbit.focus.x + Math.sin(orbit.yaw) * Math.cos(orbit.pitch) * d,
+      orbit.focus.y + Math.sin(orbit.pitch) * d,
+      orbit.focus.z + Math.cos(orbit.yaw) * Math.cos(orbit.pitch) * d
+    );
+  }
+
+  scene.add(new THREE.AmbientLight(0x2b3d4e, 1.0));
+  var sun = new THREE.DirectionalLight(0xffe6c4, 1.3); sun.position.set(0.5, 0.7, 0.35); scene.add(sun);
+  var back = new THREE.DirectionalLight(0x4b7fb5, 0.55); back.position.set(-0.6, -0.2, -0.7); scene.add(back);
+
+  var stars = null;
+  (function backdrop() {
+    var c = document.createElement("canvas");
+    c.width = 1024; c.height = 512;
+    var g = c.getContext("2d");
+    g.fillStyle = "#03060b"; g.fillRect(0, 0, 1024, 512);
+    [[0.24, 0.34, 320, "rgba(28,78,98,0.55)"], [0.66, 0.62, 380, "rgba(56,36,92,0.45)"],
+     [0.86, 0.26, 260, "rgba(20,68,58,0.40)"]].forEach(function (k) {
+      var rg = g.createRadialGradient(k[0] * 1024, k[1] * 512, 0, k[0] * 1024, k[1] * 512, k[2]);
+      rg.addColorStop(0, k[3]); rg.addColorStop(1, "rgba(3,6,11,0)");
+      g.fillStyle = rg; g.fillRect(0, 0, 1024, 512);
+    });
+    var tex = new THREE.CanvasTexture(c);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    scene.background = tex;
+    var sp = [];
+    for (var i = 0; i < 1600; i++) {
+      var th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1), r = 3200;
+      sp.push(r * Math.sin(ph) * Math.cos(th), r * Math.cos(ph), r * Math.sin(ph) * Math.sin(th));
+    }
+    var sg = new THREE.BufferGeometry();
+    sg.setAttribute("position", new THREE.Float32BufferAttribute(sp, 3));
+    // The shell RIDES THE EYE, which is what makes it a sky rather than an
+    // object: fixed at the origin it is a ball 3200 units across, and the
+    // sensors map's own camera stands further out than that, so zooming out
+    // flew the whole star field behind the lens and the sky went empty.
+    stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xc6dcef, size: 2, sizeAttenuation: false }));
+    scene.add(stars);
+  })();
+
+  var hulls = [], cache = {};
+  function meshFor(spec) {
+    if (!cache[spec.key]) {
+      cache[spec.key] = {
+        geo: geomOf(spec.mesh, spec.model),
+        mat: new THREE.MeshLambertMaterial({ vertexColors: true })
+      };
+    }
+    return new THREE.Mesh(cache[spec.key].geo, cache[spec.key].mat);
+  }
+  function spawn(key, x, y, z, yaw) {
+    var spec = byKey[key];
+    var mesh = meshFor(spec);
+    mesh.position.set(x, y, z);
+    mesh.rotation.y = yaw;
+    var h = {
+      spec: spec, mesh: mesh, hp: 0.55 + Math.random() * 0.45, mods: {},
+      drift: new THREE.Vector3((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.14, (Math.random() - 0.5) * 0.5),
+      spin: (Math.random() - 0.5) * 0.0011
+    };
+    mesh.userData.h = h;
+    scene.add(mesh);
+    hulls.push(h);
+    return h;
+  }
+  // The fleet is spread over the AREA, not packed round the origin. It used to
+  // sit inside a hundred and sixty units because that is what the field camera
+  // shows at its default zoom, which made the sensors map one bright blob: a
+  // battlefield whose whole fleet fits in one screen is a battlefield that
+  // never needed an overview. Spread, the field camera shows the ship you
+  // picked and its neighbours and the sensors map shows where everything else
+  // is, which is the division of labour the two views exist for.
+  spawn("carrier", 0, 0, 0, 0.42).mods = { prod: true, hangar: true };
+  spawn("destroyer", -330, 24, 170, 1.1);
+  spawn("ion", 265, -34, -110, -0.5);
+  spawn("flak", 350, 20, 82, 2.2);
+  spawn("collector", -420, -46, -390, 0.9);
+  spawn("collector", -470, -32, -330, 1.6);
+  spawn("lance", 130, 52, 225, 0.2);
+  spawn("lance", 168, 58, 250, 0.3);
+  spawn("scout", -110, 70, -520, 2.8);
+
+  (function rock() {
+    var g = new THREE.IcosahedronGeometry(44, 2);
+    var p = g.attributes.position;
+    for (var i = 0; i < p.count; i++) {
+      var vx = p.getX(i), vy = p.getY(i), vz = p.getZ(i);
+      var k = 1 + 0.24 * Math.sin(vx * 0.15) * Math.cos(vy * 0.12) + 0.15 * Math.sin(vz * 0.2);
+      p.setXYZ(i, vx * k, vy * k, vz * k);
+    }
+    g.computeVertexNormals();
+    var r = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0x4d443a, flatShading: true }));
+    r.position.set(-430, -56, -350);
+    scene.add(r);
+  })();
+
+  var sel = hulls[0];
+
+  // Selection is an outline on the SHIP rather than a shape drawn near it.
+  // The same geometry a second time, back faces only, swollen, depth tested
+  // and drawn after the ship: the interior fails against the hull's own depth
+  // and only the ring outside its silhouette survives.
+  //
+  // Swollen along the SURFACE NORMAL, and that is the whole of it. Scaling the
+  // geometry about its centre was the first cut and it outlined the inside of
+  // the ship: a scale moves every point RADIALLY, so a terrace half way down a
+  // stepped hull slides outward along the hull's own length and emerges from
+  // behind the step in front of it, and a voxel hull is nothing but steps. The
+  // picture was a stack of nested rectangles marching aft. Displacing each
+  // surface perpendicular to ITSELF moves a terrace straight up, where the
+  // step in front of it goes on covering it, and only the silhouette grows.
+  //
+  // Which needs a normal the mesher does not have. Its quads share no
+  // vertices, so every corner carries its own face normal and inflating on
+  // those tears the shell into detached faces with a gap along every edge. So
+  // the shell WELDS: one averaged direction per position, which at a cube's
+  // corner is the diagonal and keeps the surface closed as it grows.
+  function shellOf(geo) {
+    var p = geo.attributes.position.array, n = geo.attributes.normal.array;
+    var dir = new Float32Array(p.length), at = {}, keys = [], i, k, a, j;
+    for (i = 0; i < p.length; i += 3) {
+      k = Math.round(p[i] * 64) + "," + Math.round(p[i + 1] * 64) + "," + Math.round(p[i + 2] * 64);
+      a = at[k];
+      if (!a) { a = at[k] = [0, 0, 0, []]; keys.push(k); }
+      a[0] += n[i]; a[1] += n[i + 1]; a[2] += n[i + 2];
+      a[3].push(i);
+    }
+    for (j = 0; j < keys.length; j++) {
+      a = at[keys[j]];
+      var len = Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]) || 1;
+      for (i = 0; i < a[3].length; i++) {
+        dir[a[3][i]] = a[0] / len;
+        dir[a[3][i] + 1] = a[1] / len;
+        dir[a[3][i] + 2] = a[2] / len;
+      }
+    }
+    var g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(p, 3));
+    g.setAttribute("dir", new THREE.BufferAttribute(dir, 3));
+    return g;
+  }
+
+  var outline = new THREE.Mesh(
+    new THREE.BufferGeometry(),
+    new THREE.ShaderMaterial({
+      uniforms: { thick: { value: 0 }, tint: { value: new THREE.Color(0x6ff0ff) } },
+      vertexShader:
+        "attribute vec3 dir;\nuniform float thick;\nvoid main() {\n" +
+        "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position + dir * thick, 1.0);\n}",
+      fragmentShader:
+        "uniform vec3 tint;\nvoid main() { gl_FragColor = vec4(tint, 0.92); }",
+      side: THREE.BackSide, transparent: true,
+      depthTest: false, depthWrite: false,
+      stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc
+    })
+  );
+  outline.renderOrder = 1;
+  outline.visible = false;
+
+  // What the shell is held off the ship by is a STENCIL, and that is the
+  // second half of the fix. Depth was the obvious tool and it is the wrong
+  // one twice over. A back face shell sits at the ship's FAR depth, so
+  // anything standing nearer ate the rim: the carrier parked against an
+  // asteroid lost the whole of the side the rock was on, which puts the
+  // marker out exactly when the ship is hardest to pick out of the scene.
+  // And an offset surface SELF INTERSECTS wherever the hull steps in, so
+  // fragments of the shell came out marginally in front of the plating and
+  // drew a contour across the middle of the ship. Both are one question
+  // asked of the wrong buffer: an outline is not "what is in front of what",
+  // it is "which pixels are the ship", and that is a stencil.
+  //
+  // So the hull stamps its own silhouette into the stencil with no colour and
+  // no depth, and the shell draws with the depth test OFF wherever the stamp
+  // is NOT. What survives is the ring outside the silhouette and nothing
+  // else, at a width nothing in the scene can eat into.
+  var overlay = new THREE.Scene();
+  var mask = new THREE.Mesh(
+    new THREE.BufferGeometry(),
+    new THREE.MeshBasicMaterial({
+      colorWrite: false, depthTest: false, depthWrite: false,
+      stencilWrite: true, stencilRef: 1,
+      stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp
+    })
+  );
+  mask.renderOrder = 0;
+  mask.visible = false;
+  overlay.add(mask);
+  overlay.add(outline);
+  renderer.autoClear = false;
+
+  // Thickness in PIXELS, not in units: a marker a player cannot see at the
+  // zoom they are actually at is a marker that is not there.
+  var OUTLINE_PX = 2.6;
+  function poseOutline() {
+    if (!sel) { outline.visible = mask.visible = false; return; }
+    var c = cache[sel.spec.key];
+    outline.geometry = c.shell || (c.shell = shellOf(c.geo));
+    mask.geometry = c.geo;
+    outline.position.copy(sel.mesh.position);
+    outline.quaternion.copy(sel.mesh.quaternion);
+    mask.position.copy(sel.mesh.position);
+    mask.quaternion.copy(sel.mesh.quaternion);
+    var dist = Math.max(1, sel.mesh.position.distanceTo(camera.position));
+    var perPx = 2 * Math.tan(camera.fov * Math.PI / 360) * dist / Math.max(1, stage.clientHeight);
+    outline.material.uniforms.thick.value = OUTLINE_PX * perPx;
+    outline.visible = mask.visible = true;
+  }
+
+  // ---- camera and picking ----
+  //
+  // ONE drag, on one orbit, and the two surfaces that carry it differ only in
+  // what a press that did NOT drag means: a hull on the field, a blip on the
+  // sensors map. Turning the map therefore turns the world behind it, because
+  // there was never a second camera to turn.
+  var drag = null;
+  function orbitDown(e) {
+    drag = { x: e.clientX, y: e.clientY, moved: 0 };
+    this.setPointerCapture(e.pointerId);
+  }
+  function orbitMove(e) {
+    if (!drag) { return; }
+    var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.moved += Math.abs(dx) + Math.abs(dy);
+    drag.x = e.clientX; drag.y = e.clientY;
+    // Clamped, because one event carrying a whole desk of travel is what
+    // throws a camera across the map.
+    orbit.yaw -= Math.max(-60, Math.min(60, dx)) * 0.006;
+    orbit.pitch = Math.max(-1.3, Math.min(1.3, orbit.pitch + Math.max(-60, Math.min(60, dy)) * 0.005));
+  }
+  function orbitEnd(pickFn) {
+    return function (e) {
+      if (drag && drag.moved < 6) { pickFn(e); }
+      drag = null;
+    };
+  }
+  cv.addEventListener("pointerdown", orbitDown);
+  cv.addEventListener("pointermove", orbitMove);
+  cv.addEventListener("pointerup", orbitEnd(function (e) { pick(e); }));
+  cv.addEventListener("pointercancel", function () { drag = null; });
+  stage.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    // exp, because a wheel reporting pixels hands over a hundred a notch and
+    // a linear factor takes the distance negative.
+    var unit = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? 400 : 1);
+    var f = Math.exp(e.deltaY * unit * 0.0012);
+    // In the sensors map the wheel is the MAP's zoom and leaves the field's
+    // alone, so coming back out of it puts the player at the zoom they left.
+    if (view === "sensors") {
+      sensorZoom = Math.max(1, Math.min(SENSOR_OUT, sensorZoom * f));
+    } else {
+      orbit.dist = Math.max(70, Math.min(1100, orbit.dist * f));
+    }
+  }, { passive: false });
+
+  var ray = new THREE.Raycaster();
+  function pick(e) {
+    var r = cv.getBoundingClientRect();
+    var nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1,
+      -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(nd, camera);
+    var hit = ray.intersectObjects(hulls.map(function (h) { return h.mesh; }), false);
+    if (hit.length) { select(hit[0].object.userData.h); }
+  }
+
+  function hpColour(f) { return f > 0.6 ? "#63d12b" : f > 0.3 ? "#f5c542" : "#e8563c"; }
+
+  function select(h) {
+    sel = h;
+    document.getElementById("uname").textContent = h.spec.name;
+    document.getElementById("urole").textContent = h.spec.role;
+    document.getElementById("uspd").textContent = h.spec.spd;
+    document.getElementById("ugun").textContent = h.spec.gun;
+    document.getElementById("uarm").textContent = h.spec.arm;
+    document.getElementById("uschem").src = h.spec.schem;
+    drawMods();
+    var bar = document.getElementById("uhp");
+    bar.style.width = Math.round(h.hp * 100) + "%";
+    bar.style.background = hpColour(h.hp);
+  }
+
+  // Brackets in SCREEN space, the way a game draws them: a bar has to be the
+  // same number of pixels tall at every range.
+  var brk = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  brk.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1";
+  stage.appendChild(brk);
+  // Where a hull actually IS on screen, from the eight corners of its own
+  // solid box rather than from a radius guessed off the lattice. The mesh is
+  // centred on that box already, so the corners are plus or minus its half
+  // extents in the hull's own frame.
+  var CORNER = new THREE.Vector3();
+  function screenBox(hh, w, h) {
+    var b = hh.spec.model.bb;
+    var x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (var i = 0; i < 8; i++) {
+      CORNER.set((i & 1 ? 1 : -1) * b.h[0], (i & 2 ? 1 : -1) * b.h[1], (i & 4 ? 1 : -1) * b.h[2]);
+      CORNER.applyMatrix4(hh.mesh.matrixWorld).project(camera);
+      var px = (CORNER.x * 0.5 + 0.5) * w, py = (-CORNER.y * 0.5 + 0.5) * h;
+      if (px < x0) { x0 = px; }
+      if (px > x1) { x1 = px; }
+      if (py < y0) { y0 = py; }
+      if (py > y1) { y1 = py; }
+    }
+    return { x0: x0, x1: x1, y0: y0, y1: y1 };
+  }
+
+  // The only thing left in screen space is the integrity bar, ABOVE the hull
+  // and on the selected one alone. A bar has to be the same number of pixels
+  // tall at every range, which is why it is not a mesh; the outline is the
+  // ship's own shape and so is.
+  function drawBrackets() {
+    var w = stage.clientWidth, h = stage.clientHeight;
+    brk.setAttribute("viewBox", "0 0 " + w + " " + h);
+    if (!sel || sel.mesh.position.clone().project(camera).z > 1) { brk.innerHTML = ""; return; }
+    var b = screenBox(sel, w, h);
+    var l = Math.round(b.x0), r = Math.max(Math.round(b.x1), l + 14);
+    var y = Math.round(b.y0) - 9;
+    brk.innerHTML =
+      '<rect x="' + l + '" y="' + y + '" width="' + (r - l) + '" height="3" fill="#071410"/>' +
+      '<rect x="' + l + '" y="' + y + '" width="' + ((r - l) * sel.hp) +
+      '" height="3" fill="' + hpColour(sel.hp) + '"/>';
+  }
+
+  // ===================================================================
+  // 7. The HUD, wired.
+  // ===================================================================
+  var hud = document.getElementById("hud");
+  function fit() {
+    var w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    hud.style.transform = "scale(" + (w / 1600) + ")";
+  }
+  window.addEventListener("resize", fit);
+
+  var ore = 3000, tab = "build", cat = "fighter";
+
+  // What a jump costs is the drive plus every other hull standing in the
+  // field, which is the Long Retreat's own rule: an escort that helps you
+  // hold a system is an escort you then pay to take out of it. So the bar
+  // moves when the yard lands a ship, not only when a tanker refines one.
+  var DRIVE_COST = 250;
+  var RUNG = { corvette: 25, frigate: 50, utility: 50, capital: 100, fighter: 0, platform: 0 };
+  var fuel = 190;
+  function jumpNeed() {
+    var n = DRIVE_COST;
+    hulls.forEach(function (h, i) { if (i) { n += RUNG[h.spec.cat] || 0; } });
+    return n;
+  }
+  var prodAt = 0, cycle = {};
+  // A producer is a hull STANDING IN THE FIELD, not a class: its production
+  // and module slots are that ship's own, which is what the panel claims.
+  function producerList() {
+    return hulls.filter(function (h) { return h.spec.slots >= 3; });
+  }
+  function producer() {
+    var l = producerList();
+    return l.length ? l[prodAt % l.length] : null;
+  }
+  var queue = [], tickerT = null;
+
+  function say(msg) {
+    var t = document.getElementById("ticker");
+    t.textContent = msg;
+    t.setAttribute("data-on", "1");
+    clearTimeout(tickerT);
+    tickerT = setTimeout(function () { t.setAttribute("data-on", "0"); }, 1800);
+  }
+
+  function countOf(r) {
+    var n = 0;
+    hulls.forEach(function (h) { if (r.key ? h.spec.key === r.key : h.spec.cat === r.cat) { n++; } });
+    return n;
+  }
+
+  // Read off the fleet rather than typed beside it, so a class added tomorrow
+  // is on the roster tomorrow. Every row carries the same icon its build row
+  // and its class button do, because a line of text is a name a player has to
+  // have learnt and a silhouette is one they can already read.
+  // A roster line is a picture and a number and nothing else. The class name
+  // was a label on a group of ships that already look like each other, and a
+  // cap was a second number nobody reads in a fight; a rule between groups
+  // does the grouping and the quantity is the only thing that moves.
+  // A class the fleet has NONE of is not on it at all. A dimmed line with x0
+  // beside it is a picture of a ship that does not exist, which is the one
+  // thing a roster must not draw: what it is for is finding a hull, and a hull
+  // nobody built cannot be found. What a fleet could have is the build menu's
+  // answer and it is already on screen.
+  function drawRoster() {
+    var tip = document.getElementById("rtip");
+    document.getElementById("roster").innerHTML = SHIPS.filter(function (s) {
+      return countOf({ key: s.key }) > 0;
+    }).map(function (s) {
+      return '<button class="rrow" type="button" data-pick="' + s.key +
+        '" data-name="' + s.name + '"><img src="' + s.thumb + '" alt="' + s.name +
+        '"><span class="c">x' + countOf({ key: s.key }) + "</span></button>";
+    }).join("");
+    document.getElementById("roster").appendChild(tip);
+  }
+
+  // Hovering NAMES the ship, because the picture is the label and a picture
+  // nobody can put a word to is a picture a player has to guess at once.
+  document.getElementById("roster").addEventListener("mouseover", function (e) {
+    var r = e.target.closest(".rrow");
+    var tip = document.getElementById("rtip");
+    if (!r) { return; }
+    tip.innerHTML = r.dataset.name + "<b>" + r.querySelector(".c").textContent + "</b>";
+    tip.style.top = r.offsetTop + 4 + "px";
+    tip.hidden = false;
+  });
+  document.getElementById("roster").addEventListener("mouseout", function (e) {
+    if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest("#roster")) {
+      document.getElementById("rtip").hidden = true;
+    }
+  });
+
+  function drawCats() {
+    document.getElementById("cats").innerHTML = CATS.map(function (c) {
+      var n = countOf({ cat: c.id });
+      return '<button type="button" data-cat="' + c.id + '" aria-pressed="' + (c.id === cat) +
+        '" title="' + c.name + " (Alt+" + c.key + ')">' +
+        '<svg class="ic" aria-hidden="true"><use href="#' + c.icon + '"></use></svg>' +
+        '<span class="tx"><b>' + c.name + '</b><i>' + n + " / " + c.cap + "</i></span></button>";
+    }).join("");
+  }
+
+  // What bolts ON to a hull, as against what is built BY one. A module is the
+  // selected ship's own fit: gold is installed, cyan is on the subsystem
+  // queue, dim is a fit this class cannot take. Clicking an available one
+  // spends resource units and puts it on that queue.
+  var MODULES = [
+    { id: "prod", name: "Production", icon: "m-prod", cost: 800, secs: 18, fits: ["capital"] },
+    { id: "hangar", name: "Hangar", icon: "m-hangar", cost: 600, secs: 15, fits: ["capital"] },
+    { id: "armour", name: "Armour", icon: "m-arm", cost: 450, secs: 13, fits: ["capital", "frigate"] },
+    { id: "drives", name: "Drives", icon: "m-eng", cost: 400, secs: 11, fits: ["capital", "frigate", "utility"] },
+    { id: "sensors", name: "Sensors", icon: "m-sens", cost: 350, secs: 9, fits: ["capital", "frigate", "utility", "platform"] },
+    { id: "refinery", name: "Refinery", icon: "m-res", cost: 500, secs: 14, fits: ["utility", "capital"] }
+  ];
+  var subq = [];
+
+  function fitted(h) {
+    var n = 0;
+    MODULES.forEach(function (m) { if (h.mods[m.id]) { n++; } });
+    return n;
+  }
+  function working(h, id) {
+    return subq.some(function (q) { return q.h === h && q.id === id; });
+  }
+
+  function drawMods() {
+    if (!sel) { return; }
+    var cap = sel.spec.slots;
+    document.getElementById("modcount").textContent = fitted(sel) + " / " + cap;
+    document.getElementById("mods").innerHTML = MODULES.map(function (m) {
+      var state = sel.mods[m.id] ? "in"
+        : working(sel, m.id) ? "work"
+        : m.fits.indexOf(sel.spec.cat) < 0 || fitted(sel) >= cap ? "no" : "";
+      return '<button type="button" data-mod="' + m.id + '" data-on="' + state +
+        '" title="' + m.name + " module, " + m.cost + ' RU"><svg aria-hidden="true"><use href="#' +
+        m.icon + '"></use></svg><span>' + m.name + "</span></button>";
+    }).join("");
+  }
+
+  var RESEARCH = [
+    { name: "Fighter Chassis", cost: 400 }, { name: "Corvette Drive", cost: 550 },
+    { name: "Capital Ship Drive", cost: 1200 }, { name: "Ion Cannons", cost: 900 },
+    { name: "Plasma Bomb", cost: 750 }, { name: "Defence Field", cost: 1400 }
+  ];
+
+  function pips(n, of) {
+    var s = "";
+    for (var i = 0; i < of; i++) { s += '<i class="' + (i < n ? "on" : "") + '"></i>'; }
+    return '<span class="pips">' + s + "</span>";
+  }
+
+  // Nothing refuses a purchase but the bank. What a yard cannot do is WORK on
+  // two hulls of a class at once, which is a fact about the slip rather than
+  // about the queue: the earliest entry of each class advances, up to the
+  // producer's production slots, and everything else stands in line. So a
+  // player spends every unit they have the moment they have it, and the order
+  // they spent it in is the order it arrives.
+  function working() {
+    var cap = producer() ? producer().spec.slots : 4;
+    var seen = {}, act = [];
+    for (var i = 0; i < queue.length && act.length < cap; i++) {
+      var c = byKey[queue[i].key].cat;
+      if (seen[c]) { continue; }
+      seen[c] = 1;
+      act.push(i);
+    }
+    return act;
+  }
+
+  function drawList() {
+    var host = document.getElementById("list");
+    var head = document.getElementById("catname");
+    var count = document.getElementById("catcount");
+    if (tab === "research") {
+      head.textContent = "Research";
+      count.textContent = "0 / " + RESEARCH.length;
+      host.innerHTML = RESEARCH.map(function (r, i) {
+        return '<button class="brow" type="button" data-res="' + i + '" data-poor="' + (ore < r.cost ? 1 : 0) +
+          '"><span class="go">&#9654;</span>' + pips(2, 3) +
+          '<span class="nm"><b>' + r.name + "</b><i>" + r.cost + "</i></span></button>";
+      }).join("");
+      return;
+    }
+    if (tab === "launch") {
+      head.textContent = "Docked Craft";
+      var docked = hulls.filter(function (h) { return h.spec.cat === "fighter"; });
+      count.textContent = docked.length + " / 18";
+      host.innerHTML = docked.length ? docked.map(function (h, i) {
+        return '<button class="brow" type="button" data-launch="' + i + '">' +
+          '<span class="go">&#9650;</span><img class="ic" src="' + h.spec.schem + '" alt="">' + pips(1, 3) +
+          '<span class="nm"><b>' + h.spec.name + "</b><i>ready</i></span></button>";
+      }).join("") : '<div class="empty">No craft docked</div>';
+      return;
+    }
+    var c = CATS.filter(function (k) { return k.id === cat; })[0];
+    head.textContent = c.name + " (Alt+" + c.key + ")";
+    count.textContent = countOf({ cat: cat }) + " / " + c.cap;
+    var rows = SHIPS.filter(function (s) { return s.cat === cat; });
+    host.innerHTML = rows.length ? rows.map(function (s) {
+      var n = queue.filter(function (q) { return q.key === s.key; }).length;
+      return '<button class="brow" type="button" data-buy="' + s.key + '" data-poor="' +
+        (ore < s.cost ? 1 : 0) + '" data-on="' + (n ? 1 : 0) + '"><span class="go">' +
+        (n ? "x" + n : "&#9654;") + "</span>" +
+        '<img class="ic" src="' + s.schem + '" alt="">' + pips(s.slots, 3) +
+        '<span class="nm"><b>' + s.name + "</b><i>" + s.cost + "</i></span></button>";
+    }).join("") : '<div class="empty">Nothing in this class yet</div>';
+  }
+
+  function drawProducer() {
+    var h = producer();
+    if (!h) { return; }
+    document.getElementById("prodname").textContent = h.spec.name;
+    document.getElementById("prodschem").src = h.spec.schem;
+    document.getElementById("prodhp").style.width = Math.round(h.hp * 100) + "%";
+    document.getElementById("prodhp").style.background = hpColour(h.hp);
+    document.getElementById("slots").innerHTML =
+      '<div><span>Production Slots</span><span class="v">' + working().length + " / " + h.spec.slots + "</span></div>" +
+      '<div><span>Module Slots</span><span class="v">' + fitted(h) + " / " + h.spec.slots + "</span></div>" +
+      '<div><span>Sensors Slot</span><span class="v">' + (h.mods.sensors ? 1 : 0) + " / 1</span></div>";
+  }
+
+  function drawQueue() {
+    var subs = subq.map(function (q) {
+      return '<div class="qslot sub"><svg class="qi" aria-hidden="true"><use href="#' +
+        MODULES.filter(function (m) { return m.id === q.id; })[0].icon + '"></use></svg>' +
+        '<span class="qn">' + q.name + '</span><span class="f" style="width:' +
+        ((1 - q.left / q.secs) * 100) + '%"></span></div>';
+    });
+    var act = working();
+    var ships = queue.map(function (q, i) {
+      var s = byKey[q.key];
+      return '<div class="qslot" data-wait="' + (act.indexOf(i) >= 0 ? 0 : 1) + '"><img src="' +
+        s.schem + '" alt=""><span class="qn">' + s.name + '</span><span class="f" style="width:' +
+        ((1 - q.left / q.secs) * 100) + '%"></span></div>';
+    });
+    document.getElementById("queue").innerHTML = subs.concat(ships).join("");
+    document.getElementById("qshiptxt").textContent =
+      queue.length ? "Ship Queue (" + queue.length + ")" : "Ship Queue (Empty)";
+    document.getElementById("qsubtxt").textContent =
+      subq.length ? "Subsystem Queue (" + subq.length + ")" : "Subsystem Queue (Empty)";
+  }
+
+  function drawBank() {
+    document.getElementById("ore").textContent = ore;
+    var need = jumpNeed();
+    var strip = document.querySelector(".ru");
+    document.getElementById("fuel").textContent = Math.floor(fuel);
+    document.getElementById("need").textContent = need;
+    document.getElementById("fbar").style.width = Math.min(100, fuel / need * 100) + "%";
+    strip.setAttribute("data-jump", fuel >= need ? "1" : "0");
+  }
+
+  function drawBars() {
+    var C = [["c-move", "Move"], ["c-attack", "Attack"], ["c-guard", "Guard"], ["c-stop", "Hold"],
+             ["c-form", "Formation"], ["c-stance", "Stance"], ["c-dock", "Dock"], ["c-launch", "Launch"],
+             ["c-rally", "Rally point"], ["c-salv", "Salvage"], ["c-hyper", "Hyperspace"], ["c-scut", "Scuttle"]];
+    document.getElementById("cmd").innerHTML = C.map(function (k, i) {
+      return '<button type="button" data-cmd="' + i + '" aria-pressed="false" title="' + k[1] +
+        '"><svg aria-hidden="true"><use href="#' + k[0] + '"></use></svg></button>';
+    }).join("");
+    var g = "";
+    for (var n = 1; n <= 10; n++) {
+      g += '<button type="button" data-grp="' + n + '" aria-pressed="' + (n === 6) + '">' + (n === 10 ? 0 : n) + "</button>";
+    }
+    document.getElementById("groups").innerHTML = g;
+  }
+
+  // What is OPEN is state on the HUD element and nothing else: the two
+  // transitions are declared in the stylesheet, so opening a panel is setting
+  // an attribute and the motion is not this code's business at all.
+  var open = { panel: true, bottom: true };
+  var view = "none";
+  function setPanel(on) {
+    open.panel = on;
+    hud.dataset.panel = on ? "1" : "0";
+    say(on ? "Panel open" : "Panel closed, press a tab");
+  }
+  function setBottom(on) {
+    open.bottom = on;
+    hud.dataset.bottom = on ? "1" : "0";
+    document.getElementById("btog").setAttribute("aria-expanded", String(on));
+  }
+
+  function syncTabs() {
+    document.querySelectorAll("#rtabs button").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.tab === tab));
+    });
+    document.querySelectorAll("#mtabs button").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.open === view));
+    });
+    document.getElementById("ptitle").textContent =
+      tab === "build" ? "Build Menu" : tab === "research" ? "Research Menu" : "Launch Manager";
+  }
+
+  // One click handler, and what the target carries decides what it meant.
+  hud.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-act],[data-open],[data-cat],[data-buy],[data-res],[data-tab],[data-cmd],[data-mod],[data-grp],[data-prod],[data-launch],[data-pick],#showall");
+    if (!t) { return; }
+
+    if (t.dataset.act === "panel") { setPanel(!open.panel); return; }
+    if (t.dataset.act === "bottom") { setBottom(!open.bottom); return; }
+    if (t.dataset.act === "close-view") { setView("none"); return; }
+    if (t.dataset.act && t.dataset.act.indexOf("view-") === 0) {
+      setView(t.dataset.act.slice(5));
+      return;
+    }
+    // A tab that is already showing its view CLOSES it, which is the one
+    // convention a tab bar over a map has to keep: the way out of a view is
+    // the control that opened it.
+    //
+    // `data-open` and NOT `data-view`, and that is a bug rather than a taste.
+    // `data-view` is the HUD's own STATE, set on `#hud`, and `closest` walks
+    // all the way up: a press anywhere inside an open view found no button,
+    // reached `#hud`, read the open view off it as though it were a button
+    // that had been pressed, and closed the thing. A press on empty space in
+    // the sensors map shut the map. An attribute that names an ACTION and an
+    // attribute that names STATE must not share a name, because one selector
+    // matches both and the ancestor always wins.
+    if (t.dataset.open) { setView(view === t.dataset.open ? "none" : t.dataset.open); return; }
+
+    if (t.dataset.pick) {
+      var own = hulls.filter(function (h) { return h.spec.key === t.dataset.pick; });
+      if (!own.length) { say("None in the fleet"); return; }
+      // One line stands for several hulls, so pressing it again takes the
+      // next one rather than re-selecting the one already chosen.
+      var at = (cycle[t.dataset.pick] || 0) % own.length;
+      cycle[t.dataset.pick] = at + 1;
+      select(own[at]);
+      if (own.length > 1) { say(own[at].spec.name + " " + (at + 1) + " of " + own.length); }
+      return;
+    }
+    if (t.dataset.cat) {
+      cat = t.dataset.cat;
+      if (tab !== "build") { tab = "build"; syncTabs(); }
+      drawCats(); drawList();
+      return;
+    }
+    if (t.id === "showall") { cat = "capital"; drawCats(); drawList(); say("All classes"); return; }
+    // A tab is the way BACK. The X closes the panel and the tab that names
+    // what would be in it opens it again, so the control that put it away is
+    // never the only one that can fetch it: press Build with the panel shut
+    // and it comes back on Build.
+    if (t.dataset.tab) { tab = t.dataset.tab; syncTabs(); drawList(); setPanel(true); return; }
+    if (t.dataset.prod) {
+      var n = producerList().length || 1;
+      prodAt = (prodAt + (t.dataset.prod === "1" ? 1 : n - 1)) % n;
+      drawProducer();
+      return;
+    }
+    if (t.dataset.buy) {
+      var s = byKey[t.dataset.buy];
+      if (ore < s.cost) { say("Insufficient resource units"); return; }
+      ore -= s.cost;
+      queue.push({ key: s.key, secs: s.build, left: s.build });
+      drawBank(); drawQueue(); drawProducer(); drawList();
+      say(s.name + " queued");
+      return;
+    }
+    if (t.dataset.res) {
+      var r = RESEARCH[+t.dataset.res];
+      if (ore < r.cost) { say("Insufficient resource units"); return; }
+      ore -= r.cost; drawBank(); drawList(); say(r.name + " researching");
+      return;
+    }
+    if (t.dataset.launch) { say("Launching strike craft"); return; }
+    if (t.dataset.cmd !== undefined) {
+      var on = t.getAttribute("aria-pressed") === "true";
+      document.querySelectorAll("[data-cmd]").forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
+      t.setAttribute("aria-pressed", on ? "false" : "true");
+      if (!on) { say(t.title + ": pick a point"); }
+      return;
+    }
+    if (t.dataset.mod) {
+      if (t.dataset.on) { return; }
+      var m = MODULES.filter(function (k) { return k.id === t.dataset.mod; })[0];
+      if (ore < m.cost) { say("Insufficient resource units"); return; }
+      ore -= m.cost;
+      subq.push({ h: sel, id: m.id, secs: m.secs, left: m.secs, name: m.name });
+      drawBank(); drawMods(); drawQueue(); drawProducer();
+      say(m.name + " module queued");
+      return;
+    }
+    if (t.dataset.grp) {
+      document.querySelectorAll("[data-grp]").forEach(function (b) { b.setAttribute("aria-pressed", "false"); });
+      t.setAttribute("aria-pressed", "true");
+      say("Control group " + t.dataset.grp);
+    }
+  });
+
+  // The LEFT tabs are still a placeholder, so a press is a light and a line on
+  // the ticker. The middle ones are not: they own the views, and this handler
+  // used to cover both. Two writers for one `aria-pressed` is the divergent
+  // path rule in miniature, and the symptom was the view's own name echoing
+  // across the ticker every time a tab was pressed, with the pressed light
+  // landing on whatever was clicked rather than on what is actually open.
+  document.getElementById("ltabs").addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) { return; }
+    this.querySelectorAll("button").forEach(function (o) { o.setAttribute("aria-pressed", "false"); });
+    b.setAttribute("aria-pressed", "true");
+    say(b.textContent);
+  });
+
+  window.addEventListener("keydown", function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) { return; }
+    if (/^[0-9]$/.test(e.key)) {
+      var b = document.querySelector('[data-grp="' + (e.key === "0" ? 10 : +e.key) + '"]');
+      if (b) { b.click(); }
+    }
+    // A control that is only a key is a feature nobody can find, so both of
+    // these are a button FIRST and a key second. Escape closes whatever is
+    // open, one thing at a time, panel before bottom, which is the rule the
+    // game's own pause key keeps.
+    if (e.key === "b" || e.key === "B") { setPanel(!open.panel); }
+    if (e.key === "c" || e.key === "C") { setBottom(!open.bottom); }
+    if (e.key === "m" || e.key === "M") { setView(view === "mission" ? "none" : "mission"); }
+    // Space AND S, because space is the key Homeworld gives the sensors
+    // manager and the one a player's thumb is already on.
+    if (e.key === "s" || e.key === "S" || e.key === " ") {
+      e.preventDefault();
+      setView(view === "sensors" ? "none" : "sensors");
+    }
+    // A view is over everything, so it is what escape reaches first.
+    if (e.key === "Escape") {
+      if (view !== "none") { setView("none"); }
+      else if (open.panel) { setPanel(false); }
+      else if (open.bottom) { setBottom(false); }
+      else { setView("menu"); }
+    }
+  });
+
+  // ===================================================================
+  // 8. The loop.
+  // ===================================================================
+  var t0 = performance.now(), last = t0;
+  function loop(now) {
+    var dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+
+    var landed = false;
+    var act = working();
+    for (var i = queue.length - 1; i >= 0; i--) {
+      if (act.indexOf(i) < 0) { continue; }
+      queue[i].left -= dt;
+      if (queue[i].left <= 0) {
+        var k = queue[i].key;
+        queue.splice(i, 1);
+        var ang = Math.random() * Math.PI * 2;
+        spawn(k, Math.cos(ang) * 150, (Math.random() - 0.5) * 60, Math.sin(ang) * 150, ang);
+        landed = true;
+      }
+    }
+    for (i = subq.length - 1; i >= 0; i--) {
+      subq[i].left -= dt;
+      if (subq[i].left <= 0) {
+        subq[i].h.mods[subq[i].id] = true;
+        subq.splice(i, 1);
+        landed = true;
+        drawMods();
+      }
+    }
+    if (landed) { drawRoster(); drawCats(); drawList(); drawProducer(); say("Build complete"); }
+    drawQueue();
+
+    // A tanker refines volatiles into fuel at a cadence. What it is filling
+    // toward moves with the fleet, so building an escort visibly sets the
+    // jump back: that is the decision the bar exists to show.
+    fuel += dt * 6;
+    drawBank();
+
+    hulls.forEach(function (h) {
+      // An ORDER beats the drift, and arriving clears it: a ship still nudging
+      // itself sideways at its destination is a ship that never got there.
+      if (h.goal) {
+        var to = h.goal.clone().sub(h.mesh.position);
+        var far = to.length();
+        if (far < 2) { h.goal = null; }
+        else { h.mesh.position.addScaledVector(to.multiplyScalar(1 / far), Math.min(far, dt * 34)); }
+      } else {
+        h.mesh.position.addScaledVector(h.drift, dt * 8);
+      }
+      h.mesh.rotation.y += h.spin;
+    });
+
+    if (sel) { orbit.focus.lerp(sel.mesh.position, 0.05); }
+    // Sensors is a CAMERA MODE, not a screen. The eye eases out to whatever
+    // frames the horizon and eases back to the player's own zoom on the way
+    // out, so the view arrives rather than cutting, and the whole time it is
+    // the same camera looking at the same field: the ships are the real ships,
+    // a click is the same raycast, and the map cannot be out of register with
+    // the world because there is only one of them.
+    var want = view === "sensors" ? sensorFit() : orbit.dist;
+    camDist += (want - camDist) * (1 - Math.exp(-5.5 * dt));
+    orbitEye(camera.position, camDist);
+    camera.lookAt(orbit.focus);
+    if (stars) { stars.position.copy(camera.position); }
+    poseOutline();
+    // The frame clears itself rather than the renderer doing it, because the
+    // selection is a SECOND pass and an automatic clear would wipe the first.
+    // The overlay clears the stencil it is about to stamp: the frame clear
+    // already did, but the pass owning the buffer it depends on is what keeps
+    // it correct the day anything in the scene stencils anything.
+    renderer.clear();
+    renderer.render(scene, camera);
+    if (sel) { renderer.clear(false, false, true); renderer.render(overlay, camera); }
+    drawBrackets();
+
+    var s = Math.floor((now - t0) / 1000);
+    document.getElementById("gt").textContent = "Game Time: " + Math.floor(s / 3600) + ": " +
+      Math.floor((s % 3600) / 60) + ":" + String(s % 60).padStart(2, "0");
+    // A view costs nothing while it is shut, which is what lets the sensors
+    // redraw every frame while it is open: the ships are moving, and a plan
+    // view of where they WERE is a picture of a battle that is not happening.
+    if (view === "sensors") { drawSensors(); }
+    if (view === "mission") { drawObjectives(); drawTide(s); }
+    requestAnimationFrame(loop);
+  }
+
+
+  // ===================================================================
+  // 10. The three middle tabs, which are VIEWS over the field.
+  //
+  //     Mission is what this fight is FOR, sensors is the same battle seen
+  //     from above, and the menu is the way out. One at a time, so `data-view`
+  //     on the HUD decides which, and the stylesheet does the rest.
+  // ===================================================================
+
+  // An objective is a ROW, and what it READS is a function, so a goal that
+  // tracks live state and one that is simply ticked off are the same kind of
+  // thing. `want` of nought is a goal with no count: it is done or it is not.
+  var OBJECTIVES = [
+    { n: "Hold the harvest line", want: 0,
+      read: function () { return { have: 0, done: false }; } },
+    { n: "Refine fuel for the jump", want: 1,
+      read: function () {
+        var need = jumpNeed();
+        return { have: fuel / need, done: fuel >= need, q: Math.floor(fuel) + " / " + need };
+      } },
+    { n: "Field a strike wing", want: 3,
+      read: function () {
+        var n = countOf({ cat: "fighter" });
+        return { have: n / 3, done: n >= 3, q: n + " / 3" };
+      } },
+    { n: "Keep the carrier flying", want: 1,
+      read: function () {
+        var c = hulls.filter(function (h) { return h.spec.key === "carrier"; })[0];
+        var f = c ? c.hp : 0;
+        return { have: f, done: f > 0.25, q: Math.round(f * 100) + "%" };
+      } },
+    { n: "Jump out", want: 0, lock: function () { return fuel < jumpNeed(); },
+      read: function () { return { have: 0, done: false }; } }
+  ];
+
+  function drawObjectives() {
+    document.getElementById("obj").innerHTML = OBJECTIVES.map(function (o) {
+      var r = o.read();
+      var lock = o.lock ? o.lock() : false;
+      return '<div class="orow" data-done="' + (r.done ? 1 : 0) + '" data-lock="' + (lock ? 1 : 0) +
+        '"><span class="tick">' + (r.done ? "&#10003;" : "") + '</span><span class="n">' + o.n + "</span>" +
+        (o.want ? '<span class="q">' + (r.q || "") + '</span><span class="pb"><i style="width:' +
+          Math.round(Math.max(0, Math.min(1, r.have)) * 100) + '%"></i></span>' : "") + "</div>";
+    }).join("");
+  }
+
+  // The tide is the mission's clock rather than a second one: probes, then the
+  // swarm, then the fleet, and the marker is where the run actually is. Two
+  // minutes a phase here, compressed from the game's own six, because a mockup
+  // nobody waits six minutes in cannot show a phase change at all.
+  var TIDE = [["Probes", 120], ["Swarm", 120], ["Fleet", 120]];
+  function drawTide(secs) {
+    var span = TIDE.reduce(function (a, t) { return a + t[1]; }, 0);
+    var at = Math.min(1, secs / span), run = 0, name = TIDE[TIDE.length - 1][0];
+    for (var i = 0; i < TIDE.length; i++) {
+      run += TIDE[i][1];
+      if (secs < run) { name = TIDE[i][0]; break; }
+    }
+    document.getElementById("tidephase").textContent = name;
+    document.getElementById("tidenow").style.left = (at * 100) + "%";
+  }
+
+  // The menu is what a player reaches for when they want OUT of the fight, so
+  // the one thing it must never be is a place a stray click lands them in.
+  var MENU_ITEMS = [
+    { n: "Resume", act: "close-view" },
+    { n: "Objectives", act: "view-mission" },
+    { n: "Sensors manager", act: "view-sensors" },
+    { sep: true },
+    { n: "Save game" }, { n: "Load game" }, { n: "Options" },
+    { sep: true },
+    { n: "Abandon system", warn: true }
+  ];
+  function drawMenu() {
+    document.getElementById("mitems").innerHTML = MENU_ITEMS.map(function (m) {
+      return m.sep ? '<div class="sep"></div>'
+        : '<button type="button"' + (m.act ? ' data-act="' + m.act + '"' : "") +
+          (m.warn ? ' class="warn"' : "") + ">" + m.n + "</button>";
+    }).join("");
+  }
+
+  // ---- the sensors manager ----
+  //
+  // It is a 3D map of the real field, and the shot is the GAME's camera pulled
+  // back: the same pivot, the same yaw and pitch, the same zoom scaled up. So
+  // the sphere is already oriented the way the player was looking when they
+  // opened it, turning the view turns the map, and the two never disagree
+  // about which way is which. There is no second projection anywhere here.
+  // Everything, the rings, the coverage, the specks and the stalks, goes
+  // through the scene's own camera, which is the only way a map and the world
+  // it is a map OF can be guaranteed to line up.
+  //
+  // What it adds over the field is COVERAGE. Every ship lays a soft bubble at
+  // its own class's sensor range and the bubbles ADD where they overlap, so
+  // the bright ground is the space the fleet holds and the dark is where
+  // something could be standing.
+  //
+  // And a contact rides a STALK to the pivot's own plane, which is the move
+  // order's triangle read the other way round: a picture of a battle in three
+  // dimensions with no drop lines is a picture that cannot say how high
+  // anything is.
+  // The horizon is the OPERATIONAL AREA, not a ring round the fleet. Three
+  // hundred put the camera six hundred out, which is a close look at the same
+  // battle with rings on it: the ships were still ships and the picture still
+  // answered "what is my flagship doing" rather than "where is everything".
+  // Nine hundred puts it two thousand out, the fleet becomes the cluster it
+  // actually is, and the empty space round it is the part worth seeing, since
+  // empty space is where the swarm is not yet.
+  var SENSOR_R = 900;        // world units to the sensor horizon at full zoom in
+  var SENSOR_OUT = 5;        // and how much further out the wheel may take it
+  // The wheel WIDENS THE HORIZON rather than only backing the camera off, so
+  // zooming out shows more battlefield and not more nothing: the rings and the
+  // bearings re-scale with it and the coverage bubbles do not, because a
+  // ship's range is a fact about the ship and the only honest thing it can do
+  // at five times the area is look smaller.
+  var sensorZoom = 1;
+  function sensorR() { return SENSOR_R * sensorZoom; }
+  var SENSOR_FILL = 0.88;    // what share of the frame the horizon takes up
+  var SENSOR_NEAR = 2.2;     // and never closer than this many radii
+  var ink = {};
+  function sensorInk() {
+    var cs = getComputedStyle(document.getElementById("hud"));
+    ["edge", "edge-hot", "edge-lit", "ink-hot", "ink", "gold", "dim", "faint",
+     "teal", "cyan", "green", "red", "ore"].forEach(function (k) {
+      ink[k] = cs.getPropertyValue("--" + k).trim();
+    });
+  }
+
+  var sv = new THREE.Vector3();
+  var ROCK = { x: -430, y: -56, z: -350, r: 50 };
+
+  // The ANGLE and the PIVOT are the player's; the DISTANCE is the map's own,
+  // because a sensors manager exists to show the whole horizon and a view that
+  // inherited the zoom as well would show a tenth of it whenever the player
+  // happened to be in close. So it is solved rather than tuned: the horizon is
+  // 2R wide on screen at every angle and 2R*sin(pitch) tall, and the distance
+  // is whichever of those two needs the most room. Looking down, the height
+  // binds; edge on, the width does, and the sphere fills the frame either way
+  // instead of shrinking to a coin the flatter the camera gets.
+  // How far out the map wants the camera. The ANGLE and the PIVOT are the
+  // player's; only this is the map's own, because a sensors view that took the
+  // zoom as well would show a tenth of the horizon whenever the player
+  // happened to be in close.
+  function sensorFit() {
+    var asp = camera.aspect, t = Math.tan(camera.fov * Math.PI / 360);
+    // Solved in ANGLES, not in units, because that is what a perspective
+    // camera actually frames with: the horizon is 2R across on screen at every
+    // angle and 2R*sin(pitch) tall, so it is whichever of those two needs the
+    // most room, at SENSOR_FILL of the frame. Looking down the height binds,
+    // edge on the width does.
+    var fit = Math.max(
+      sensorR() / Math.tan(Math.atan(t * asp) * SENSOR_FILL),
+      sensorR() * Math.abs(Math.sin(orbit.pitch)) / Math.tan(Math.atan(t) * SENSOR_FILL)
+    );
+    // And no nearer than SENSOR_NEAR radii whatever that says. A disc framed
+    // to the pixel sits with its near rim almost against the lens, and the
+    // near arc then comes out four times the far one: honest perspective, and
+    // a horizon nobody can read a bearing off.
+    return Math.max(fit, sensorR() * SENSOR_NEAR);
+  }
+  // Screen pixels from a world point, and NULL for anything behind the eye:
+  // a point past the near plane projects to a mirrored position, which draws
+  // a ring inside out rather than not at all.
+  function sp(x, y, z, w, h) {
+    sv.set(x, y, z).project(camera);
+    if (sv.z > 1) { return null; }
+    return [(sv.x * 0.5 + 0.5) * w, (-sv.y * 0.5 + 0.5) * h];
+  }
+  // A circle lying flat on the pivot's plane, sampled rather than drawn as an
+  // ellipse, because under a perspective camera it is not one: the near arc is
+  // wider than the far one and that is the part that reads as depth.
+  function planeRing(g, r, w, h, steps) {
+    var n = steps || 96, i, a, p, started = false;
+    g.beginPath();
+    for (i = 0; i <= n; i++) {
+      a = i / n * Math.PI * 2;
+      p = sp(orbit.focus.x + Math.sin(a) * r, orbit.focus.y, orbit.focus.z - Math.cos(a) * r, w, h);
+      if (!p) { started = false; continue; }
+      if (started) { g.lineTo(p[0], p[1]); } else { g.moveTo(p[0], p[1]); started = true; }
+    }
+  }
+
+  function sensorGrid(g, w, h) {
+    var r, a, p, q;
+    g.lineWidth = 1;
+    var R = sensorR();
+    for (r = R / 4; r <= R + 1; r += R / 4) {
+      g.strokeStyle = r > R - 1 ? ink["edge-lit"] : ink.edge;
+      planeRing(g, r, w, h); g.stroke();
+    }
+    // Bearings round the horizon, because a contact at nine o'clock is only
+    // useful if the screen agrees with the order about to be given.
+    g.font = '11px monospace';
+    for (a = 0; a < 360; a += 15) {
+      var t = a * Math.PI / 180, big = a % 90 === 0;
+      var ox = Math.sin(t), oz = -Math.cos(t);
+      p = sp(orbit.focus.x + ox * R, orbit.focus.y, orbit.focus.z + oz * R, w, h);
+      q = sp(orbit.focus.x + ox * R * (big ? 0.94 : 0.97), orbit.focus.y,
+             orbit.focus.z + oz * R * (big ? 0.94 : 0.97), w, h);
+      if (!p || !q) { continue; }
+      g.strokeStyle = big ? ink["edge-lit"] : ink.edge;
+      g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke();
+      if (big) {
+        g.fillStyle = ink.dim;
+        g.fillText(String(a).padStart(3, "0"), p[0] - 11, p[1] + 4);
+      }
+    }
+    // The pivot itself, because the whole map is drawn about it and a map
+    // whose own centre is invisible cannot say where it is looking.
+    p = sp(orbit.focus.x, orbit.focus.y, orbit.focus.z, w, h);
+    if (p) {
+      g.strokeStyle = ink.gold;
+      g.beginPath();
+      g.moveTo(p[0] - 9, p[1]); g.lineTo(p[0] + 9, p[1]);
+      g.moveTo(p[0], p[1] - 9); g.lineTo(p[0], p[1] + 9);
+      g.stroke();
+    }
+  }
+
+  // A disc laid on the plane, drawn as an affine circle: the two basis vectors
+  // are the projections of the plane's own axes, so the gradient goes round
+  // with the camera for nothing.
+  function planeDisc(g, x, z, r, w, h, paint) {
+    var c = sp(x, orbit.focus.y, z, w, h);
+    var ex = sp(x + r, orbit.focus.y, z, w, h);
+    var ez = sp(x, orbit.focus.y, z + r, w, h);
+    if (!c || !ex || !ez) { return; }
+    g.save();
+    g.setTransform(ex[0] - c[0], ex[1] - c[1], ez[0] - c[0], ez[1] - c[1], c[0], c[1]);
+    paint(g);
+    g.restore();
+  }
+
+  // The rock is a FIELD rather than a dot: a soft body with its own specks,
+  // seeded off the golden angle so it is the same field every frame.
+  function sensorField(g, w, h) {
+    planeDisc(g, ROCK.x, ROCK.z, ROCK.r * 1.7, w, h, function (c) {
+      var gr = c.createRadialGradient(0, 0, 0, 0, 0, 1);
+      gr.addColorStop(0, "rgba(150,120,70,.34)");
+      gr.addColorStop(1, "rgba(150,120,70,0)");
+      c.fillStyle = gr;
+      c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill();
+    });
+    g.fillStyle = ink.ore;
+    for (var i = 0; i < 90; i++) {
+      var a = i * 2.39996, d = Math.sqrt((i + 0.5) / 90) * ROCK.r * 1.5;
+      var p = sp(ROCK.x + Math.cos(a) * d, ROCK.y + Math.sin(a * 1.7) * 12,
+                 ROCK.z + Math.sin(a) * d, w, h);
+      if (p) { g.fillRect(p[0], p[1], 1.8, 1.8); }
+    }
+    var q = sp(ROCK.x, ROCK.y, ROCK.z, w, h);
+    if (q) { g.fillStyle = ink.dim; g.font = '11px monospace'; g.fillText("ORE FIELD", q[0] - 28, q[1] + 4); }
+  }
+
+  function srOf(hh) {
+    var c = CATS.filter(function (k) { return k.id === hh.spec.cat; })[0];
+    return c ? c.sr : 60;
+  }
+
+  var blips = [];
+  function drawSensors() {
+    var cvs = document.getElementById("sensorcv");
+    var g = cvs.getContext("2d"), w = cvs.width, h = cvs.height;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, w, h);
+    // Drawn over the WORLD now rather than over a flat ground, so every
+    // hairline gets a shadow: a one pixel cyan ring over a lit hull or a
+    // nebula is a ring that disappears wherever the background is bright.
+    g.shadowColor = "rgba(0,0,0,.85)";
+    g.shadowBlur = 3;
+
+    // Coverage first and ADDITIVE, so two ships watching the same volume are
+    // visibly brighter there than one. That is the information this screen
+    // carries; everything else is drawn on top of it.
+    g.globalCompositeOperation = "lighter";
+    hulls.forEach(function (hh) {
+      planeDisc(g, hh.mesh.position.x, hh.mesh.position.z, srOf(hh), w, h, function (c) {
+        var gr = c.createRadialGradient(0, 0, 0, 0, 0, 1);
+        gr.addColorStop(0, "rgba(64,150,220,.30)");
+        gr.addColorStop(0.62, "rgba(52,120,200,.16)");
+        gr.addColorStop(1, "rgba(40,90,170,0)");
+        c.fillStyle = gr;
+        c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill();
+      });
+    });
+    g.globalCompositeOperation = "source-over";
+
+    sensorGrid(g, w, h);
+    sensorField(g, w, h);
+
+    blips = [];
+    hulls.forEach(function (hh) {
+      var o = hh.mesh.position;
+      var foot = sp(o.x, orbit.focus.y, o.z, w, h);
+      var q = sp(o.x, o.y, o.z, w, h);
+      if (!q) { return; }
+      if (foot) {
+        g.strokeStyle = ink.edge; g.lineWidth = 1;
+        g.beginPath(); g.moveTo(foot[0], foot[1]); g.lineTo(q[0], q[1]); g.stroke();
+        g.fillStyle = ink.edge;
+        g.fillRect(foot[0] - 2.5, foot[1] - 1, 5, 2);
+      }
+      // Bigger than they were, because at this range the hull under a blip is
+      // a few pixels of grey: the MARK is what a player reads now, and it has
+      // to be findable without being a blob that hides its own neighbours.
+      var big = hh.spec.cat === "capital" ? 9 : hh.spec.cat === "frigate" ? 7 : 6;
+      g.fillStyle = hh === sel ? ink.gold : ink["ink-hot"];
+      g.fillRect(q[0] - big / 2, q[1] - big / 2, big, big);
+      if (hh === sel) {
+        g.strokeStyle = ink.gold;
+        g.beginPath(); g.arc(q[0], q[1], big + 6, 0, Math.PI * 2); g.stroke();
+      }
+      // Integrity as a colour under the blip: a bar on every contact would be
+      // a wall of bars on a screen whose whole job is where things are.
+      g.fillStyle = hh.hp > 0.6 ? ink.green : hh.hp > 0.3 ? ink.gold : ink.red;
+      g.fillRect(q[0] - big / 2, q[1] + big / 2 + 2, big, 2);
+      blips.push({ h: hh, x: q[0], y: q[1] });
+
+      // An ORDER is drawn where it was given: the line out to it, the drop to
+      // the plane, and a ring on the plane at the point. That is the move
+      // order's own disc seen from outside, and it is the only thing on this
+      // map that says what the fleet is about to do rather than where it is.
+      if (hh.goal) {
+        var gp = sp(hh.goal.x, hh.goal.y, hh.goal.z, w, h);
+        if (gp) {
+          g.strokeStyle = ink.gold; g.lineWidth = 1;
+          g.setLineDash([5, 4]);
+          g.beginPath(); g.moveTo(q[0], q[1]); g.lineTo(gp[0], gp[1]); g.stroke();
+          g.setLineDash([]);
+          var r1 = sp(hh.goal.x + 9, hh.goal.y, hh.goal.z, w, h);
+          var r2 = sp(hh.goal.x, hh.goal.y, hh.goal.z + 9, w, h);
+          if (r1 && r2) {
+            g.save();
+            g.setTransform(r1[0] - gp[0], r1[1] - gp[1], r2[0] - gp[0], r2[1] - gp[1], gp[0], gp[1]);
+            g.beginPath(); g.arc(0, 0, 1, 0, Math.PI * 2);
+            g.restore();
+            g.stroke();
+          }
+        }
+      }
+    });
+
+    document.getElementById("scount").innerHTML =
+      hulls.length + " contacts &#183; 1 field &#183; horizon " + Math.round(sensorR()) + "u &#183; " +
+      (Math.round(sensorZoom * 10) / 10) + "x out";
+    document.getElementById("scap").innerHTML =
+      "Ashfall Reach &#183; pivot " + Math.round(orbit.focus.x) + ", " + Math.round(orbit.focus.y) +
+      ", " + Math.round(orbit.focus.z) + " &#183; coverage " + Math.round(coverage()) +
+      "% &#183; <b>click</b> select &#183; <b>right click</b> move &#183; <b>wheel</b> widen &#183; <b>space</b> back";
+  }
+
+  // What share of the horizon the fleet can see into, which is the one NUMBER
+  // worth putting on the field: it is what moving a ship changes, and it goes
+  // down the moment one dies.
+  // Against the base horizon and NOT the zoomed one: coverage is what share of
+  // the operational area the fleet can see into, and a number that changed
+  // because somebody scrolled would be a lie about the fleet.
+  function coverage() {
+    var tot = 0;
+    hulls.forEach(function (hh) { tot += Math.pow(srOf(hh) / SENSOR_R, 2); });
+    return Math.min(100, tot * 100);
+  }
+
+  // A blip is a SHIP, so a press that did not drag selects it. The DRAG is the
+  // same camera drag the field has, on the same state: turning the map turns
+  // the world behind it, which is the whole claim this view makes.
+  (function () {
+    var scv = document.getElementById("sensorcv");
+    scv.addEventListener("pointerdown", orbitDown);
+    scv.addEventListener("pointermove", orbitMove);
+    scv.addEventListener("pointerup", orbitEnd(pickOut));
+    scv.addEventListener("pointercancel", function () { drag = null; });
+    // Right click ORDERS, exactly as it would on the field. The sensors view
+    // is where a fleet is actually positioned, so a view you could only look
+    // at would be the one screen in this game where the verb does not work.
+    scv.addEventListener("contextmenu", function (e) {
+      e.preventDefault();
+      orderTo(e);
+    });
+  })();
+
+  // Nothing in this view CLOSES it. A press either names a ship or names
+  // nothing, and a sensors manager that shut every time a player pressed the
+  // empty space between two contacts would be a mode nobody could work in. The
+  // ways out are the ones a player chose: the tab, space, escape, the X.
+  function pickOut(e) {
+    // The ships on screen are the REAL ships, so the field's own raycast
+    // answers first and is exact. The blip is the fallback for a contact drawn
+    // smaller than a finger, which at this range is most of them.
+    var was = sel;
+    pick(e);
+    if (sel !== was) { say(sel.spec.name + " selected"); return; }
+    var b = document.getElementById("sensorcv").getBoundingClientRect();
+    var x = (e.clientX - b.left) / b.width * 1600;
+    var y = (e.clientY - b.top) / b.height * 900;
+    var best = null, bd = 22 * 22;
+    blips.forEach(function (p) {
+      var d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
+      if (d < bd) { bd = d; best = p; }
+    });
+    if (best) { select(best.h); say(best.h.spec.name + " selected"); }
+  }
+
+  // A move order lands on the horizontal plane through the PIVOT, which is the
+  // plane every ring and stalk on this map is already measured from, so where
+  // a player presses and where the ship ends up are the same place by
+  // construction rather than by a second convention.
+  var ordPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  var ordHit = new THREE.Vector3();
+  function orderTo(e) {
+    if (!sel) { say("Nothing selected"); return; }
+    var r = cv.getBoundingClientRect();
+    ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1,
+      -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+    ordPlane.constant = -orbit.focus.y;
+    if (!ray.ray.intersectPlane(ordPlane, ordHit)) { return; }
+    sel.goal = ordHit.clone();
+    say(sel.spec.name + " under way");
+  }
+
+  function setView(id) {
+    view = id;
+    hud.dataset.view = id;
+    if (id === "sensors") { sensorInk(); }
+    if (id === "mission") { drawObjectives(); }
+    if (id === "menu") { drawMenu(); }
+    syncTabs();
+  }
+
+  // ===================================================================
+  // 9. The workbench under the stage: the assets themselves.
+  // ===================================================================
+  function drawBench() {
+    document.getElementById("bench").innerHTML = SHIPS.map(function (s) {
+      return '<div class="bcell"><img class="sh" src="' + s.schem + '" alt="' + s.name + ' schematic">' +
+        '<div class="ft"><img src="' + s.schem + '" width="96" height="31" alt="">' +
+        '<span class="m"><b>' + s.name + "</b><i>" + s.cells + " cells &middot; " + s.mesh.quads +
+        " quads</i></span></div></div>";
+    }).join("");
+  }
+  document.getElementById("marks").innerHTML = CATS.map(function (c) {
+    return '<div class="mark"><svg aria-hidden="true"><use href="#' + c.icon + '"></use></svg>' +
+      "<b>" + c.name + "</b></div>";
+  }).join("");
+
+  function drawSlices() {
+    document.getElementById("slices").innerHTML = FRAMES.map(function (f) {
+      return '<div class="slice"><div class="img"><img src="' + sliceUrl[f.id] + '" alt="' + f.name + ' nine slice">' +
+        '<i style="left:0;right:0;top:48px;height:1px"></i><i style="left:0;right:0;top:96px;height:1px"></i>' +
+        '<i style="top:0;bottom:0;left:48px;width:1px"></i><i style="top:0;bottom:0;left:96px;width:1px"></i></div>' +
+        '<div class="cap"><b>' + f.name + "</b>48 px, slice 16</div></div>";
+    }).join("");
+  }
+
+  // The unit panel's picture is set on SELECTION rather than on a draw, so a
+  // skin change has to put the fresh bake back on whatever is already picked.
+  function drawUnitShot() {
+    if (sel) { document.getElementById("uschem").src = sel.spec.schem; }
+  }
+
+  document.getElementById("skins").innerHTML = SKINS.map(function (k) {
+    return '<button type="button" data-skin="' + k.id + '" aria-pressed="false">' + k.name + "</button>";
+  }).join("");
+  document.getElementById("skins").addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (b) { applySkin(b.dataset.skin); }
+  });
+
+  // ---- go ----
+  applySkin(SKINS[0].id);
+  hud.dataset.panel = "1"; hud.dataset.bottom = "1"; hud.dataset.view = "none";
+  drawBars(); syncTabs(); select(hulls[0]); fit();
+  requestAnimationFrame(loop);
+})();
+</script>

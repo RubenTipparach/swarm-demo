@@ -169,6 +169,7 @@ pub(crate) fn spawn_ship(
         .collect();
     let cells = model.solid_count();
     let mut hull = Hull {
+        class: class.clone(),
         surface_mats,
         window_mats,
         // The inside of a ship is machinery, so it wears what machinery wears.

@@ -71,9 +71,22 @@ pub(crate) fn fly_tracers(
 pub(crate) fn fire_flak(
     tick: Res<Tick>,
     scene: Res<SceneSpec>,
-    // Not the carriers, which are hulls now: a mothership does not
-    // carry the fleet's guns and would otherwise open fire on its own side.
-    hulls: Query<(&Hull, &Transform), (Without<Hive>, Without<Dummy>)>,
+    // Not the carriers, which are hulls now: a mothership does not carry the
+    // fleet's guns and would otherwise open fire on its own side. And not
+    // the support ships, which are unarmed: a miner that could keep the
+    // swarm off itself is a miner nobody has to escort.
+    // Holding fire stops this too; DEFENSIVE does not, and that is the whole
+    // of what defensive means. Flak is point defence, so a ship on it keeps
+    // its own screen up and stops reaching for carriers.
+    hulls: Query<
+        (&Hull, &Transform),
+        (
+            Without<Hive>,
+            Without<Dummy>,
+            Without<Support>,
+            Without<HoldFire>,
+        ),
+    >,
     mut fx: ResMut<LiveFx>,
     mut sparks: ResMut<SparkQueue>,
 ) {

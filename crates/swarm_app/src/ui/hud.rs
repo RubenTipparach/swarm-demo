@@ -216,63 +216,14 @@ pub(crate) fn build_hud(mut commands: Commands) {
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(16.0),
-                bottom: Val::Px(16.0),
+                bottom: Val::Px(DECK_H + 32.0),
                 flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(8.0),
+                row_gap: Val::Px(6.0),
                 ..default()
             },
             Pickable::IGNORE,
         ))
         .with_children(|p| {
-            p.spawn((
-                Button,
-                Node {
-                    padding: UiRect::axes(Val::Px(14.0), Val::Px(10.0)),
-                    border: UiRect::all(Val::Px(1.0)),
-                    ..default()
-                },
-                BorderColor::all(Color::srgba(0.45, 0.85, 1.0, 0.55)),
-                BackgroundColor(Color::srgba(0.04, 0.10, 0.16, 0.80)),
-                CallButton,
-            ))
-            .with_children(|b| {
-                b.spawn((
-                    Text::new("Call reinforcements  (R)"),
-                    TextFont {
-                        font_size: 15.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(0.80, 0.94, 1.0)),
-                    Pickable::IGNORE,
-                ));
-            });
-            p.spawn((
-                Text::new(""),
-                TextFont {
-                    font_size: 12.0,
-                    ..default()
-                },
-                TextColor(Color::srgba(0.70, 0.82, 0.92, 0.85)),
-                CallLabel,
-                Pickable::IGNORE,
-            ));
-            p.spawn((
-                // `concat!` of separate literals rather than one string with
-                // backslash continuations: a continuation keeps the leading
-                // whitespace of the next SOURCE line, so every line after the
-                // first came out indented by however far the code was.
-                Text::new(concat!(
-                    "left drag select   middle drag orbit   WASD pan   Q E up down   F focus\n",
-                    "right button opens the move disc, left click confirms, esc cancels\n",
-                    "shift lifts the target off the plane   space pauses   esc opens the menu",
-                )),
-                TextFont {
-                    font_size: 12.0,
-                    ..default()
-                },
-                TextColor(Color::srgba(0.62, 0.74, 0.86, 0.72)),
-                Pickable::IGNORE,
-            ));
             // What the mouse does RIGHT NOW, which changes with the mode, and
             // the acknowledgement of the last order, which fades.
             p.spawn((
@@ -327,102 +278,6 @@ pub(crate) fn build_hud(mut commands: Commands) {
         BorderColor::all(Color::srgba(0.50, 0.95, 1.0, 0.90)),
         BackgroundColor(Color::srgba(0.30, 0.75, 1.0, 0.10)),
         MarqueeBox,
-        Pickable::IGNORE,
-    ));
-
-    // The ship picker, top left, with its list folded away under it.
-    commands
-        .spawn((
-            DespawnOnExit(AppState::Playing),
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(16.0),
-                top: Val::Px(12.0),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(4.0),
-                ..default()
-            },
-            Pickable::IGNORE,
-        ))
-        .with_children(|p| {
-            p.spawn((
-                Button,
-                Node {
-                    padding: UiRect::axes(Val::Px(12.0), Val::Px(7.0)),
-                    border: UiRect::all(Val::Px(1.0)),
-                    ..default()
-                },
-                BorderColor::all(Color::srgba(0.45, 0.85, 1.0, 0.55)),
-                BackgroundColor(Color::srgba(0.04, 0.10, 0.16, 0.85)),
-                HullButton,
-            ))
-            .with_children(|b| {
-                b.spawn((
-                    // ASCII. The default font has no U+25BE and a missing
-                    // glyph draws as a hollow box, which reads as a bug in the
-                    // button rather than as a caret.
-                    Text::new("Ship  v"),
-                    TextFont {
-                        font_size: 14.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(0.80, 0.94, 1.0)),
-                    Pickable::IGNORE,
-                ));
-            });
-            p.spawn((
-                Node {
-                    flex_direction: FlexDirection::Column,
-                    display: Display::None,
-                    ..default()
-                },
-                HullMenu,
-            ))
-            .with_children(|list| {
-                for (n, name) in PICKABLE.iter().enumerate() {
-                    list.spawn((
-                        Button,
-                        Node {
-                            padding: UiRect::axes(Val::Px(12.0), Val::Px(5.0)),
-                            border: UiRect::all(Val::Px(1.0)),
-                            ..default()
-                        },
-                        BorderColor::all(Color::srgba(0.45, 0.85, 1.0, 0.25)),
-                        BackgroundColor(Color::srgba(0.03, 0.08, 0.13, 0.95)),
-                        HullPick(n),
-                    ))
-                    .with_children(|t| {
-                        t.spawn((
-                            Text::new(name.replace('_', " ")),
-                            TextFont {
-                                font_size: 13.0,
-                                ..default()
-                            },
-                            TextColor(Color::srgb(0.78, 0.90, 1.0)),
-                            Pickable::IGNORE,
-                        ));
-                    });
-                }
-            });
-        });
-
-    // The counter, in the opposite corner from the controls so it never sits
-    // over anything a player has to press.
-    commands.spawn((
-        DespawnOnExit(AppState::Playing),
-        Node {
-            position_type: PositionType::Absolute,
-            right: Val::Px(16.0),
-            top: Val::Px(12.0),
-            ..default()
-        },
-        Text::new(""),
-        TextFont {
-            font_size: 14.0,
-            ..default()
-        },
-        TextColor(Color::srgba(0.72, 0.86, 0.98, 0.80)),
-        FpsText,
         Pickable::IGNORE,
     ));
 
@@ -515,7 +370,10 @@ pub(crate) fn build_hud(mut commands: Commands) {
 
 /// The button's own colours, and what it says the wing is at.
 pub(crate) fn hud_feedback(
-    mut buttons: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<Button>)>,
+    mut buttons: Query<
+        (&Interaction, &mut BackgroundColor),
+        (Changed<Interaction>, With<Button>, Without<Chromed>),
+    >,
     toggled: Query<&Interaction, (Changed<Interaction>, With<FpsToggle>)>,
     toggle_text: Query<&Children, With<FpsToggle>>,
     bars_toggled: Query<&Interaction, (Changed<Interaction>, With<BarToggle>)>,
@@ -623,6 +481,7 @@ pub(crate) fn hud_orders(
             OrderMode::Box => "release to select what is inside the box",
             OrderMode::Move => "aim on the plane   hold shift to raise or lower   left click confirms   esc cancels",
             OrderMode::Range => &armed,
+            OrderMode::Guard => "click the ship to guard   esc cancels",
         };
         if t.0 != want {
             t.0 = want.into();

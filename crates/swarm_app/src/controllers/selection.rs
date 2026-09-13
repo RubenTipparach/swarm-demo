@@ -61,8 +61,10 @@ pub(crate) fn select_input(
 
     match *mode {
         // In `Move` the left button is the confirm and nothing else. It does
-        // not start a selection, which is the bug that emptied the order.
-        OrderMode::Move | OrderMode::Range => return,
+        // not start a selection, which is the bug that emptied the order. In
+        // Guard it names the ship to guard, and starting a box on the same
+        // press would empty the very selection the guard is for.
+        OrderMode::Move | OrderMode::Range | OrderMode::Guard => return,
         OrderMode::Idle => {
             if over_ui.iter().any(|i| *i != Interaction::None) || alt {
                 return;

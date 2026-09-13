@@ -745,6 +745,17 @@ material puts it on at 3.4, well over white, because the ramp is nought to
 one by construction (it is a colour) and how bright that colour is laid on a
 hull is the picture's business, not the ramp's.
 
+**And `damage.rs` is three files, along the line its own module docs already
+drew.** It went over this project's own nine hundred lines when `mend` and
+`holes` landed, and the answer was never to raise the limit: `damage` answers
+what a hit DOES to the cells, `heat` answers what the hole then LOOKS like
+(the ramp, the crust, the soot, what a cell is worth in hit points), and
+`wound` is what the hole HANDS OUT to whatever is drawing it (a breach, a
+vent, a chunk). `DamageGrid::vents` lives in `wound` with the things it
+makes, because Rust lets one type keep its inherent methods in more than one
+file of a crate and where a method belongs is decided by what it is ABOUT.
+`damage` re-exports both, so nothing outside the core learned a new path.
+
 `DamageGrid::vents` answers where smoke leaves, one per face a hit opened
 rather than one per hole: a crater vents along its whole rim, and a single
 plume from the middle would read as a chimney. Smoke is the one spark that
@@ -1095,6 +1106,141 @@ off whole, cut loose from the hull and thrown a little harder than a section.
 And the ship that was is despawned: every cell of it is in a piece, in the
 dust or in the fireball now. A minute later the pieces go too, because ten
 carriers' wrecks are ten thousand bricks of mesh.
+
+## The command deck, built from the mockup
+
+The HUD was a call button, three lines of bindings and a dropdown. It is the
+RTS deck the mockup drew (`docs/ui/rts-mockup.html`), and the division it is
+built on is the mockup's own: the CHROME is the skin's, the LAYOUT is the
+deck's, and every number on it is read off the game rather than authored
+beside it.
+
+**A frame is one 48 pixel texture with a 16 pixel slice**, four of them
+(panel, well, button, button armed), baked at boot into an `Image` and worn as
+an `ImageNode` with `NodeImageMode::Sliced`. That is the mockup's own canvas
+baker rasterised: the same fill, the same hairline, the same inner rule and the
+same twelve pixel L at each corner, composited in sRGB because a canvas
+composites in sRGB and the picture has to match the one that was approved. The
+sampler is NEAREST, because a nine slice stretches its middle and a linear
+filter over a one pixel hairline is a hairline that fades out along the edge it
+was drawn to mark. An arm is twelve pixels inside a sixteen pixel corner, so it
+never reaches the stretched middle: a bracket that crossed the slice line would
+smear along the edge of every panel wider than the texture.
+
+**A builder may default what a caller omits and must never overwrite what a
+caller set.** `framed` listed `flex_direction` before `..node`, and Rust's
+struct update syntax means the listed field WINS: the resource strip asked for
+a row and got a column, silently, and so did every stat well. It sets the
+padding and nothing else now, and every panel says which way it runs.
+
+**Nothing on the deck is a control for a mechanic that does not exist.** There
+is no research row and no build queue, because a button that does nothing is
+worse than a missing one: a player spends a fight wondering what it was for.
+What the mockup draws as a factory is the REINFORCEMENT call here, which is a
+mechanic this game has: a row runs the same `call_one` that R runs, with the
+class as its argument rather than the flagship's, which is what makes the list
+a list instead of six copies of one button.
+
+**One panel, three contents, chosen by the mode.** A skirmish gets the wave, a
+run gets the field and the two buttons that end a system, and the sandbox gets
+what the range is shooting at. The resource strip is the same rule: a run is
+materials and the fuel a jump needs, a skirmish is the carriers left and the
+wing that is flying, and the bar under it is whichever of those the fight ends
+on. The strip's bar is never one of the three damage colours, because filling a
+tank is not damage.
+
+**Every button on the command bar is a key the game already has.** The Fleet
+page opens a move order, holds the selection, focuses, calls a wave and turns
+the bars and the counter on and off; Strike and Tactics are the range and the
+sandbox, and their cells carry `SandboxAction`, which `sandbox_input` was
+already reading off a button. So the two panels that used to sit in the top
+right are GONE and nothing was rewritten to replace them: they were the same
+five buttons twice, and one set here and one there is two writers for one
+state. What was left of each (the run's numbers, the dummy's mass and spin) is
+a section of the one panel.
+
+**A key lives in one table.** The sandbox panel spelled out which key armed
+what, and `sandbox_input` had its own copy; `SandboxAction::key` is that table
+now and both the handler and the label read it. Same lesson as the two clamps
+and the three scripted cues: a rule copied is a rule one copy will miss.
+
+**A move order OPENS from a flag rather than from a second code path.**
+`NavAsk` is what the Move button sets, and `nav_input` opens the disc from it
+in the same arm the right press opens from. It is read ABOVE the "the pointer
+over a button belongs to the button" guard, because the press that set it was
+on a button and that guard would eat every one of them.
+
+**One marker, one owner.** The older HUD recolours every `Button` that carries
+a `BackgroundColor`, and a deck row is one of those, so `Chromed` is what says
+the deck lights this itself and `hud_feedback` filters on `Without<Chromed>`.
+Two writers for one state is how a tab ends up saying something other than what
+is open, which the mockup shipped once already.
+
+**The two halves slide, on a time constant.** The side panel goes off the right
+edge by its own width plus the margin and the bottom deck goes down by its
+height, eased with `1 - exp(-dt / SLIDE)` so the slide takes the same wall time
+at twenty frames a second as at a hundred and twenty. An animation measured in
+frames is an animation that is a different length on every machine.
+
+**And a bar is three colours a player can name rather than a ramp**, over the
+REACTOR, which is the only thing that kills a ship and therefore the only
+honest thing to put on a bar.
+
+**Every picture of a ship is GENERATED, and every class is DRAWN.** The
+mockup's two halves, ported. A schematic is a PLAN: straight down, with the
+ship's length across the frame, because a ship seen from above is its layout
+and that is the one view every hull in a fleet can be compared in. The mockup
+renders the greedy mesh under an orthographic camera and reads the pixels
+back; there is no camera to spare here and none is needed, because a plan of
+an axis aligned lattice is a projection the CPU can write down: the topmost
+live cell of every column, filled as hull or as machinery off the export's own
+purpose byte, an edge wherever the column beside it is a different material or
+stands at a different height, and two rings of rim grown outward from the
+alpha. The edge is where the panel detail comes from and it is the greedy
+quad's own border arrived at from the other side: a flat plate is one height
+over its whole run and draws no line inside itself, and greebled work steps at
+every cell and is full of them.
+
+Both sizes are baked ABOVE the box they are shown in, at better than a pixel a
+cell. The first cut baked the small one at the size it was displayed and the
+edge pass had nothing to draw on: a schematic came out as a silhouette with a
+rim round it, which is what a plan view looks like with the plan taken out.
+
+**A class is not a ship, so no ship can stand for one.** The six marks are the
+mockup's own line art, blocked out the way the lattice is, with no faction
+paint and no livery, and so are the command glyphs. They are rasterised rather
+than drawn as vectors, because Bevy's UI has no vector layer: one small
+supersampled rasteriser and a table of fills and strokes, so a mark is DATA
+here exactly as it is markup there. Each is baked once in WHITE and tinted by
+the node, which is exactly what `currentColor` does in the markup and is why a
+mark on an armed button is gold without a second bake existing.
+
+**The debug panel is not the campaign's UI, and the owner is right.** A run is
+played off the strip, the rail and the deck: how long this system has, which is
+on the strip beside the fuel, and the one button that leaves, which is bottom
+right and green where the mockup puts its green control. Eighteen numbers in a
+list was a readout for whoever was building the mode, and it went with the
+seventeen `RetreatStat` rows, the crew lines and the hold shares that only fed
+it. The run's own numbers were always actually read in the headless report,
+which is where they stay.
+
+**The rail is the group display.** No number row: a row of the rail IS a group,
+and pressing it takes every live ship of that class, with shift adding. That is
+what a control group is, arrived at from the fleet you actually have rather
+than from a number somebody had to assign, and it needs no key at all, which
+matters because the range already owns one to five. A row carries no words:
+it is a schematic and a count, and a class the fleet has none of is not on it.
+
+**And no command steals a camera key.** Stop had `S` under it for one commit,
+which is a pan key: WASD drives the focus, so a command that took S would take
+it away the moment a player reached for it. The cells carry a mark and a name
+and no key at all, except the sandbox's, whose caption is its key AND what it
+is at.
+
+Still to come, and named here so the gap is visible rather than forgotten: the
+Mission, Sensors and Menu views the mockup carries on its middle tabs. The
+sensors manager is a camera MODE in the mockup rather than a screen, which is
+the part worth keeping when it lands.
 
 ## The controls are an RTS's now
 
@@ -1694,6 +1840,92 @@ is what its class table says it carries. Nothing about a gun is authored
 beside the hull, so a class with no weapons has none rather than having some
 invented for it.
 
+**With ONE exception per hull, and it is a rule about the SHIP rather than
+about a region of one: the BOW GUN.** The mount standing on the deck over the
+centreline with no other gun on the ship forward of it is the bow gun and it
+looks down the bow; a hull with no such mount has none, and every other gun on
+every hull keeps looking outboard. Radially a foredeck battery looked half up
+and half out, which puts a ship's foremost mount at the sky, and what a gun
+bolted over the nose is FOR is firing over it.
+
+**The fix belongs in redux-tribes, and that is where it is.** The first cut
+turned the FACING here and left the cells where they were, so the arrow over a
+frigate's nose moved and the barrel under it did not, which is exactly what
+"it has not been turned" looks like. redux-tribes is where a mount's rest
+facing is authored (`ringFacing`, a quarter turn on its ring), so `bowRing`
+went in there, `measure_fleet.mjs --sync` carried the new hull points and
+envelopes into the class table, and this project re-exported the hulls. The
+cells arrive lying down the bow now, which is why the registry poses no turret
+and the rest of the game needed nothing. **A ship is authored in one place; a
+change that draws it differently belongs in that place and not in the harness
+photographing it.**
+
+**"Farthest in front" is measured against the other GUNS, not against a line
+drawn through the middle of the hull.** Amidships reads as the obvious test
+and it threw out every corvette in the fleet: a corvette is a needle whose
+foremost deck mount sits a couple of cells abaft its own midpoint with the
+whole of its nose ahead of it carrying nothing at all. What that test was
+actually protecting against is a hull whose only centreline deck mount is at
+the STERN with its real battery out on the flanks forward of it, which is the
+Rogue and Benefactor destroyer, and "nothing is forward of it" refuses those
+by saying so directly. The owner caught it off the picture: six hulls where
+there should have been ten.
+
+The two thresholds that remain are measured across the fleet rather than
+guessed, and each is the middle of an empty band. Every gun within 0.05 of the
+centreline is either a bow gun or a belly turret and the next one out is a
+Benefactor cruiser's starboard sponson at 0.48, so `BOW_BEAM` is a quarter.
+The first cut had it at half and let that sponson through: with "farthest
+forward" doing the picking, a hull whose foremost deck mount is out on a flank
+gets its starboard battery pointing down the bow and its port twin still
+looking outboard, which is a ship nobody drew. `BOW_DECK` is loose at 0.15
+because it is there to say TOP and nothing more, and it was 0.35 for one
+commit, which missed the Terran cruiser and destroyer by a hundredth: their
+foredecks sit a third of the way up rather than half, and a threshold set from
+the FRIGATE is a threshold that is wrong on the rung nobody looked at.
+
+Ten hulls carry one: all four Terran, all four Karisen, and the Rogue and
+Benefactor corvette, whose single deck mount is the only gun they have. The
+muzzle moves with the facing, to the cluster's own forward face, or the barrel
+would be drawn coming out of the side of its own turret. `bow_gun` here and
+`bowRing` there are one rule written twice across a repository boundary, which
+is this file's own divergent path warning, and the guard is that the cells are
+redux-tribes' answer and the facing is derived from them: a hull the two
+disagree about is a barrel drawn one way and a beam leaving it another, and
+`bow_check` is what measures that they do not.
+
+**A turret turns by an ARC from where it was authored, never to an absolute
+pose.** `aim_turrets` used to say `looking_to(-want_local)`, which puts local
+plus Z on the target and is therefore only right if every turret's cells were
+laid out along plus Z. They are not: a cluster is drawn in the pose it was
+bolted on in, outboard on a sponson and down the bow on a bow gun. So every
+broadside turret standing at rest was being turned a quarter from the shape it
+was drawn as, and the bow gun, whose rest is plus Z exactly, was the one mount
+that rule left ALONE. `Quat::from_rotation_arc(rest, want)` is identity at
+rest whatever a gun's rest is, so a turret with nothing to shoot at is drawn
+exactly as its cells were authored and every turn is measured from there.
+
+**And the registry DRAWS it, which is the only way it could be approved.** A
+count cannot carry a facing: "three guns" is true of a hull whose foredeck
+battery points at the sky and of one whose points down the bow, and those are
+different ships. The exporter writes the bow gun's muzzle and facing and the
+page puts ONE gold arrow there, off a toggle, because an arrow on a gun that
+points where it always pointed says nothing and buries the one that does not.
+A cylinder and a cone rather than a line, because WebGL ignores `linewidth`
+and a one pixel line is a facing nobody can see well enough to judge.
+
+**Three pins moved with the hull and none of them was a regression.** The
+Terran frigate is 8961 cells rather than 8938 and 291 windows rather than 292,
+because a turned mount seats on different cells and one plate cell that used
+to carry a bridge pane is under the turret now. The third was the interesting
+one: the mesh suite pinned the LIST of surfaces a stock Terran draws as seven,
+and the mount came to stand over the hull's one patch of bare frame, so six
+read as a break when the picture was right and every other frigate in the
+fleet has drawn six all along. It holds the INVARIANT now, that a surface has
+a mesh exactly when it has a face open to space, which no hull moving can make
+stale. **A pin on an incidental fact fails the day something legitimate moves,
+and the reader cannot tell which it was.**
+
 **Sparks are one buffer with TWO writers.** The lower half of the ring is the
 app's, written with `write_buffer` at a cursor `swarm.rs` keeps; the upper
 half is the swarm shader's, claimed with one `atomicAdd` per burst so a
@@ -1926,6 +2158,28 @@ yard is written as a multiple of those, because "two cubes" is a thing a
 player can count in the field and a price in bare materials is a number
 nothing in the world corresponds to.
 
+**And SCRAP is the one cargo that is bulk rather than seam.** A cell of ore
+is a cell somebody went looking for; a cell of hull plating is a cell that
+happened to be in the way, so it packs at `SCRAP_CELLS` of 64 to the cube
+against the seam's eight, and is worth 15 against the ore's 120.
+
+**`Pack` is how dense the cargo is, and it is a property of the CARGO rather
+than of the cube kind.** That is the distinction the first cut got wrong by
+putting the rate on `Cube::Scrap`: the hold then filled on DATA instead, at
+eight cells a cube, and nothing had moved. Every kind packs at the density of
+what it came out of, which is also the survey ship's whole argument, because
+the same data cube is eight cells read off a ship and sixty four found in its
+wreckage. `Cube::packed` is handed the pack rather than guessing it from the
+pile, because a pile of materials cannot say where it came from and whatever
+filled it always can.
+
+The rate is the whole reason a salvager can strip a frigate inside one
+system. At the seam's rate it filled its hold on thirty two cells of an eight
+thousand cell wreck and spent the rest of the run flying home: half an hour
+for half a ship, so every tier of a rebuild was unreachable while the picture
+showed a salvager working hard the whole time. **A number that makes a
+mechanic impossible looks exactly like a mechanic that works.**
+
 **A jump is priced by the FLEET.** The drive costs 250 to spin up and every
 other hull standing inside the field adds its own rung: 25 for a corvette,
 50 for a frigate or a civil trade, 100 for a destroyer, 200 for a cruiser.
@@ -1933,6 +2187,15 @@ So calling in an escort is a decision with two sides to it, because the ship
 that helps you hold a system is the ship you then pay to take out of it. It
 is counted off the LIVE ships rather than off the run's roster, so an escort
 that died is an escort you no longer pay for.
+
+**And the tank the command ship arrives with covers the DRIVE exactly.**
+`RESERVE` is `DRIVE_COST` and is written as that rather than beside it,
+because two numbers that have to be equal are one number. So you can always
+leave alone: a system that goes wrong costs the escorts and the support ships
+standing outside the field when it fires, and never the run itself. That is
+the answer to "does losing the tanker strand you", and it is the owner's:
+total loss is the better disaster, and a disaster you cannot come back from
+at all is not a disaster, it is a reload.
 
 **Where a cutter stands is written in the AVOIDANCE's terms.** `fly_hull`
 holds every ship off a rock by the rock's own navigation sphere plus its own
@@ -1955,6 +2218,14 @@ difference, comparing against how many have EVER been spawned rather than how
 many are alive: killing a carrier does not bring another, which is the whole
 reason to shoot at them while you gather.
 
+**And it does not stop once the fleet is in.** A system a fleet could hold
+for ever is a system worth farming, and a tide that ended would make the
+right play "kill everything, then mine at leisure", which is the skirmish
+with extra steps. One more carrier every `SIEGE` after the fleet arrives,
+with no ceiling, so staying is always possible and always gets worse. There
+is no number of them a player can hold indefinitely, which is what makes
+leaving a judgement rather than a rule.
+
 **The drive spools for thirty seconds and takes what is inside the field.**
 Everything outside is left in the system, and what went is the fleet the next
 system starts with. The fleet is despawned on the way out, because the result
@@ -1971,6 +2242,93 @@ frame's step, and that is a bug this had: at a fiftieth of a cell a frame,
 anyway, so the tank filled itself out of a pile of ice that never shrank. A
 rate in a resource counted in whole cells needs somewhere to keep the
 remainder. A cadence needs none.
+
+**Six roles, and each one is a different sentence about the same fleet.**
+A miner cuts rock and a tanker refines what it brings home; those two are the
+loop. The other four are what a run GROWS into, and every one of them was
+specified by the owner rather than derived:
+
+| role | what it does |
+| --- | --- |
+| survey | scans a rock or a wreck, takes nothing off it, and fills its hold with DATA |
+| freighter | cuts nothing, adds `FREIGHT_SHARE` to everything landed, and carries the BERTHS a fleet grows into |
+| tender | mends a hull it is standing beside, for materials, and discounts the yard's own welding |
+| salvager | cuts a wreck, which pays twice: cubes now, and a ship later |
+
+**A survey ship is a cutter that takes nothing off.** The same standoff, the
+same trip home, the same hold: what fills it is data, and a BODY is what
+remembers how much of it is left to learn (`Scanned`), so a rock somebody has
+already surveyed is a rock nobody profits from surveying again. That is what
+stops a run parking one survey ship on one rock for ever, and it is why a
+survey ship's work is going and looking rather than standing still. Data is
+what buys the RIGHT to buy, so a survey ship is how a run reaches a role it
+has never built.
+
+**A freighter is what a fleet is built ON, and it cuts nothing.** Two jobs,
+both multipliers on other ships: a quarter more on everything landed, and two
+more berths. `BASE_BERTHS` is three, which is exactly what a run opens with,
+so the first freighter is the only thing that makes a fourth hull possible at
+all. A yard will build what you can afford and not what you cannot carry, and
+the button SAYS so rather than blaming the bank: "No berth: build a
+freighter" is the label, because "not enough in the bank" would be a lie a
+player would spend a system acting on.
+
+**A tender is the only thing in this game that MENDS.** One cell a pass, out
+of the bank, on the nearest hurt hull in reach, which makes it a ship a
+player POSITIONS: the same verb the whole game is about. It mends what it is
+beside, so which ship gets the materials is decided by flying it there.
+`DamageGrid::mend` is the exact undoing of a chip (alive, full hit points,
+the dead count down, its own brick and its neighbours' dirtied), and
+`holes` hands back the most OPEN cell first, which is the order the swarm ate
+them in: plating closed over a hole nothing has filled is a picture nobody
+believes. Out of battle the same crews are a discount on the yard, up to half
+off with three of them, because a repair nobody pays for is a repair nobody
+thinks about.
+
+**And a support ship is DISARMED.** They are hulls, so `fire_guns` and
+`fire_flak` had a miner opening up with the fleet's own beams, which is a
+civil trade fighting its own war and makes an escort worth nothing. It is
+`Without<Support>` on both, which is the carriers' own fix a second time: a
+rule a system must not see is a marker and a filter, not an `if`.
+
+**A WRECK IS A HULK, and a salvager is how a loss becomes a delay rather
+than a loss.** Cutting a wreck already paid: what comes off it is cubes like
+any other cut, which is LIQUIDATION and is what happens if nobody decides
+otherwise. What the salvager adds is that the parts it recovers are parts OF
+something. `Remains` rides each wreck piece and counts what has been taken
+off it; `record_salvage` carries the DIFFERENCE into the run every frame,
+because a piece that ages out and despawns must not take back what it gave.
+Only a ship of the fleet's: a carrier has no `class`, so it makes no hulk,
+and the rule falls out of the data rather than being written.
+
+**A salvage cut is a SECTION and a mining cut is a shaft**, and that is the
+one thing the kind decides: a miner is after a seam a few cells wide and the
+shaft is how it reaches one, while a salvager is lifting a hulk apart.
+`cut_once` takes one parameter for it and everything else about a cutter (the
+standoff, the hold, the trip home, the chunks, the sparks) is the same
+function, which is what keeps two jobs from being two cutters.
+
+**And a piece being worked does not age out.** A wreck is taken away after a
+minute because ten carriers' wrecks are ten thousand bricks of mesh, which is
+a cost argument rather than a rule about wrecks; a piece a salvager is
+standing on is one the player has DECIDED to keep, and taking it away mid cut
+is the harness deleting the thing under test.
+
+Three tiers, and they are the owner's:
+
+| recovered | what can be done with it |
+| --- | --- |
+| seven tenths | rebuilt where it lies, in the field, for materials and research |
+| half to seven tenths | only a yard can put it back, at THREE times the research |
+| under half | scrap, at any price |
+
+The materials are a hull's own price either way and what moves is the
+RESEARCH, which is the honest place for it: a ship recovered nearly whole is
+reassembled, and one recovered half is half worked out from first principles.
+A rebuild takes a berth like any other hull and the hulk is SPENT when it is
+bought, because a rebuild that could be bought twice would be a fleet made
+out of one dead frigate. Recovering parts therefore pays twice and the choice
+a player makes is whether to spend the bank putting them back together.
 
 **The flagship carries its holes.** The field is built fresh every system, so
 without that a run would arrive in a pristine ship however the last one went,
@@ -2009,19 +2367,70 @@ because a yard whose prices and roster were painted once would go on offering
 what it has already sold, and Bevy does not run `OnEnter` for a transition to
 the state it is already in.
 
-**The harness is two flags for the two things a player presses**, since a
-headless run has no pointer: `--job TICK` is the right click that puts every
-support ship to work, and `--jump TICK` is the button, with the fuel check
-skipped because half an hour of mining is not a thing a headless run can
-afford to render. `--onward` takes the map's first branch without being
-pressed, so the system AFTER a jump can be photographed, which is the only
-place a run's scars and roster show. The scripted jump arms whenever the
-drive is idle rather than on tick nought, because the clock is advanced ahead
-of it in the same frame and tick nought is never a tick anything there sees.
+**The harness is a flag per thing a player presses**, since a headless run
+has no pointer: `--job TICK` is the right click that puts every support ship
+to work, and `--jump TICK` is the button, with the fuel check skipped because
+half an hour of mining is not a thing a headless run can afford to render.
+`--onward` takes the map's first branch without being pressed, so the system
+AFTER a jump can be photographed, which is the only place a run's scars and
+roster show. The scripted jump arms whenever the drive is idle rather than on
+tick nought, because the clock is advanced ahead of it in the same frame and
+tick nought is never a tick anything there sees.
+
+**A turret cut loose is a `Wreck` with NO `Hull`, and that is what the
+salvager's first run found.** The scripted job scanned for the nearest thing
+with `Wreck` on it and sent the salvager to a gun; `work_jobs`, which needs
+the cells, found no body, quietly set the job back to idle, and the ship flew
+home having cut nothing with not a line in the log to say why. The fix is the
+filter rather than a check in the loop (`WorkableBody` plus `With<Hull>`,
+which is the row `work_jobs` will ask for anyway), and what CAUGHT it is the
+run report: a still frame of a wreck cannot tell one nobody reached from one
+that has been cut over, and the bank read nought for the same reason it would
+have if the salvager had never launched. The player's own right click was
+never wrong, because its picker reads `&Hull` to get a radius and so could
+not name a gun in the first place. **Two paths to one job is two interfaces,
+and only one of them had been thought about.**
+
+**And `--wreck TICK` is the one thing a player cannot press**, which is a
+ship dying. It exists for the salvager: `--explode` takes every hull at once,
+which is a fireball with no fleet left to salvage WITH, so this kills one
+escort's reactor cells and lets `go_critical` take the ship on its own rule
+the tick after. One death path and not two, so the wreck a salvager works is
+the wreck the swarm would have made.
+
+**A harness that fires on an EXACT tick fires only on the one clock that
+counts by ones.** `--job` was `auto.job == tick.tick`, which is right under
+`--fixed-dt`, where one frame is one tick, and wrong on a real clock, where
+the tick jumps by whatever the frame took: a run without the flag stepped
+straight over the mark and every support ship stood idle for the whole render
+with nothing in the log to say why.
+
+**And fixing it in one place left the other two.** `--wreck` was written the
+same way and missed the same run, and `--fire` in the sandbox was the third
+copy; the second run of the fix proved only that `--job` now fires, because
+the wreck it was meant to work had never been made. `Tick::cue` is the rule
+now and all three call it: at or past the mark, once, with a `Local<bool>` on
+the system so nothing global remembers a scene that has been torn down. The
+scripted jump was right all along by arming whenever the drive is idle. This
+is the one clock lesson a third time: **a rule copied is a rule one copy will
+miss, and the copy that is missing is the one nobody can grep for.**
+
+**A cadence written in TICKS is sampled once a FRAME, and that is not the
+same thing.** `work_jobs` cuts when `tick % CUT_TICKS == 0`, and the tick
+advances by `step / (1/60)` per frame: one under `--fixed-dt` and three on
+this container, where every frame clamps at `STEP_CLAMP`. So a cadence of ten
+fires every ten FRAMES rather than every ten ticks, and a cutter on a slow
+machine works at a third of its rate with nothing in the report to say so.
+That is the two clamps again in a third costume: the numbers are in ticks and
+the sampling is in frames, and only under `--fixed-dt` are those the same
+clock. It is why `--fixed-dt` is the harness for anything being MEASURED and
+not only for anything being photographed.
 
 **And the report says what the loop DID.** `retreat:` counts the ore and the
-ice left in the field and what is in the bank, because a picture of a rock
-cannot tell a miner that arrived from a miner that never did, and the first
+crystal left in the field, what is in the bank, and what share of each dead
+ship the salvagers have got back, because a picture of a rock cannot tell a
+miner that arrived from a miner that never did and a picture of a wreck
+cannot tell one that has been cut over from one nobody reached. The first
 three runs of this were three different reasons for a bank that stayed at
 nought.
 
@@ -2030,11 +2439,75 @@ the surface at tick 240 and the seam under it a few cuts later. A run played
 straight through with `--onward` crosses three systems in 420 frames and the
 flagship arrives in the third with 257 cells still open.
 
+And the salvage loop, on a terran frigate's wreck (four pieces of 2232, 1891,
+1345 and 1241 cells off a hull that started with 8938): two salvagers get 5%
+of the ship back in 900 ticks, which is fifteen seconds and includes the
+flight out to it. That is about thirty cells a second, so the yard's tier at
+half the ship is two and a half minutes of both of them and the field's at
+seven tenths is three and a half, inside a six minute system and worth
+roughly what it costs. The reactor is the ceiling and it is the interesting
+part: it took a quarter of that ship with it, so seven tenths of the hull
+means nearly every cell of every piece, and a ship that goes up badly is a
+ship only a yard will ever put back.
+
+## The Fleet Registry is the record of every ship
+
+**https://claude.ai/code/artifact/6c55f3e7-3a7a-4b4f-a002-0af5e26de826**
+
+One page listing every ship in the game, each one drawn in 3D from the cells
+the game itself meshes: the twenty three stock hulls and the four alien
+archetypes, with what each is made of, what it carries, how buried its
+reactor is and how big it actually is. `docs/ships/registry.html` is the
+page; `cargo run --release -p swarm_core --example ship_export` is what
+feeds it.
+
+**Keeping it current is a rule, not a courtesy.** When a ship is added or
+removed, when a hull is re-exported, or when anything ON one moves (its
+stats, its guns, its reactor, the role it flies, what a class is for), the
+registry is regenerated and republished IN THE SAME CHANGE. A record of the
+fleet that is a version behind is worse than no record, because a reader
+cannot tell which.
+
+**Nothing on it is hand maintained, which is what makes that cheap.** The
+exporter reads the hull DIRECTORY rather than a list, so a class added
+tomorrow is on the page tomorrow; every number is measured off the model at
+export time by the same `greedy_mesh`, `reactor_of`, `guns_of` and `hp_for`
+the game runs on, so the page cannot disagree with the game about a hull
+without the game disagreeing with itself. Even a navy's SWATCH is measured:
+it is the one colour that covers most of that hull, by quad area rather than
+by quad count, because the greedy mesher leaves a flank as one big rectangle
+and a greebled stern as dozens of small ones and counting quads would paint
+every ship the colour of its machinery.
+
+**Two views, and the second is the one worth having.** A ship on its own, and
+the WHOLE FLEET at true relative scale, laid out a row per navy with the
+rungs aligned in columns. The ladder is the claim this project makes about
+its own fleet most often and the hardest to check by reading: a corvette
+really is half a cruiser, and a drone really is a speck beside both, and a
+picture that fit each ship to the frame would say nothing about any of it.
+
+**The geometry travels as base64 inside JSON**, which reads as a strange
+thing to do until you try to publish it: a static host serves standard web
+media types and a private binary format is not one, so the choice is JSON or
+nothing. As numbers in a JSON array the same quads are three times the size;
+as base64 they are a third larger than the bytes and `atob` is one call. A
+quad rather than two triangles, because every face this mesher makes is an
+axis aligned rectangle, and a `u16` per coordinate over the model's own
+bounding box, because a lattice is at most 128 cells across.
+
+**And `depth_from_outside` moved into the core for it.** `hull_stats` had its
+own copy and the exporter needed the same answer, which is this project's own
+divergent path rule: one measure, one implementation, one test. It is not the
+depth `reactor_of` derives and the doc comment says why. That one seeds every
+empty cell, so it answers "how buried is this in its own structure"; this one
+floods only from the lattice wall, so an internal void is not a way in, and it
+is this one that answers "how much plating would a shot have to get through".
+
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 85, the core
-cargo test -p swarm_app                                    # 5, the run's own economy
+cargo test -p swarm_core                                   # 88, the core
+cargo test -p swarm_app                                    # 9, the run's own economy
 python3 tools/shape.py --check                             # no file over 900 lines, no function over 100
 cargo fmt --all -- --check                                 # the format
 cargo clippy -p swarm_core -- -D warnings                  # the core's lints
@@ -2043,6 +2516,7 @@ python3 tools/make_chitin_texture.py --check               # the chitin has not 
 python3 tools/make_crystal_texture.py --check              # nor the crystal's three maps
 cargo run --release -p swarm_core --example hull_stats -- assets/hulls   # what makes a hull tough
 cargo run --release -p swarm_core --example rock_stats                   # what a rock is worth, and how buried its ore is
+cargo run --release -p swarm_core --example ship_export -- assets/hulls docs/ships   # the registry's geometry and index
 cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --motes 5000 --frames 60 --out shot.png
 # A headless run defaults the launch delay to NOUGHT and a window defaults it
@@ -2096,6 +2570,9 @@ cargo build --release -p swarm_app
     --chewers 90 --frames 240 --zoom 8 --out jump.png                 # the system, left
 ./target/release/swarm_app --headless --fixed-dt --retreat --jump 200 --onward --motes 900 \
     --chewers 90 --frames 420 --zoom 3.2 --out second.png             # and the scars it carried
+./target/release/swarm_app --headless --fixed-dt --retreat --support salvager,salvager \
+    --wreck 30 --job 45 --motes 100 --chewers 0 --rocks 2 \
+    --frames 900 --zoom 6 --out salvage.png       # an escort dies and is cut over for parts
 for y in 0.0 1.6 3.1; do                                   # the same tick, three angles
   ./target/release/swarm_app --headless --fixed-dt --motes 4000 --frames 150 \
       --zoom 11 --yaw $y --out ang_$y.png

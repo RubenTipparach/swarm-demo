@@ -54,6 +54,11 @@ pub(crate) struct SceneSpec {
     pub(crate) zoom: f32,
     pub(crate) target: Vec3,
     pub(crate) explode: u32,
+    /// `--wreck TICK` takes the reactor out of ONE escort at that tick, so a
+    /// headless run has a wreck for a salvager to work. It kills the reactor
+    /// cells rather than exploding the ship itself, so the death goes through
+    /// the same `go_critical` rule every other one does.
+    pub(crate) wreck: u32,
     pub(crate) cadence: u32,
     pub(crate) hives: usize,
     pub(crate) order: Option<Vec3>,
@@ -94,6 +99,31 @@ pub(crate) struct SceneSpec {
 pub(crate) struct Tick {
     pub(crate) tick: u32,
     pub(crate) acc: f32,
+}
+
+impl Tick {
+    /// Whether a scripted moment has arrived, once.
+    ///
+    /// The harness's own clock rule, in one place, because it has already
+    /// been got wrong twice by being written out. `== tick.tick` is right
+    /// only under `--fixed-dt`, where one frame is one tick; on a real clock
+    /// the tick jumps by whatever the frame took, so a mark can fall in a
+    /// gap between two frames and the thing it was meant to trigger simply
+    /// never happens, with nothing in the log to say why. At or past the
+    /// mark, and the caller's `fired` is what makes it once: a `Local<bool>`
+    /// on the system, so nothing global remembers a scene that has been torn
+    /// down.
+    ///
+    /// This is the one clock lesson a third time: a rule copied is a rule
+    /// one copy will miss, and the copy that is missing is the one nobody
+    /// can grep for.
+    pub(crate) fn cue(&self, at: Option<u32>, fired: &mut bool) -> bool {
+        if *fired || at.is_none_or(|mark| self.tick < mark) {
+            return false;
+        }
+        *fired = true;
+        true
+    }
 }
 
 impl SceneSpec {
@@ -221,11 +251,14 @@ fn spawn_fleet(
             materials,
             tex,
             &scene.hull,
-            radius,
-            Vec3::ZERO,
-            Quat::IDENTITY,
-            (scene.chewers / 3) as u32,
-            n,
+            Wave {
+                radius,
+                lead_pos: Vec3::ZERO,
+                lead_rot: Quat::IDENTITY,
+                chewers: (scene.chewers / 3) as u32,
+                n,
+                shape: Shape::default(),
+            },
         );
     }
 

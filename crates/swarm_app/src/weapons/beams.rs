@@ -114,9 +114,25 @@ pub(crate) fn resolve_beams(
 pub(crate) fn fire_guns(
     tick: Res<Tick>,
     scene: Res<SceneSpec>,
-    // Not the carriers, which are hulls now: a mothership does not
-    // carry the fleet's guns and would otherwise open fire on its own side.
-    hulls: Query<(&Hull, &Transform), (Without<Hive>, Without<Dummy>)>,
+    // Not the carriers, which are hulls now: a mothership does not carry the
+    // fleet's guns and would otherwise open fire on its own side. And not
+    // the SUPPORT ships: the civil trades have gun cells in their models, so
+    // a miner was firing beams at motherships, and an escort is only a
+    // decision while the thing it escorts cannot look after itself.
+    // And not a ship holding fire or on point defence. A stance is a MARKER
+    // and a filter rather than an `if` in here: that is what lets the rule be
+    // stated once, and it is the same answer the carriers and the support
+    // ships already get from this line.
+    hulls: Query<
+        (&Hull, &Transform),
+        (
+            Without<Hive>,
+            Without<Dummy>,
+            Without<Support>,
+            Without<Defensive>,
+            Without<HoldFire>,
+        ),
+    >,
     hives: Query<(&Hive, &Transform)>,
     mut fx: ResMut<LiveFx>,
     mut sparks: ResMut<SparkQueue>,

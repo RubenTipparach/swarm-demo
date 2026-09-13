@@ -51,12 +51,32 @@ pub(crate) const WING_MAX: u32 = 6;
 
 pub(crate) const WING_WAVE: u32 = 2;
 
+/// Everything about ONE reinforcement that is not which class it is.
+///
+/// A struct rather than six more arguments, because `call_one` was already at
+/// ten under the rule this file's own project keeps: an argument list that long
+/// is the smell that says a struct is missing, and the day the wing gained a
+/// SHAPE was the day that debt came due. Four callers hand this over and none
+/// of them spells out a station.
+#[derive(Clone, Copy)]
+pub(crate) struct Wave {
+    /// The leader's hull radius, which every offset here is measured in.
+    pub(crate) radius: f32,
+    pub(crate) lead_pos: Vec3,
+    pub(crate) lead_rot: Quat,
+    pub(crate) chewers: u32,
+    /// Which station of the wing, from nought.
+    pub(crate) n: u32,
+    pub(crate) shape: Shape,
+}
+
 /// Call one reinforcement in, off the map, on the `n`th station of a wing.
 ///
-/// The stations are a shallow V behind the flagship and alternating to port
-/// and starboard, which is the formation the whole point of a wing is: a ship
-/// that sat directly astern would be the one place its leader's own engines
-/// are, and a column would put every gun in the line of the one in front.
+/// WHERE that station is belongs to `swarm_core::formation`, because the shape
+/// is the player's now: the Form cell cycles wedge, line and sphere, and a
+/// wedge written out here would be one of the three living somewhere the other
+/// two do not. What the wedge IS has not moved, and the core's suite holds it
+/// to the expression this function used to carry.
 ///
 /// An escort carries chewers of its own, fewer than the flagship. The GPU
 /// swarm knows one hull centre and chases the flagship alone, so without them
@@ -69,15 +89,18 @@ pub(crate) fn call_one(
     materials: &mut Assets<StandardMaterial>,
     tex: &Textures,
     which: &str,
-    radius: f32,
-    lead_pos: Vec3,
-    lead_rot: Quat,
-    chewers: u32,
-    n: u32,
+    wave: Wave,
 ) {
-    let rank = (n / 2) as f32 + 1.0;
+    let Wave {
+        radius,
+        lead_pos,
+        lead_rot,
+        chewers,
+        n,
+        shape,
+    } = wave;
     let side = if n % 2 == 0 { 1.0 } else { -1.0 };
-    let station = Vec3::new(side * rank * radius * 2.6, 0.0, -rank * radius * 2.2);
+    let station = Vec3::from(formation::station(shape, n as usize)) * radius;
     // It ARRIVES: dropped well outside the formation, on the far side of its
     // own station, so a wave flies in past the camera rather than appearing
     // in the middle of the fight.
@@ -220,6 +243,7 @@ pub(crate) fn call_reinforcements(
     tex: Res<Textures>,
     scene: Res<SceneSpec>,
     lead: Res<Lead>,
+    wing: Res<Wing>,
     flagship: Query<&Hull, With<Flagship>>,
     escorts: Query<(), With<Escort>>,
     button: Query<&Interaction, (Changed<Interaction>, With<CallButton>)>,
@@ -243,11 +267,14 @@ pub(crate) fn call_reinforcements(
             &mut materials,
             &tex,
             &scene.hull,
-            radius,
-            lead.pos,
-            lead.rot,
-            (scene.chewers / 3) as u32,
-            n,
+            Wave {
+                radius,
+                lead_pos: lead.pos,
+                lead_rot: lead.rot,
+                chewers: (scene.chewers / 3) as u32,
+                n,
+                shape: wing.0,
+            },
         );
     }
     info!(

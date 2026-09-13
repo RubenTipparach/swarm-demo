@@ -22,25 +22,24 @@
    "faction": "terran",
    "rung": "frigate",
    "cell": 0.109375,
-   "cells": 8938,
-   "plate": 6379,
-   "quads": 1611,
+   "cells": 8961,
+   "plate": 6402,
+   "quads": 1619,
    "groups": {
     "plate": 514,
-    "trim": 394,
+    "trim": 407,
     "structure": 117,
-    "frame": 3,
     "drive": 275,
-    "weapon": 152,
+    "weapon": 150,
     "part": 156
    },
    "windows": {
     "beacons": 30,
-    "bridge": 13,
+    "bridge": 12,
     "panes": 240,
     "porthole": 9
    },
-   "windowFaces": 292,
+   "windowFaces": 291,
    "surfaces": [
     {
      "finish": "plate",
@@ -118,23 +117,22 @@
      "rough": 0.5
     }
    ],
-   "bytes": 109877
+   "bytes": 110145
   },
   {
    "key": "karisen_frigate",
    "faction": "karisen",
    "rung": "frigate",
    "cell": 0.109375,
-   "cells": 7029,
-   "plate": 3744,
-   "quads": 1859,
+   "cells": 7028,
+   "plate": 3742,
+   "quads": 1858,
    "groups": {
     "plate": 625,
-    "trim": 517,
+    "trim": 521,
     "structure": 203,
-    "frame": 3,
     "drive": 223,
-    "weapon": 181,
+    "weapon": 179,
     "part": 107
    },
    "windows": {
@@ -221,7 +219,7 @@
      "rough": 0.45
     }
    ],
-   "bytes": 87009
+   "bytes": 86997
   },
   {
    "key": "rogue_frigate",
@@ -534,16 +532,16 @@
    "faction": "terran",
    "rung": "frigate",
    "cell": 0.109375,
-   "cells": 4126,
-   "plate": 2738,
+   "cells": 4128,
+   "plate": 2742,
    "quads": 1131,
    "groups": {
     "plate": 377,
     "trim": 310,
     "structure": 95,
-    "frame": 3,
+    "frame": 5,
     "drive": 137,
-    "weapon": 98,
+    "weapon": 96,
     "part": 111
    },
    "windows": {
@@ -629,32 +627,31 @@
      "rough": 0.5
     }
    ],
-   "bytes": 50989
+   "bytes": 51013
   },
   {
    "key": "terran_destroyer",
    "faction": "terran",
    "rung": "escort",
    "cell": 0.1640625,
-   "cells": 9688,
-   "plate": 6212,
-   "quads": 1936,
+   "cells": 9712,
+   "plate": 6235,
+   "quads": 1940,
    "groups": {
-    "plate": 489,
-    "trim": 383,
+    "plate": 488,
+    "trim": 394,
     "structure": 127,
-    "frame": 3,
     "drive": 493,
-    "weapon": 281,
+    "weapon": 278,
     "part": 160
    },
    "windows": {
     "beacons": 3,
-    "bridge": 9,
+    "bridge": 7,
     "panes": 278,
     "porthole": 33
    },
-   "windowFaces": 323,
+   "windowFaces": 321,
    "surfaces": [
     {
      "finish": "plate",
@@ -732,32 +729,32 @@
      "rough": 0.5
     }
    ],
-   "bytes": 119125
+   "bytes": 119397
   },
   {
    "key": "terran_cruiser",
    "faction": "terran",
    "rung": "cruiser",
    "cell": 0.21875,
-   "cells": 11993,
-   "plate": 6865,
-   "quads": 1766,
+   "cells": 12018,
+   "plate": 6890,
+   "quads": 1771,
    "groups": {
     "plate": 377,
-    "trim": 292,
+    "trim": 301,
     "structure": 122,
     "frame": 4,
     "drive": 409,
-    "weapon": 395,
+    "weapon": 391,
     "part": 167
    },
    "windows": {
     "beacons": 23,
-    "bridge": 8,
+    "bridge": 6,
     "panes": 175,
     "porthole": 57
    },
-   "windowFaces": 263,
+   "windowFaces": 261,
    "surfaces": [
     {
      "finish": "plate",
@@ -835,22 +832,23 @@
      "rough": 0.5
     }
    ],
-   "bytes": 146305
+   "bytes": 146589
   },
   {
    "key": "karisen_corvette",
    "faction": "karisen",
    "rung": "frigate",
    "cell": 0.109375,
-   "cells": 3028,
-   "plate": 1584,
-   "quads": 1740,
+   "cells": 3018,
+   "plate": 1576,
+   "quads": 1748,
    "groups": {
     "plate": 537,
-    "trim": 491,
+    "trim": 499,
     "structure": 231,
+    "frame": 2,
     "drive": 289,
-    "weapon": 114,
+    "weapon": 112,
     "part": 78
    },
    "windows": {
@@ -936,23 +934,22 @@
      "rough": 0.45
     }
    ],
-   "bytes": 37613
+   "bytes": 37493
   },
   {
    "key": "karisen_destroyer",
    "faction": "karisen",
    "rung": "escort",
    "cell": 0.1640625,
-   "cells": 7312,
-   "plate": 4076,
-   "quads": 2002,
+   "cells": 7311,
+   "plate": 4070,
+   "quads": 1995,
    "groups": {
     "plate": 634,
-    "trim": 512,
+    "trim": 510,
     "structure": 216,
-    "frame": 3,
     "drive": 304,
-    "weapon": 213,
+    "weapon": 211,
     "part": 120
    },
    "windows": {
@@ -1039,23 +1036,23 @@
      "rough": 0.45
     }
    ],
-   "bytes": 91109
+   "bytes": 91097
   },
   {
    "key": "karisen_cruiser",
    "faction": "karisen",
    "rung": "cruiser",
    "cell": 0.21875,
-   "cells": 7876,
-   "plate": 3939,
-   "quads": 2187,
+   "cells": 7887,
+   "plate": 3940,
+   "quads": 2186,
    "groups": {
     "plate": 617,
-    "trim": 472,
+    "trim": 478,
     "structure": 188,
-    "frame": 5,
+    "frame": 2,
     "drive": 449,
-    "weapon": 341,
+    "weapon": 337,
     "part": 115
    },
    "windows": {
@@ -1142,21 +1139,20 @@
      "rough": 0.45
     }
    ],
-   "bytes": 98021
+   "bytes": 98153
   },
   {
    "key": "rogue_corvette",
    "faction": "rogue",
    "rung": "frigate",
    "cell": 0.109375,
-   "cells": 2534,
+   "cells": 2535,
    "plate": 1095,
-   "quads": 1156,
+   "quads": 1158,
    "groups": {
     "plate": 290,
-    "trim": 274,
+    "trim": 280,
     "structure": 105,
-    "frame": 4,
     "drive": 215,
     "weapon": 81,
     "part": 187
@@ -1245,7 +1241,7 @@
      "rough": 0.72
     }
    ],
-   "bytes": 31832
+   "bytes": 31844
   },
   {
    "key": "rogue_destroyer",
@@ -1455,16 +1451,16 @@
    "faction": "benefactor",
    "rung": "frigate",
    "cell": 0.109375,
-   "cells": 3464,
-   "plate": 2169,
-   "quads": 1696,
+   "cells": 3449,
+   "plate": 2154,
+   "quads": 1685,
    "groups": {
     "plate": 312,
-    "trim": 586,
+    "trim": 571,
     "structure": 519,
     "frame": 2,
     "drive": 35,
-    "weapon": 135,
+    "weapon": 139,
     "part": 107
    },
    "windows": {
@@ -1552,7 +1548,7 @@
      "rough": 0.3
     }
    ],
-   "bytes": 43457
+   "bytes": 43277
   },
   {
    "key": "benefactor_destroyer",

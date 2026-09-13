@@ -120,14 +120,27 @@ pub(crate) struct Script {
     pub(crate) onward: bool,
 }
 
+/// What a support ship can be sent to: a rock, or what is left of a ship.
+///
+/// `With<Hull>` is not decoration. A turret cut loose by an explosion is
+/// given `Wreck` and has no `Hull` of its own, so a nearest-first scan that
+/// asked only for `Wreck` would send a salvager to a gun, and `work_jobs`,
+/// which needs the cells, would find no body and quietly set the job back to
+/// idle. The salvager then flew home having cut nothing and nothing in the
+/// log said why: the run report is what caught it, because a picture of a
+/// wreck cannot tell one nobody reached from one that was cut over. The
+/// filter IS the interface, and a job target is a body with cells in it.
+pub(crate) type WorkableBody = Or<(With<Rock>, With<Wreck>)>;
+
 pub(crate) fn script_jobs(
     tick: Res<Tick>,
     auto: Res<Script>,
-    targets: Query<(Entity, &Transform, Option<&Rock>), Or<(With<Rock>, With<Wreck>)>>,
+    targets: Query<(Entity, &Transform, Option<&Rock>), (With<Hull>, WorkableBody)>,
     mut crews: Query<(Entity, &Support, &mut Job, &Transform)>,
+    mut fired: Local<bool>,
     mut commands: Commands,
 ) {
-    if auto.job != Some(tick.tick) {
+    if !tick.cue(auto.job, &mut fired) {
         return;
     }
     for (entity, support, mut job, xf) in &mut crews {
@@ -167,7 +180,7 @@ pub(crate) fn script_jobs(
 pub(crate) fn work_jobs(
     tick: Res<Tick>,
     mut crews: Query<(Entity, &Support, &mut Job, &mut Hull, &mut Hold, &Transform)>,
-    mut targets: Query<(&mut Hull, &Transform, Option<&mut Rock>), Without<Support>>,
+    mut targets: Query<BodyRow, Without<Support>>,
     cubes: Query<(Entity, &Cargo)>,
     lead: Res<Lead>,
     cfg: Res<SwarmConfig>,
@@ -180,6 +193,12 @@ pub(crate) fn work_jobs(
     mut cube: Local<Option<Handle<Mesh>>>,
     mut cargo_mesh: Local<Option<Handle<Mesh>>>,
 ) {
+    // Counted once for the whole pass rather than per ship: a freighter is
+    // a fact about the fleet, not about the miner that happens to be home.
+    let freighters = crews
+        .iter()
+        .filter(|(_, s, _, h, _, _)| s.role == Role::Freighter && !h.dead_hull)
+        .count() as u32;
     for (entity, support, mut job, mut hull, mut hold, xf) in &mut crews {
         if hull.dead_hull {
             continue;
@@ -187,36 +206,44 @@ pub(crate) fn work_jobs(
         match *job {
             Job::Idle => {}
             Job::Work(target) => {
-                let Ok(body) = targets.get_mut(target) else {
-                    // What it was cutting is gone: a rock mined out is still
+                let Ok((rock, rock_xf, seam, scan, part)) = targets.get_mut(target) else {
+                    // What it was working is gone: a rock mined out is still
                     // there, but a wreck that aged out is not.
                     *job = Job::Idle;
                     hull.order = None;
                     continue;
                 };
-                work_body(
-                    (entity, &mut job, &mut hull, &mut hold, xf),
-                    body,
-                    target,
-                    tick.tick,
-                    &mut sparks,
-                    (
-                        &mut commands,
-                        &mut meshes,
-                        &mut materials,
-                        &mut chunk_mats,
-                        &mut cargo_mesh,
-                    ),
-                    &mut cube,
+                let crew = (entity, &mut *job, &mut *hull, &mut *hold, xf);
+                let world = (
+                    &mut commands,
+                    &mut *meshes,
+                    &mut *materials,
+                    &mut *chunk_mats,
+                    &mut *cargo_mesh,
                 );
+                // A survey ship READS a body and a cutter takes it apart:
+                // the same standoff, the same hold and the same trip home,
+                // and two jobs so neither is an `if` inside the other.
+                if support.role.scans() {
+                    survey_body(crew, (rock, rock_xf, scan), target, tick.tick, world);
+                } else {
+                    work_body(
+                        crew,
+                        (rock, rock_xf, seam, part),
+                        target,
+                        tick.tick,
+                        &mut sparks,
+                        world,
+                        &mut cube,
+                    );
+                }
             }
             Job::Unload(back) => unload_hold(
                 (entity, support, &mut job, &mut hull, &mut hold, xf),
                 back,
                 &lead,
                 &cfg,
-                &mut bank,
-                &cubes,
+                (&mut bank, &cubes, freighters),
                 &mut commands,
             ),
         }
@@ -234,11 +261,13 @@ fn unload_hold(
     back: Option<Entity>,
     lead: &Lead,
     cfg: &SwarmConfig,
-    bank: &mut Bank,
-    cubes: &Query<(Entity, &Cargo)>,
+    into: (&mut Bank, &Query<(Entity, &Cargo)>, u32),
     commands: &mut Commands,
 ) {
     let (entity, support, job, hull, hold, xf) = crew;
+    // The bank, the cubes and the freighters travel together because they
+    // are three halves of one question: what this load is worth landed.
+    let (bank, cubes, freighters) = into;
     // In the flagship's RADII, and in its frame, like every other station in
     // this game: a distance in bare units means one thing on a corvette and
     // another on a heavy cruiser.
@@ -255,8 +284,19 @@ fn unload_hold(
             got += kind.worth();
             commands.entity(*e).despawn();
         }
+        // And the freighters take their cut, which is the freighter's whole
+        // job: it cuts nothing and it makes every other ship's trip worth
+        // more, so the first one pays for itself the moment two cutters are
+        // working. On what is LANDED, so a freighter is worth nothing to a
+        // fleet that is not gathering.
+        let lift = 1.0 + FREIGHT_SHARE * freighters as f32;
+        if freighters > 0 {
+            got.materials = (got.materials as f32 * lift) as u32;
+            got.volatiles = (got.volatiles as f32 * lift) as u32;
+            got.data = (got.data as f32 * lift) as u32;
+        }
         info!(
-            "{} landed {} cubes: {:?}",
+            "{} landed {} cubes: {:?} ({freighters} freighters)",
             support.role.label(),
             load.len(),
             got
@@ -279,6 +319,18 @@ fn unload_hold(
     }
 }
 
+/// A body a CUTTER holds while it works it: what it is made of, where it
+/// is, what seam is left in it, and what ship it used to be.
+///
+/// Named rather than written out, which is what keeps `work_body` readable
+/// and is what clippy's complex type rule is actually asking for.
+pub(crate) type CutRow<'a> = (
+    Mut<'a, Hull>,
+    &'a Transform,
+    Option<Mut<'a, Rock>>,
+    Option<Mut<'a, Remains>>,
+);
+
 /// One cutter, one body, one tick of work: stand off it, take a bite when
 /// the clock says, count what came off the rock, and pop a cube whenever the
 /// loose pile makes one.
@@ -290,7 +342,7 @@ fn unload_hold(
 #[allow(clippy::too_many_arguments)]
 fn work_body(
     crew: (Entity, &mut Job, &mut Hull, &mut Hold, &Transform),
-    body: (Mut<Hull>, &Transform, Option<Mut<Rock>>),
+    body: CutRow,
     target: Entity,
     tick: u32,
     sparks: &mut SparkQueue,
@@ -298,7 +350,7 @@ fn work_body(
     cube: &mut Option<Handle<Mesh>>,
 ) {
     let (entity, job, hull, hold, xf) = crew;
-    let (mut rock, rock_xf, mut seam) = body;
+    let (mut rock, rock_xf, mut seam, mut part) = body;
     let scale = rock_xf.scale.x.max(1e-3);
     let (out, stand) = cutter_stand(&rock, rock_xf, hull, xf);
     hull.order = Some(rock_xf.translation + out * stand * WORK_STANDOFF);
@@ -324,6 +376,14 @@ fn work_body(
         rock.ore = rock.ore.saturating_sub(got.materials);
         rock.crystal = rock.crystal.saturating_sub(got.volatiles);
     }
+    // And a piece of a dead ship remembers what came off it, which is what
+    // decides later whether there is enough of that ship left to rebuild.
+    // The cubes are the same cubes: recovering parts pays either way, and
+    // the choice a player makes is whether to spend the bank putting them
+    // back together.
+    if let Some(part) = part.as_deref_mut() {
+        part.got += cells;
+    }
     let (commands, meshes, materials, mats, mesh) = world;
     throw_chunks(
         chunks,
@@ -338,6 +398,7 @@ fn work_body(
     hold.loose += got;
     pop_cubes(
         hold,
+        cut.pack(),
         entity,
         rock_xf.translation + out * stand * 0.72,
         out,
@@ -358,6 +419,101 @@ fn work_body(
     }
 }
 
+/// A body a support ship can work: what it is made of, where it is, what is
+/// still in it, and what is still to be learned about it.
+pub(crate) type BodyRow<'a> = (
+    &'a mut Hull,
+    &'a Transform,
+    Option<&'a mut Rock>,
+    Option<&'a mut Scanned>,
+    Option<&'a mut Remains>,
+);
+
+/// One survey ship, one body, one pass: stand off it and read it.
+///
+/// It takes nothing off, which is the whole difference from a cut: no bore,
+/// no chunks, no sparks and no hole. What fills its hold is DATA, and the
+/// body is what remembers how much of it is left, so a rock somebody has
+/// already surveyed is a rock nobody profits from surveying again.
+fn survey_body(
+    crew: (Entity, &mut Job, &mut Hull, &mut Hold, &Transform),
+    body: (Mut<Hull>, &Transform, Option<Mut<Scanned>>),
+    target: Entity,
+    tick: u32,
+    world: Spawner,
+) {
+    let (entity, job, hull, hold, xf) = crew;
+    let (rock, rock_xf, scan) = body;
+    let (out, stand) = cutter_stand(&rock, rock_xf, hull, xf);
+    hull.order = Some(rock_xf.translation + out * stand * WORK_STANDOFF);
+    let gap = xf.translation.distance(rock_xf.translation);
+    if gap > stand * WORK_REACH || !tick.is_multiple_of(CUT_TICKS) {
+        return;
+    }
+    let (commands, meshes, materials, mats, mesh) = world;
+    let got = match scan {
+        Some(mut known) => {
+            let take = SCAN_RATE.min(known.left);
+            known.left -= take;
+            take
+        }
+        // Never read before: what there is to learn is a share of what is
+        // in it, and the body keeps the rest.
+        None => {
+            let worth = scan_worth(&rock.model);
+            let take = SCAN_RATE.min(worth);
+            commands
+                .entity(target)
+                .insert(Scanned { left: worth - take });
+            take
+        }
+    };
+    if got == 0 {
+        // Nothing left to learn here. Home, and then somewhere else.
+        *job = Job::Unload(None);
+        return;
+    }
+    hold.loose.data += got;
+    // A SEAM whatever the body is, and that is the survey ship's whole
+    // argument rather than an oversight: it learns more about a ship by
+    // reading it than anybody learns by cutting it up, so its data packs at
+    // eight cells a cube where a salvager's packs at sixty four.
+    pop_cubes(
+        hold,
+        Pack::Seam,
+        entity,
+        rock_xf.translation + out * stand * 0.72,
+        out,
+        CUBE_SIZE * hull.model.radius(),
+        (commands, meshes, materials, mats, mesh),
+    );
+    if hold.full() {
+        *job = Job::Unload(Some(target));
+    }
+}
+
+/// What is left to learn about a body, in cells of data.
+///
+/// Put on the body the first time a survey ship reads it and counted down
+/// from there, so a rock that has been surveyed is a rock nobody profits
+/// from surveying again. On the BODY rather than on the ship, because it is
+/// a fact about the rock: a second survey ship arriving learns what is left
+/// rather than starting over.
+#[derive(Component)]
+pub(crate) struct Scanned {
+    pub(crate) left: u32,
+}
+
+/// How much there is to learn about a body: a share of what is IN it, which
+/// is its seams on a rock and its machinery on a hull. A survey of a barren
+/// rock is worth what a barren rock is worth.
+pub(crate) fn scan_worth(m: &VoxelModel) -> u32 {
+    let worth = (0..m.len())
+        .filter(|&n| matches!(m.grid[n], mat::ACCENT | mat::GLOW | mat::MACHINE))
+        .count() as u32;
+    worth / SCAN_SHARE
+}
+
 /// Everything a cube needs to be built with, passed whole: the world to
 /// spawn into, the meshes and materials to make one out of, and the caches
 /// that stop a hundred cubes being a hundred of each.
@@ -375,10 +531,18 @@ type Spawner<'a, 'w, 's> = (
 /// appeared beside the ship would be a number going up with a mesh on it.
 /// The hold is what says when to stop, so a full ship stops making them and
 /// the rest of the seam stays in the rock for the next trip.
-fn pop_cubes(hold: &mut Hold, to: Entity, at: Vec3, out: Vec3, size: f32, world: Spawner) {
+fn pop_cubes(
+    hold: &mut Hold,
+    pack: Pack,
+    to: Entity,
+    at: Vec3,
+    out: Vec3,
+    size: f32,
+    world: Spawner,
+) {
     let (commands, meshes, materials, mats, mesh) = world;
     while !hold.full() {
-        let Some(kind) = Cube::packed(&mut hold.loose) else {
+        let Some(kind) = Cube::packed(&mut hold.loose, pack) else {
             break;
         };
         spawn_cube(
@@ -406,8 +570,17 @@ fn cutter_stand(rock: &Hull, rock_xf: &Transform, ship: &Hull, ship_xf: &Transfo
     (out, stand)
 }
 
-/// One bite of a cutter: bore from the surface toward what is worth having,
-/// and answer what came off.
+/// One bite of a cutter: cut at the surface toward what is worth having, and
+/// answer what came off.
+///
+/// The SHAPE of the cut is the one thing the kind decides. A miner drives a
+/// shaft, because what it is after is a seam a few cells wide and the shaft
+/// is how it reaches one. A salvager is taking a hulk APART, so it lifts a
+/// section at a time: same standoff, same hold, same trip home, and one
+/// parameter rather than two cutters. The rate is what makes the rebuild
+/// tiers reachable at all, and it is measured rather than guessed, because a
+/// bored column at three cells a cut needs half an hour to recover half a
+/// frigate and there is no system that long.
 fn cut_once(
     target: &mut Hull,
     xf: &Transform,
@@ -430,10 +603,22 @@ fn cut_once(
     else {
         return (Yield::NOTHING, 0, Vec::new());
     };
-    let depth = target.model.cell * CUT_DEPTH;
-    let breaches = target
-        .damage
-        .bore(&target.model, hit.point, dir.to_array(), depth, tick);
+    let breaches = match cut {
+        Cut::Rock => {
+            let depth = target.model.cell * CUT_DEPTH;
+            target
+                .damage
+                .bore(&target.model, hit.point, dir.to_array(), depth, tick)
+        }
+        Cut::Hull => {
+            let section = Blast {
+                at: hit.point,
+                radius: target.model.cell * SALVAGE_CUT,
+                born: tick,
+            };
+            target.damage.blast_cells(&target.model, &section, tick)
+        }
+    };
     let mut got = Yield::NOTHING;
     let mut chunks = Vec::new();
     for b in &breaches {

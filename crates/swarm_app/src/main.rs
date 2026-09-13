@@ -43,6 +43,8 @@ use bevy::{
         },
         view::screenshot::{save_to_disk, Screenshot, ScreenshotCaptured},
     },
+    sprite::{BorderRect, SliceScaleMode, TextureSlicer},
+    ui::widget::NodeImageMode,
     window::{ExitCondition, WindowPlugin},
     winit::WinitPlugin,
 };
@@ -64,8 +66,10 @@ use swarm_core::voxel::{mat, SURF_DRIVE};
 use swarm_core::{
     alien::{generate, Archetype},
     body::Body,
+    build::Tier,
     damage::{chunk_for, Breach, Chunk, DamageGrid, Vent},
-    economy::{yield_of, Cube, Cut, Yield, DATA_CUBE, ORE_CUBE},
+    economy::{yield_of, Cube, Cut, Pack, Yield, DATA_CUBE, ORE_CUBE},
+    formation::{self, Shape},
     fx::{
         blast_sparks, breach_sparks, engine_clusters, engines_of, gun_clusters, guns_of,
         muzzle_sparks, reactor_of, shatter, Beam, Blast, Gun, Spark, SparkKind,
@@ -136,6 +140,7 @@ struct Args {
     /// Force the reactor at this tick. Nought leaves it to the hull's own
     /// state, which goes critical once enough of it is gone.
     explode: u32,
+    wreck: u32,
     /// Ticks between one gun firing and the next. Nought silences them.
     cadence: u32,
     /// How many motherships the swarm flies from.
@@ -223,6 +228,7 @@ fn parse_args() -> Args {
         zoom: 4.6,
         target: Vec3::ZERO,
         explode: 0,
+        wreck: 0,
         cadence: 70,
         hives: 10,
         order: None,
@@ -290,6 +296,10 @@ fn parse_args() -> Args {
             }
             "--chewers" => {
                 a.chewers = next().parse().expect("--chewers N");
+                i += 1;
+            }
+            "--wreck" => {
+                a.wreck = next().parse().expect("--wreck TICK");
                 i += 1;
             }
             "--explode" => {
@@ -461,6 +471,7 @@ fn main() {
         zoom: args.zoom,
         target: args.target,
         explode: args.explode,
+        wreck: args.wreck,
         cadence: args.cadence,
         hives: args.hives.min(swarm::MAX_HIVES),
         order: args.order,
@@ -557,29 +568,23 @@ fn main() {
     // way to PROVE it draws rather than assert it, which is the rule the
     // finishes and the window maps already keep.
     if !args.headless || args.hud {
+        app.add_systems(Startup, load_skin);
         // The menu, then the box, then the order, and each reads the mode the
         // one before left. `nav_input` is in the main chain below because it
         // runs headless too; the `before` is what keeps a left press from
         // being a confirm AND the start of a box in the same frame.
         app.add_systems(
-            OnEnter(AppState::Playing),
-            build_sandbox_panel.run_if(|s: Res<SceneSpec>| s.sandbox),
-        );
-        app.add_systems(
-            OnEnter(AppState::Playing),
-            build_retreat_panel.run_if(|s: Res<SceneSpec>| s.retreat),
-        )
-        .add_systems(
             Update,
             retreat_readouts.run_if(in_state(AppState::Playing).and(|s: Res<SceneSpec>| s.retreat)),
         );
-        app.add_systems(OnEnter(AppState::Playing), build_hud)
+        app.add_systems(OnEnter(AppState::Playing), (build_hud, build_deck))
             .add_systems(
                 Update,
                 (
                     (toggle_pause, select_input, sandbox_input, assign_work)
                         .chain()
                         .before(nav_input),
+                    rebuild_input,
                     jump_input,
                     (range_input, sandbox_fire).after(nav_input),
                     sandbox_readouts,
@@ -591,6 +596,28 @@ fn main() {
                     draw_bars,
                     pick_hull,
                     quit_to_menu,
+                )
+                    .run_if(in_state(AppState::Playing)),
+            )
+            // The deck: its two inputs run before `nav_input` for the reason
+            // every input here does, which is that a press is read by exactly
+            // one system per frame and the mode decides which.
+            .add_systems(
+                Update,
+                (
+                    (deck_tabs, deck_commands).chain().before(nav_input),
+                    // Guard reads the left press, so it runs with the other
+                    // input systems and after the cell that opens its mode.
+                    guard_input.after(deck_commands),
+                    call_class,
+                    slide_deck,
+                    light_deck,
+                    deck_readouts,
+                    deck_bars,
+                    deck_roster,
+                    show_unit_shot,
+                    pick_group,
+                    deck_state.run_if(|s: Res<SceneSpec>| s.sandbox),
                 )
                     .run_if(in_state(AppState::Playing)),
             );
@@ -634,6 +661,15 @@ fn main() {
         .init_resource::<SparkQueue>()
         .init_resource::<LiveFx>()
         .init_resource::<NavOrder>()
+        .init_resource::<NavAsk>()
+        // The command bar's own state. Narrow resources, one fact each, which
+        // is what keeps a cell from having to ask three systems what it is.
+        .init_resource::<WorkAsk>()
+        .init_resource::<FleetStance>()
+        .init_resource::<Wing>()
+        .init_resource::<Docked>()
+        .init_resource::<Rally>()
+        .init_resource::<Deck>()
         .init_resource::<OrderMode>()
         .init_resource::<Pings>()
         .init_resource::<Ack>()
@@ -702,7 +738,12 @@ fn main() {
                     (fire_guns, fire_flak).chain(),
                     (launch_fighters, fly_fighters, fighters_fire, wear_fighters).chain(),
                     resolve_beams,
-                    (chew, vent_smoke, go_critical, bleed_hives),
+                    (
+                        chew,
+                        vent_smoke,
+                        (script_wreck, go_critical).chain(),
+                        bleed_hives,
+                    ),
                     // The retreat: what the support ships are doing, what
                     // the tanker has refined, what the tide has brought in,
                     // and the drive, which is the only way out.
@@ -711,9 +752,14 @@ fn main() {
                         apply_scars,
                         price_jump,
                         haul_cargo,
+                        tend_repairs,
                         script_jobs,
                         script_jump,
                         work_jobs,
+                        // After the cutting rather than before it, so what a
+                        // salvager took off this frame is in the run before
+                        // anything can take the piece away.
+                        record_salvage,
                         refine,
                         tide_carriers,
                         jump_spool,
@@ -746,6 +792,7 @@ fn main() {
                     fade_flashes,
                     glow_engines,
                     aim_turrets,
+                    hold_guard,
                 ),
                 remesh_dirty,
                 (orbit_camera, ride_the_eye),

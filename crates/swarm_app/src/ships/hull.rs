@@ -29,6 +29,12 @@ pub(crate) struct Brick {
 /// the map, so a dirty brick is a mesh swap and nothing else.
 #[derive(Component)]
 pub(crate) struct Hull {
+    /// Which class it was built from, when it is one of the fleet's own.
+    ///
+    /// Carried rather than only logged, because two things ask a hull what
+    /// it IS rather than what it is made of: what a jump costs by its rung,
+    /// and what a salvager would be rebuilding when it works its wreck.
+    pub(crate) class: Option<String>,
     pub(crate) model: VoxelModel,
     pub(crate) damage: DamageGrid,
     pub(crate) bricks: Vec<Brick>,

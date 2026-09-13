@@ -12,48 +12,8 @@
 //! ```
 use swarm_core::damage::hp_for;
 use swarm_core::fx::{engines_of, guns_of, reactor_of};
-use swarm_core::voxel::{mat, purpose, NEIGHBOURS};
+use swarm_core::voxel::{depth_from_outside, mat, purpose};
 use swarm_core::VoxelModel;
-
-fn depth(m: &VoxelModel) -> Vec<u32> {
-    let n = m.len();
-    let mut d = vec![u32::MAX; n];
-    let mut q = std::collections::VecDeque::new();
-    // OUTSIDE space only: flood the empty cells from the lattice boundary, so
-    // an internal void between the frame and a part does not count as a way in.
-    for c in 0..n {
-        let (i, j, k) = m.at(c);
-        let edge = i == 0 || j == 0 || k == 0 || i == m.nx - 1 || j == m.ny - 1 || k == m.nz - 1;
-        if m.grid[c] == mat::EMPTY && edge {
-            d[c] = 0;
-            q.push_back(c);
-        }
-    }
-    while let Some(c) = q.pop_front() {
-        let (i, j, k) = m.at(c);
-        for (di, dj, dk) in NEIGHBOURS {
-            let (ni, nj, nk) = (i as i32 + di, j as i32 + dj, k as i32 + dk);
-            if !m.inside(ni, nj, nk) {
-                continue;
-            }
-            let nb = m.index(ni as usize, nj as usize, nk as usize);
-            if d[nb] != u32::MAX {
-                continue;
-            }
-            if m.grid[nb] == mat::EMPTY {
-                // through outside space for free, but never through a void inside the hull
-                if d[c] == 0 {
-                    d[nb] = 0;
-                    q.push_back(nb);
-                }
-            } else {
-                d[nb] = d[c] + 1;
-                q.push_back(nb);
-            }
-        }
-    }
-    d
-}
 
 fn main() {
     let dir = std::env::args().nth(1).unwrap_or("assets/hulls".into());
@@ -100,7 +60,7 @@ fn main() {
             .filter(|(&p, &g)| g != mat::EMPTY && p == purpose::ATTITUDE)
             .count();
         let reactor = reactor_of(&m);
-        let d = depth(&m);
+        let d = depth_from_outside(&m);
         let rdepth = reactor
             .iter()
             .map(|&c| d[c])

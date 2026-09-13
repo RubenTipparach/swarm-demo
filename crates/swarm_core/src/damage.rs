@@ -14,8 +14,8 @@
 
 use crate::fx::Blast;
 pub use crate::heat::*;
-use crate::rng::drift_of;
 use crate::voxel::{mat, VoxelModel, NEIGHBOURS};
+pub use crate::wound::*;
 
 /// Cells on a side of one re-mesh block.
 pub const BRICK: usize = 8;
@@ -32,37 +32,6 @@ const ALIVE: u32 = u32::MAX;
 /// and there is no tick before nought, so it is a sentinel rather than an
 /// old number.
 const COLD: u32 = u32::MAX - 1;
-
-/// A cell that died this tick.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Breach {
-    pub cell: u32,
-    pub tick: u32,
-    /// Which way out of the hull the face it was bitten from looks.
-    pub outward: [f32; 3],
-}
-
-/// Where smoke leaves a hull: the centre of one face a hit opened, and the
-/// way OUT of it, so a plume goes into space rather than through the ship.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Vent {
-    pub at: [f32; 3],
-    pub outward: [f32; 3],
-    /// The dead cell it opened onto, which is what carries the heat.
-    pub cell: u32,
-}
-
-/// A piece coming off, for the renderer to throw. Its drift is hashed from the
-/// cell rather than rolled, so two screens watching one wound throw the same
-/// debris.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Chunk {
-    pub cell: u32,
-    pub origin: [f32; 3],
-    pub velocity: [f32; 3],
-    pub colour: u32,
-    pub born: u32,
-}
 
 #[derive(Clone, Debug)]
 pub struct DamageGrid {
@@ -253,6 +222,73 @@ impl DamageGrid {
         self.chip(n, f32::MAX, tick, [0.0; 3])
     }
 
+    /// Put one dead cell back: whole, live, and no longer a hole.
+    ///
+    /// The exact undoing of `chip`, which is why it lives beside it: the
+    /// same brick and the same neighbours' bricks are dirtied, because a
+    /// cell coming BACK closes the faces its neighbours had against the gap
+    /// exactly as its dying opened them. Nothing else in the game does this
+    /// yet: a tender is the one thing that mends rather than breaks, and a
+    /// wound that could only ever get worse is a run with one direction in
+    /// it.
+    ///
+    /// Answers whether it mended anything, so a caller paying by the cell
+    /// pays for work that was done.
+    pub fn mend(&mut self, n: usize) -> bool {
+        if n >= self.died_at.len() || !self.is_dead(n) || self.max_hp[n] <= 0.0 {
+            return false;
+        }
+        self.died_at[n] = ALIVE;
+        self.hp[n] = self.max_hp[n];
+        self.dead -= 1;
+        let own = self.brick_of(n);
+        self.dirty[own] = true;
+        let (i, j, k) = self.at(n);
+        for (di, dj, dk) in NEIGHBOURS {
+            let (ni, nj, nk) = (i as i32 + di, j as i32 + dj, k as i32 + dk);
+            if ni < 0
+                || nj < 0
+                || nk < 0
+                || ni as usize >= self.nx
+                || nj as usize >= self.ny
+                || nk as usize >= self.nz
+            {
+                continue;
+            }
+            let b = self.brick_of(self.index(ni as usize, nj as usize, nk as usize));
+            self.dirty[b] = true;
+        }
+        true
+    }
+
+    /// The dead cells a tender should close first, at most `limit` of them.
+    ///
+    /// What a tender works through: a hull is mended from the OUTSIDE in,
+    /// because that is the order it was eaten and because plating closed
+    /// over a hole nothing has filled would be a picture nobody believes.
+    pub fn holes(&self, m: &VoxelModel, limit: usize) -> Vec<usize> {
+        let mut out: Vec<usize> = (0..m.len())
+            .filter(|&n| self.is_dead(n) && self.max_hp[n] > 0.0)
+            .collect();
+        // Nearest the skin first, which on this lattice is the cell with the
+        // most empty neighbours: a crater's rim before its floor.
+        out.sort_by_key(|&n| {
+            let (i, j, k) = self.at(n);
+            let open = NEIGHBOURS
+                .iter()
+                .filter(|(di, dj, dk)| {
+                    let (a, b, c) = (i as i32 + di, j as i32 + dj, k as i32 + dk);
+                    !m.inside(a, b, c)
+                        || m.grid[m.index(a as usize, b as usize, c as usize)] == mat::EMPTY
+                        || self.is_dead(m.index(a as usize, b as usize, c as usize))
+                })
+                .count();
+            (6 - open, n)
+        });
+        out.truncate(limit);
+        out
+    }
+
     /// Kill a cell as an OLD wound: dead, charred, and never hot.
     ///
     /// This is what a run's scars are made of. Everything downstream sees an
@@ -354,48 +390,6 @@ impl DamageGrid {
         None
     }
 
-    /// Every face a hit opened, as somewhere smoke can leave.
-    ///
-    /// One per face rather than one per hole: a crater in a flank vents along
-    /// its whole rim, and a single plume from the middle of it would read as a
-    /// chimney.
-    pub fn vents(&self, m: &VoxelModel, limit: usize) -> Vec<Vent> {
-        let mut out = Vec::new();
-        for n in 0..m.len() {
-            if !self.is_dead(n) {
-                continue;
-            }
-            let (i, j, k) = m.at(n);
-            for (a, b, c) in NEIGHBOURS {
-                let (x, y, z) = (i as i32 + a, j as i32 + b, k as i32 + c);
-                if !m.inside(x, y, z) {
-                    continue;
-                }
-                let live = m.index(x as usize, y as usize, z as usize);
-                if m.grid[live] == mat::EMPTY || self.is_dead(live) {
-                    continue;
-                }
-                // The face between them, which is half a cell off the dead
-                // one, and the way out is from the live cell toward it.
-                let p = m.centre_of(n);
-                let h = m.cell * 0.5;
-                out.push(Vent {
-                    at: [
-                        p[0] + a as f32 * h,
-                        p[1] + b as f32 * h,
-                        p[2] + c as f32 * h,
-                    ],
-                    outward: [-(a as f32), -(b as f32), -(c as f32)],
-                    cell: n as u32,
-                });
-                if out.len() >= limit {
-                    return out;
-                }
-            }
-        }
-        out
-    }
-
     /// Everything inside a blast dies at once, and every cell that does is
     /// answered so the app can throw it.
     ///
@@ -466,24 +460,6 @@ impl DamageGrid {
             }
         }
         out
-    }
-}
-
-/// The piece a breach throws, in the model's frame.
-pub fn chunk_for(m: &VoxelModel, b: &Breach) -> Chunk {
-    let n = b.cell as usize;
-    let drift = drift_of(b.cell, b.tick);
-    let speed = m.cell * 6.0;
-    Chunk {
-        cell: b.cell,
-        origin: m.centre_of(n),
-        velocity: [
-            b.outward[0] * speed + drift[0] * speed * 0.5,
-            b.outward[1] * speed + drift[1] * speed * 0.5,
-            b.outward[2] * speed + drift[2] * speed * 0.5,
-        ],
-        colour: m.colour[n],
-        born: b.tick,
     }
 }
 
@@ -824,6 +800,52 @@ mod tests {
             c,
             chunk_for(&m, &breaches[0]),
             "a chunk is a function of its breach"
+        );
+    }
+
+    #[test]
+    fn a_tender_mends_a_hole_and_the_brick_knows() {
+        let mut m = VoxelModel::new(8, 8, 8, 0.1);
+        for i in 1..7 {
+            for j in 1..7 {
+                for k in 1..7 {
+                    m.set(i, j, k, mat::PLATE, 0x808080);
+                }
+            }
+        }
+        let mut d = DamageGrid::new(&m);
+        let whole = d.dead_count();
+        let n = m.index(1, 3, 3);
+        d.kill(n, 4);
+        d.take_dirty();
+        assert!(d.is_dead(n) && d.dead_count() == whole + 1);
+        // Mending is the exact undoing of the kill: live, whole, cold, and
+        // the bricks that have to be rebuilt are the same ones.
+        assert!(d.mend(n), "a hole mends");
+        assert!(!d.is_dead(n));
+        assert_eq!(d.health(n), 1.0);
+        assert_eq!(d.heat(n, 4), 0.0);
+        assert_eq!(d.dead_count(), whole);
+        assert!(!d.take_dirty().is_empty(), "the hull has to be re-meshed");
+        // And it is only ever done once.
+        assert!(!d.mend(n), "a live cell is not a hole");
+        assert!(
+            !d.mend(m.index(0, 0, 0)),
+            "nor is a cell that was never there"
+        );
+        // The holes it works through come rim first: a crater's own floor is
+        // the last thing closed over.
+        let mut d = DamageGrid::new(&m);
+        for k in 2..6 {
+            d.kill(m.index(1, 3, k), 0);
+        }
+        d.kill(m.index(2, 3, 3), 0);
+        let holes = d.holes(&m, 9);
+        assert_eq!(holes.len(), 5);
+        assert_eq!(
+            holes[holes.len() - 1],
+            m.index(2, 3, 3),
+            "the deepest cell is mended last"
         );
     }
 
