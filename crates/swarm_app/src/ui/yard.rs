@@ -114,6 +114,12 @@ pub(crate) fn tab_strip<T: Component + Copy>(
     node: Node,
     tabs: &[(&str, T, bool)],
 ) {
+    // The strip rides the bottom deck down, so it carries the `top` it was
+    // authored at for the slide to put back.
+    let top = match node.top {
+        Val::Px(v) => v,
+        _ => 0.0,
+    };
     p.spawn((
         Node {
             position_type: PositionType::Absolute,
@@ -121,6 +127,7 @@ pub(crate) fn tab_strip<T: Component + Copy>(
             ..node
         },
         Pickable::IGNORE,
+        RidesBottom(top),
     ))
     .with_children(|s| {
         for (name, marker, hot) in tabs {

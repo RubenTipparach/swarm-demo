@@ -200,6 +200,20 @@ pub(crate) struct SidePanel;
 #[derive(Component)]
 pub(crate) struct BottomDeck;
 
+/// Anything that rides the bottom deck down, carrying the `top` it was
+/// authored at.
+///
+/// The marker CARRIES the number because the slide has to put it back: every
+/// node down here is positioned from the TOP, against the mockup's 1600 by 900
+/// frame, so the slide adds an offset to that rather than setting the opposite
+/// edge. `slide_deck` wrote `bottom` for one stage and the deck never moved,
+/// because an absolutely positioned node with a definite `top` ignores it: two
+/// systems disagreeing about which edge a node hangs from is the same defect
+/// as a builder overwriting a field its caller set, and it fails silently the
+/// same way.
+#[derive(Component, Clone, Copy)]
+pub(crate) struct RidesBottom(pub(crate) f32);
+
 /// The two toggles, and the caret on the second one.
 #[derive(Component)]
 pub(crate) struct PanelToggle;
@@ -452,6 +466,7 @@ fn bottom(
         },
         Pickable::IGNORE,
         BottomDeck,
+        RidesBottom(802.0),
     ))
     .with_children(|b| {
         command_bar(b, skin, glyphs, scene, open);
@@ -463,7 +478,14 @@ fn bottom(
         // The subsystem row, bottom right, which is the mockup's own MODULES.
         modules_row(b, skin, glyphs);
     });
-    // The three tab strips, all on one line at 776, which is where the mockup
+    deck_tabs_row(p, skin, open);
+    bottom_toggle(p, skin, glyphs);
+}
+
+/// The three tab strips, all on one line at 776, which is where the mockup
+/// puts them: the pages on the left, the views in the middle and the panel's
+/// own on the right.
+fn deck_tabs_row(p: &mut ChildSpawnerCommands, skin: &Skin, open: Page) {
     // puts them: the pages on the left, the views in the middle and the
     // panel's own on the right.
     tab_strip(
@@ -480,13 +502,26 @@ fn bottom(
             .map(|x| (x.name(), PageTab(*x), *x == open))
             .collect::<Vec<_>>(),
     );
+    // The views, and this one is anchored to BOTH edges rather than given a
+    // width. The mockup can say `left: 452; width: 700` because its `#hud` is
+    // exactly 1600 wide; here the deck fills the WINDOW, so `right: 6` on the
+    // panel's own strip is the window's right edge and not 1600's. At 1280 by
+    // 800 the frame is 1441 authored units across, the panel strip starts at
+    // 1013, and the middle strip's own 452 to 1152 ran straight under it: the
+    // Menu tab was drawn and then covered, which is why two tabs showed where
+    // the mockup draws three. 448 from the right is 1152 at exactly 1600, so
+    // the picture is unchanged at 16 by 9 and the strip shrinks rather than
+    // colliding at anything narrower.
+    //
+    // The rule: on a HUD anchored to two edges, anything BETWEEN two anchored
+    // things is anchored to both, never positioned from one with a fixed width.
     tab_strip(
         p,
         skin,
         Node {
             left: Val::Px(452.0),
+            right: Val::Px(448.0),
             top: Val::Px(776.0),
-            width: Val::Px(700.0),
             ..default()
         },
         &ViewTab::ALL
@@ -508,6 +543,11 @@ fn bottom(
             .map(|x| (x.label(), PanelTabButton(*x), *x == PanelTab::Build))
             .collect::<Vec<_>>(),
     );
+}
+
+/// The toggle that drops the bottom deck, with the caret that says which way
+/// it will go.
+fn bottom_toggle(p: &mut ChildSpawnerCommands, skin: &Skin, glyphs: &Glyphs) {
     p.spawn((
         Button,
         Node {
@@ -523,8 +563,33 @@ fn bottom(
         frame(skin, Frame::Btn),
         Chromed,
         BottomToggle,
+        RidesBottom(752.0),
     ))
     .with_children(|t| {
+        // The caret says which way the deck is about to GO, which is the
+        // mockup's own `.ca` rotating a half turn on `data-bottom`. A baked
+        // mark flipped rather than two marks or a text character: `flip_y` is
+        // one bool against a second bake, and the default font has no glyph
+        // for a caret at all.
+        t.spawn((
+            Node {
+                width: Val::Px(11.0),
+                height: Val::Px(11.0),
+                margin: UiRect::right(Val::Px(7.0)),
+                ..default()
+            },
+            ImageNode {
+                image: glyphs.of(Glyph::Caret),
+                color: skin.tok().dim.col(),
+                ..default()
+            },
+            Pickable::IGNORE,
+            BottomCaret,
+        ));
         label(t, "PANEL", 11.0, skin.tok().dim);
     });
 }
+
+/// The caret on the bottom deck's toggle, flipped by `light_deck`.
+#[derive(Component)]
+pub(crate) struct BottomCaret;

@@ -38,6 +38,8 @@ type LitControls<'w, 's> = Query<
     (
         &'static Interaction,
         Option<&'static PageTab>,
+        Option<&'static ViewTabButton>,
+        Option<&'static PanelTabButton>,
         Option<&'static mut ImageNode>,
         Option<&'static mut BackgroundColor>,
     ),
@@ -54,8 +56,10 @@ pub(crate) fn slide_deck(
     real: Res<Time<Real>>,
     mut deck: ResMut<Deck>,
     mut panel: PanelNode,
-    mut bottom: Query<&mut Node, (With<BottomDeck>, Without<BottomToggle>)>,
-    mut toggle: Query<&mut Node, With<BottomToggle>>,
+    // ONE query over everything that rides the bottom, which is the deck, the
+    // toggle and the three tab strips: they slide together in the mockup and a
+    // query each is a query somebody forgets to add the next strip to.
+    mut riders: Query<(&RidesBottom, &mut Node), Without<SidePanel>>,
 ) {
     let dt = real.delta_secs().min(0.25);
     let k = 1.0 - (-dt / SLIDE).exp();
@@ -71,12 +75,17 @@ pub(crate) fn slide_deck(
     for mut n in &mut panel {
         n.right = Val::Px(right);
     }
-    let down = -(1.0 - deck.bottom_at) * DECK_H;
-    for mut n in &mut bottom {
-        n.bottom = Val::Px(down);
-    }
-    for mut n in &mut toggle {
-        n.bottom = Val::Px(DECK_H + 4.0 + down);
+    // DOWN the screen, which is `top` going UP in value: every node here is
+    // authored from the top against the mockup's own frame, so the slide adds
+    // to the number it was given rather than setting the opposite edge. The
+    // deck is 92 tall and the toggle sits above it, so both clear the window
+    // on the same travel.
+    let down = (1.0 - deck.bottom_at) * (DECK_H + 26.0);
+    for (rides, mut n) in &mut riders {
+        let want = Val::Px(rides.0 + down);
+        if n.top != want {
+            n.top = want;
+        }
     }
 }
 
@@ -579,10 +588,39 @@ pub(crate) fn deck_roster(
 /// armed frame. A tab that lit on hover and a tab that lit because its page is
 /// open would be two writers for one image, which is the defect that put the
 /// wrong label on the wrong tab in the mockup.
-pub(crate) fn light_deck(deck: Res<Deck>, skin: Res<Skin>, mut lit: LitControls) {
+pub(crate) fn light_deck(
+    deck: Res<Deck>,
+    views: Res<Views>,
+    skin: Res<Skin>,
+    mut lit: LitControls,
+    // The caret is not `Chromed`, so it needs `Without` to prove it disjoint
+    // from the query above: Bevy separates two queries by their FILTERS and
+    // not by what you know about the data, and the same `ImageNode` held twice
+    // is a B0001 panic at startup rather than a wrong picture.
+    mut carets: Query<&mut ImageNode, (With<BottomCaret>, Without<Chromed>)>,
+) {
     let tok = skin.tok();
-    for (i, tab, image, bg) in &mut lit {
-        let hot = *i != Interaction::None || tab.is_some_and(|t| t.0 == deck.page);
+    // Which way the toggle is about to move the deck. DOWN while the deck is
+    // out, because that is where pressing it sends the deck, and up once it is
+    // down: the button reads as the direction it will go rather than as a
+    // label. The mockup rotates the same caret a half turn on `data-bottom`.
+    for mut caret in &mut carets {
+        let up = !deck.bottom;
+        if caret.flip_y != up {
+            caret.flip_y = up;
+        }
+    }
+    for (i, tab, view, panel, image, bg) in &mut lit {
+        // What ARMED means depends on which strip a button is in, and all
+        // three are read here rather than in three systems: one query holds
+        // every chromed frame mutably, so one system is the only shape Bevy
+        // allows and "one marker, one owner" is the rule it lands on anyway.
+        // A Menu tab that never lights is a button a player cannot tell they
+        // have pressed.
+        let armed = tab.is_some_and(|t| t.0 == deck.page)
+            || view.is_some_and(|v| views.open == Some(v.0))
+            || panel.is_some_and(|t| views.panel == t.0);
+        let hot = *i != Interaction::None || armed;
         if let Some(mut img) = image {
             let want = skin.tex(if hot { Frame::Hot } else { Frame::Btn });
             if img.image != want {
