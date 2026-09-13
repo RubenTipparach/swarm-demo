@@ -15,46 +15,48 @@ pub(crate) fn command_bar(
     open: Page,
 ) {
     let tok = skin.tok();
-    // 344 wide, which is the mockup's `.cmd`, and no tabs inside it: the page
-    // tabs are a strip of their own on the line above, beside the view tabs
-    // and the panel's own. Three strips on one line is the mockup's layout and
-    // it is also one height rather than three that can drift.
-    p.spawn((
+    // The ORDERS panel: 344 wide, which is the mockup's `.cmd`, and a frame of
+    // its own now. The cells used to sit straight on the field with nothing
+    // behind them, so a row of buttons over a bright hull had no ground to
+    // read against and the deck came out as three unrelated things and a spray
+    // of controls. Its caption says what the orders will apply to.
+    deck_panel(
+        p,
+        skin,
         Node {
             width: Val::Px(344.0),
-            flex_direction: FlexDirection::Column,
             ..default()
         },
-        Pickable::IGNORE,
-    ))
-    .with_children(|c| {
-        for page in Page::ALL {
-            // The range and the sandbox act only in the sandbox, so their
-            // pages are DIM there rather than absent: a control a mode does
-            // not have still tells you the mode does not have it.
-            let live = page == Page::Fleet || scene.sandbox;
-            let ink = if live { tok.ink } else { tok.faint };
-            c.spawn((
-                Node {
-                    display: if page == open {
-                        Display::Flex
-                    } else {
-                        Display::None
+        ("ORDERS", DeckStat::Picked),
+        |c| {
+            for page in Page::ALL {
+                // The range and the sandbox act only in the sandbox, so their
+                // pages are DIM there rather than absent: a control a mode does
+                // not have still tells you the mode does not have it.
+                let live = page == Page::Fleet || scene.sandbox;
+                let ink = if live { tok.ink } else { tok.faint };
+                c.spawn((
+                    Node {
+                        display: if page == open {
+                            Display::Flex
+                        } else {
+                            Display::None
+                        },
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        flex_wrap: FlexWrap::Wrap,
+                        column_gap: Val::Px(3.0),
+                        row_gap: Val::Px(3.0),
+                        align_content: AlignContent::Stretch,
+                        ..default()
                     },
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    flex_wrap: FlexWrap::Wrap,
-                    column_gap: Val::Px(3.0),
-                    row_gap: Val::Px(3.0),
-                    align_content: AlignContent::Stretch,
-                    ..default()
-                },
-                Pickable::IGNORE,
-                PageBody(page),
-            ))
-            .with_children(|g| page_keys(g, skin, glyphs, page, ink));
-        }
-    });
+                    Pickable::IGNORE,
+                    PageBody(page),
+                ))
+                .with_children(|g| page_keys(g, skin, glyphs, page, ink));
+            }
+        },
+    );
 }
 
 /// One page's buttons.
@@ -143,11 +145,17 @@ fn page_keys(g: &mut ChildSpawnerCommands, skin: &Skin, glyphs: &Glyphs, page: P
 /// The box every command cell is laid out in.
 fn cell_node() -> Node {
     Node {
-        // Six across 344 with three between, and two rows of 92 less the gap:
-        // the mockup's `.cmd` grid worked out rather than guessed at.
-        width: Val::Px(54.0),
-        height: Val::Px(44.0),
-        padding: UiRect::axes(Val::Px(2.0), Val::Px(3.0)),
+        // Six across the panel's own inner width: 344 less two 5 pixel
+        // margins is 334, and five 3 pixel gaps leave 53 each. Worked out
+        // against the panel rather than against the row, which is what the
+        // first cut measured and why twelve commands wrapped to three rows
+        // and the last one fell out of the bottom of the deck.
+        width: Val::Px(53.0),
+        // No HEIGHT: the wrap container stretches its rows, so twelve cells
+        // make two rows of 32 and the sandbox's five make one row of 68. A
+        // fixed height would have to be right for both and can only be right
+        // for one.
+        padding: UiRect::axes(Val::Px(2.0), Val::Px(2.0)),
         flex_direction: FlexDirection::Column,
         align_items: AlignItems::Center,
         justify_content: JustifyContent::Center,
@@ -179,8 +187,8 @@ fn arm(
         action,
     ))
     .with_children(|b| {
-        b.spawn(mark(glyphs, glyph, 20.0, ink));
-        label(b, name, 9.0, ink);
+        b.spawn(mark(glyphs, glyph, 17.0, ink));
+        label(b, name, 8.0, ink);
         readout(b, &action.hint(), 8.0, skin.tok().faint, CmdState(action));
     });
 }
@@ -207,63 +215,89 @@ pub(crate) fn cell(
         marker,
     ))
     .with_children(|b| {
-        b.spawn(mark(glyphs, glyph, 20.0, ink));
-        label(b, name, 9.0, ink);
+        b.spawn(mark(glyphs, glyph, 17.0, ink));
+        label(b, name, 8.0, ink);
     });
 }
 
-/// The selection panel in the middle of the deck: what is picked, what it is
-/// for, and what it is still made of.
+/// The UNIT panel: what is selected, what it is made of, and its plan.
 ///
-/// The bar reads the REACTOR, which is the only thing that kills a ship, so it
-/// is the only honest thing to put on a bar. Plating comes off and the ship
-/// keeps flying.
+/// ONE panel now. The stats and the schematic were two boxes side by side,
+/// each with its own frame, which made four blocks across a row that is about
+/// three things: what you are ordering, what it is, and what it carries. A
+/// picture OF the selected ship belongs inside the panel about that ship.
+///
+/// It GROWS rather than taking a width, so the two fixed panels either side
+/// keep their own and this one is whatever is between them. That is the same
+/// rule the middle tab strip landed on: anything between two anchored things
+/// is measured from both.
 pub(crate) fn unit_panel(p: &mut ChildSpawnerCommands, skin: &Skin, glyphs: &Glyphs) {
+    deck_panel(
+        p,
+        skin,
+        Node {
+            flex_grow: 1.0,
+            min_width: Val::Px(0.0),
+            ..default()
+        },
+        ("UNIT", DeckStat::Ship),
+        |u| {
+            u.spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    min_height: Val::Px(0.0),
+                    column_gap: Val::Px(PAD),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ))
+            .with_children(|row| {
+                unit_stats(row, skin, glyphs);
+                unit_plan(row, skin);
+            });
+        },
+    );
+}
+
+/// The numbers half of the unit panel: what it is for, what it carries, and
+/// how much reactor it has left.
+fn unit_stats(row: &mut ChildSpawnerCommands, skin: &Skin, glyphs: &Glyphs) {
     let tok = skin.tok();
-    p.spawn((
-        framed(
-            skin,
-            Frame::Panel,
-            Node {
-                // The mockup's `.unit`: 520 across the bottom row, and the
-                // row is 92 tall, so this OVERFLOWS unless it is told the
-                // height it has. Without it the stat wells were drawn under
-                // the bottom of the screen.
-                width: Val::Px(520.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(3.0),
-                overflow: Overflow::clip(),
-                ..default()
-            },
-        ),
+    row.spawn((
+        Node {
+            flex_grow: 1.0,
+            min_width: Val::Px(0.0),
+            flex_direction: FlexDirection::Column,
+            justify_content: JustifyContent::SpaceBetween,
+            ..default()
+        },
         Pickable::IGNORE,
     ))
-    .with_children(|u| {
-        kv(u, skin, "Unit", "nothing selected", DeckStat::Ship);
-        kv(u, skin, "Role", "", DeckStat::Role);
-        u.spawn((
+    .with_children(|l| {
+        kv(l, skin, "Role", "", DeckStat::Role);
+        l.spawn((
             Node {
                 width: Val::Percent(100.0),
-                justify_content: JustifyContent::SpaceBetween,
-                column_gap: Val::Px(8.0),
+                column_gap: Val::Px(4.0),
                 ..default()
             },
             Pickable::IGNORE,
         ))
-        .with_children(|s| {
+        .with_children(|st| {
             for (mk, stat, ink) in [
                 (Glyph::Speed, DeckStat::Speed, tok.teal),
                 (Glyph::Gun, DeckStat::Guns, tok.gold),
                 (Glyph::Armour, DeckStat::Armour, tok.cyan),
             ] {
-                s.spawn((
+                st.spawn((
                     framed(
                         skin,
                         Frame::Well,
                         Node {
                             flex_grow: 1.0,
-                            flex_direction: FlexDirection::Row,
+                            flex_basis: Val::Px(0.0),
+                            min_width: Val::Px(0.0),
                             align_items: AlignItems::Center,
                             column_gap: Val::Px(5.0),
                             padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
@@ -273,60 +307,42 @@ pub(crate) fn unit_panel(p: &mut ChildSpawnerCommands, skin: &Skin, glyphs: &Gly
                     Pickable::IGNORE,
                 ))
                 .with_children(|c| {
-                    c.spawn(mark(glyphs, mk, 14.0, tok.faint));
+                    c.spawn(mark(glyphs, mk, 13.0, tok.faint));
                     readout(c, "0", 13.0, ink, stat);
                 });
             }
         });
-        bar(u, skin, tok.green, 6.0, Fill::Unit);
+        bar(l, skin, tok.green, 5.0, Fill::Unit);
     });
 }
 
-/// The selection's picture and its hull bar, which the mockup keeps in a block
-/// of its OWN between the unit panel and the modules row.
-///
-/// It was inside the unit panel and that is why the stat wells ran off the
-/// bottom of the screen: a 92 tall row cannot hold a schematic, two rows of
-/// text and three wells. Out here it also does the job the mockup gives it,
-/// which is taking up whatever width is left so the modules row lands in the
-/// corner rather than in the middle.
-pub(crate) fn unit_thumb(p: &mut ChildSpawnerCommands, skin: &Skin) {
-    p.spawn((
-        Node {
-            flex_grow: 1.0,
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(2.0),
-            ..default()
-        },
+/// The plan half: the selected ship's own schematic, in a well of its own.
+fn unit_plan(row: &mut ChildSpawnerCommands, skin: &Skin) {
+    row.spawn((
+        framed(
+            skin,
+            Frame::Well,
+            Node {
+                width: Val::Px(166.0),
+                flex_shrink: 0.0,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                padding: UiRect::all(Val::Px(2.0)),
+                ..default()
+            },
+        ),
         Pickable::IGNORE,
     ))
-    .with_children(|t| {
-        t.spawn((
-            framed(
-                skin,
-                Frame::Well,
-                Node {
-                    width: Val::Percent(100.0),
-                    flex_grow: 1.0,
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-            ),
+    .with_children(|w| {
+        w.spawn((
+            Node {
+                width: Val::Px(150.0),
+                height: Val::Px(46.0),
+                ..default()
+            },
+            ImageNode::default(),
             Pickable::IGNORE,
-        ))
-        .with_children(|w| {
-            w.spawn((
-                Node {
-                    width: Val::Px(140.0),
-                    height: Val::Px(46.0),
-                    ..default()
-                },
-                ImageNode::default(),
-                Pickable::IGNORE,
-                UnitShot,
-            ));
-        });
-        bar(t, skin, skin.tok().green, 6.0, Fill::Unit);
+            UnitShot,
+        ));
     });
 }

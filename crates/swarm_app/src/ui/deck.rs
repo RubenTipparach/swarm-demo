@@ -97,6 +97,8 @@ pub(crate) enum DeckStat {
     Speed,
     Guns,
     Armour,
+    /// How many ships the orders will apply to.
+    Picked,
     /// The build menu's own readouts.
     Modules,
     YardName,
@@ -449,9 +451,13 @@ fn bottom(
     scene: &SceneSpec,
     open: Page,
 ) {
-    // The mockup's `.brow3`: 6 in from each side, 802 down, 92 tall, and four
-    // things across it. The command bar is 344, the unit panel 520, the
-    // selection thumb takes what is left and the modules row is 428.
+    // The mockup's `.brow3`: 6 in from each side, 802 down, 92 tall, and
+    // THREE panels across it. It was four blocks, two of them bare nodes with
+    // buttons sitting straight on the field and two of them framed, which is
+    // what "the bottom panel is a mess" was: the orders and the modules had no
+    // ground of their own, and the selection was split between a stat box and
+    // a picture box that are one subject. Orders 344, modules 428, and the
+    // unit takes what is between them.
     p.spawn((
         Node {
             position_type: PositionType::Absolute,
@@ -471,11 +477,6 @@ fn bottom(
     .with_children(|b| {
         command_bar(b, skin, glyphs, scene, open);
         unit_panel(b, skin, glyphs);
-        // The mockup's `.thumb`, which is what takes up the slack: without it
-        // the three fixed blocks pack to the left and the modules row lands in
-        // the middle of the screen rather than in the corner it belongs in.
-        unit_thumb(b, skin);
-        // The subsystem row, bottom right, which is the mockup's own MODULES.
         modules_row(b, skin, glyphs);
     });
     deck_tabs_row(p, skin, open);

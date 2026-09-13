@@ -198,6 +198,73 @@ pub(crate) fn kv(
     });
 }
 
+/// How far a deck panel's content sits inside its own frame, and how tall the
+/// caption line above it is.
+///
+/// ONE pair for all three panels, which is the whole of "align the buttons
+/// with the content": three panels each choosing their own inset is three
+/// left edges a player can see are different, and a caption on one and not
+/// the next is a row of buttons that starts lower in one panel than in the
+/// one beside it.
+/// Measured against the 92 the row is tall, not chosen: 5 either side and an
+/// 11 pixel caption over a 3 pixel gap leave 68 for the body, which is two
+/// rows of command cells at 32 and a gap, or one row of five at the full 68.
+pub(crate) const PAD: f32 = 5.0;
+pub(crate) const CAP_H: f32 = 11.0;
+
+/// One panel of the bottom deck: a frame, a caption line, and the body under
+/// it, which every caller fills.
+///
+/// The caption is not decoration. Each one carries the one number that says
+/// what the panel is looking at right now, so the row reads left to right as
+/// what is selected, what it is, and what it carries.
+pub(crate) fn deck_panel(
+    p: &mut ChildSpawnerCommands,
+    skin: &Skin,
+    node: Node,
+    caption: (&str, DeckStat),
+    body: impl FnOnce(&mut ChildSpawnerCommands),
+) {
+    let tok = skin.tok();
+    // `frame` and not `framed`: that builder LISTS its own padding before
+    // `..node`, and Rust's struct update syntax means the listed field wins,
+    // so a caller asking for five got ten. This panel's whole grid is measured
+    // off its own inset, and at ten the twelve command cells wrapped to five
+    // across instead of six and the last two fell off the bottom. Same trap
+    // the deck already hit once on `flex_direction`.
+    p.spawn((
+        Node {
+            height: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
+            padding: UiRect::all(Val::Px(PAD)),
+            row_gap: Val::Px(3.0),
+            overflow: Overflow::clip(),
+            ..node
+        },
+        frame(skin, Frame::Panel),
+        Pickable::IGNORE,
+    ))
+    .with_children(|c| {
+        c.spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(CAP_H),
+                flex_shrink: 0.0,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceBetween,
+                column_gap: Val::Px(8.0),
+                ..default()
+            },
+            Pickable::IGNORE,
+        ))
+        .with_children(|h| {
+            label(h, caption.0, 10.0, tok.dim);
+            readout(h, "", 11.0, tok.ink, caption.1);
+        });
+        body(c);
+    });
+}
+
 /// One mark, tinted by the node rather than by the bake.
 ///
 /// `currentColor` in the markup is the button's own state colour, and an

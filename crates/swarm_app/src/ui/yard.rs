@@ -165,60 +165,53 @@ pub(crate) fn tab_strip<T: Component + Copy>(
 /// could have had is the information the row exists to give.
 pub(crate) fn modules_row(p: &mut ChildSpawnerCommands, skin: &Skin, glyphs: &Glyphs) {
     let tok = skin.tok();
-    p.spawn((
+    // The MODULES panel, 428 wide, which is the mockup's own. Its caption used
+    // to be a bare line floating over the field above six loose buttons, so
+    // the cells started lower than the orders' did and the whole block had no
+    // edge: it is `deck_panel` like the other two now, which is what puts all
+    // three rows of buttons on one line.
+    deck_panel(
+        p,
+        skin,
         Node {
             width: Val::Px(428.0),
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(3.0),
             ..default()
         },
-        Pickable::IGNORE,
-    ))
-    .with_children(|m| {
-        m.spawn((
-            Node {
-                height: Val::Px(12.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::SpaceBetween,
-                ..default()
-            },
-            Pickable::IGNORE,
-        ))
-        .with_children(|h| {
-            label(h, "MODULES", 10.0, tok.dim);
-            readout(h, "0 / 0", 10.0, tok.ink, DeckStat::Modules);
-        });
-        m.spawn((
-            Node {
-                flex_grow: 1.0,
-                column_gap: Val::Px(3.0),
-                ..default()
-            },
-            Pickable::IGNORE,
-        ))
-        .with_children(|g| {
-            for kind in Module::ALL {
-                g.spawn((
-                    Button,
-                    Node {
-                        flex_grow: 1.0,
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::Center,
-                        row_gap: Val::Px(2.0),
-                        ..default()
-                    },
-                    frame(skin, Frame::Btn),
-                    Chromed,
-                    ModButton(kind),
-                ))
-                .with_children(|b| {
-                    b.spawn(mark(glyphs, module_mark(kind), 18.0, tok.dim));
-                    label(b, kind.label(), 9.0, tok.dim);
-                });
-            }
-        });
-    });
+        ("MODULES", DeckStat::Modules),
+        |m| {
+            m.spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    column_gap: Val::Px(3.0),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ))
+            .with_children(|g| {
+                for kind in Module::ALL {
+                    g.spawn((
+                        Button,
+                        Node {
+                            flex_grow: 1.0,
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::Center,
+                            row_gap: Val::Px(2.0),
+                            ..default()
+                        },
+                        frame(skin, Frame::Btn),
+                        Chromed,
+                        ModButton(kind),
+                    ))
+                    .with_children(|b| {
+                        b.spawn(mark(glyphs, module_mark(kind), 18.0, tok.dim));
+                        label(b, kind.label(), 9.0, tok.dim);
+                    });
+                }
+            });
+        },
+    );
 }
 
 /// Which baked mark stands for a module.

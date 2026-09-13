@@ -437,6 +437,13 @@ pub(crate) fn deck_readouts(
             // `Yard`. Until that lands they say what a hull's rung ALREADY
             // gives it, which is a true number rather than a placeholder: the
             // slots are `Slots::of` on the flagship's own class.
+            // What the ORDERS panel is aimed at. Plural only when it is,
+            // because "1 ships" is the tell that nobody read the string.
+            DeckStat::Picked => match picked.iter().count() {
+                0 => "nothing selected".into(),
+                1 => "1 ship".into(),
+                n => format!("{n} ships"),
+            },
             DeckStat::YardName => yard.name.clone(),
             DeckStat::SlotsProd => format!("{} / {}", yard.at.production, yard.slots.production),
             DeckStat::SlotsMod => format!("{} / {}", yard.at.module, yard.slots.module),
