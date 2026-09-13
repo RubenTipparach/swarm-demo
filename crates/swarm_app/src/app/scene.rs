@@ -44,6 +44,9 @@ pub(crate) fn limit_frames(mut limit: ResMut<FrameLimit>) {
 #[derive(Resource)]
 pub(crate) struct SceneSpec {
     pub(crate) hull: String,
+    /// What a reinforcement arrives AS, when that is not the flagship's own
+    /// class. Empty everywhere but a base, and `wing_class` is what reads it.
+    pub(crate) escort: String,
     pub(crate) yaw: f32,
     pub(crate) pitch: f32,
     pub(crate) chewers: usize,
@@ -177,6 +180,23 @@ impl SceneSpec {
         };
         self.rocks = self.rocks.max(BASE_ROCKS);
         self.support = vec![Role::Miner, Role::Tanker];
+        // The pick the form made becomes the WING's class and the hull becomes
+        // the yard. A base whose reinforcements were copies of its own base is
+        // a fleet of yards, and R would order one at four thousand.
+        self.escort = std::mem::replace(&mut self.hull, BASE_HULL.to_string());
+    }
+
+    /// What class a reinforcement arrives as.
+    ///
+    /// The flagship's, everywhere except a base, where the flagship is a yard.
+    /// One function rather than an `if` at each of the two presses that order
+    /// one, which is this project's own rule about a rule that gets copied.
+    pub(crate) fn wing_class(&self) -> &str {
+        if self.escort.is_empty() {
+            &self.hull
+        } else {
+            &self.escort
+        }
     }
 
     /// One frame's worth of time for everything on the CPU that integrates
@@ -676,6 +696,20 @@ fn aim_camera(
         *xf = Transform::from_translation(eye).looking_at(target, Vec3::Y);
     }
 }
+
+/// What a base is BUILT FROM, which is the one hull in the fleet that is a
+/// yard rather than a warship.
+///
+/// A base building mode whose base was a frigate is a mode where the thing you
+/// build from is the thing you are trying to keep alive, and those are two
+/// different jobs: `Tier::Carrier` carries half again a heavy cruiser's
+/// production and module slots and six guns against a cruiser's eight, which
+/// is the trade said in the only place it can be said, which is the hull.
+///
+/// The flagship stepper still stands, because a base is a fight as well as a
+/// yard and what escorts it is the player's pick. What this decides is the one
+/// ship the mode is named after.
+pub(crate) const BASE_HULL: &str = "terran_carrier";
 
 /// The fewest asteroids a base is opened with.
 ///

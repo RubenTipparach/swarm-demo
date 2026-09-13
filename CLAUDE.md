@@ -660,7 +660,7 @@ damaged and one that eats the outside is always starting on fresh plating.
 
 ## Hulls are the redux-tribes hulls, one to one
 
-`assets/hulls/*.ftvx` are the twenty three stock hulls, exported from
+`assets/hulls/*.ftvx` are the twenty four stock hulls, exported from
 redux-tribes' own rasteriser AND its own mesher by `tools/export_hulls.mjs`,
 read by `VoxelModel::from_ftvx`. Cells, materials, purposes, roles, colours,
 which of the fifteen surfaces each cell draws in, what each surface is made
@@ -1384,6 +1384,52 @@ flagship, and the form already carries that.
 The seed is an LCG step off the one the run is holding, so `--run-seed` still
 decides the first campaign and a second press is a different map rather than
 the same one again.
+
+## The base is a CARRIER, and it was authored in redux-tribes
+
+Base building needs a ship to build from, and the fleet had none: twenty three
+hulls, four warship rungs and seven civil trades, and every one of them is
+something you fly rather than something you build out of. So the carrier was
+authored where ships are authored, which is redux-tribes, and re-exported here
+like every other hull.
+
+**It is the rung that project declared and never used.** `RUNG.capital` is
+28/64 of a unit against the heavy cruiser's 14/64, so by `design.rs`'s own cube
+rule the same envelope at that cell is eight times the mass and eight times the
+hull, and nothing about the size is written down: it MEASURES 25.38 units long
+against the Terran frigate's 6.34 and the cruiser's 12.69, which is 4.00x and
+2.00x exactly. Here it is 11936 cells, 2068 quads over 128 bricks, 296 windows,
+six guns, nine engines and a radius of 13.63, all of it read off the export.
+
+**Six guns and not ten, which is what makes it a carrier.** The volume goes on
+holds, berths, airlocks and clamps instead, and `Tier::Carrier` is what that
+buys: six production slots and six module slots against a heavy cruiser's four
+and four, and two sensor slots against one. A base building mode whose base was
+a frigate is a mode where the thing you build from is the thing you are trying
+to keep alive, and those are two different jobs.
+
+**Its silhouette cue is two launch bays a side**, and redux-tribes' own ban is
+what picked them: an island is a big block on top of a Terran, which the owner
+banned there, and a groove down the deck is out because that project's decor
+pass adds cells and can never take one away. So they are cut into the flanks,
+which is where a Homeworld carrier launches from anyway.
+
+**And the wing is not made of carriers.** `scene.hull` is the flagship's class
+AND what a reinforcement arrives as, so a base that simply set it to the carrier
+would answer R with a four thousand material yard. `open_base` moves the form's
+own pick into `SceneSpec.escort` and puts the carrier in `hull`, and
+`wing_class` is the one function that answers which of the two a wave is built
+from. One function rather than an `if` at each of the two presses that order
+one, which is this project's rule about a rule that gets copied.
+
+**Boarding moved in redux-tribes for this hull, and that is worth knowing
+here.** Its `can_board` measured centre to centre, which makes a ship harder to
+board the bigger it is, and at 14.8 radius it made three warship classes unable
+to board a carrier they were touching. That project's own test had named it as
+the thing to check before authoring a hull this big and named the remedy as the
+owner's call; the owner took the rule, and `turn::within_boarding` measures to
+the target's skin now. Nothing here reads it, and it is recorded because a hull
+authored in one repository changed a rule in it.
 
 ## A skirmish is two modes, and they are one field with a different job on it
 
@@ -2884,7 +2930,7 @@ is this one that answers "how much plating would a shot have to get through".
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 119, the core
+cargo test -p swarm_core                                   # 120, the core
 cargo test -p swarm_app                                    # 10, the run and the marks
 python3 tools/shape.py --check                             # no file over 900 lines, no function over 100
 cargo fmt --all -- --check                                 # the format

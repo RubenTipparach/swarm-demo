@@ -495,6 +495,9 @@ fn main() {
     let fleet = Fleet::load();
     let scene = SceneSpec {
         hull: args.hull.clone(),
+        // Empty until a base moves the form's pick into it: `wing_class`
+        // falls back to the flagship's own class in every other mode.
+        escort: String::new(),
         chewers: args.chewers,
         yaw: args.yaw,
         pitch: args.pitch,

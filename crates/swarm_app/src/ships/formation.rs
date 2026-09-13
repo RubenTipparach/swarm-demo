@@ -259,7 +259,7 @@ pub(crate) fn call_reinforcements(
             &mut yard.0,
             &mut bank,
             &scene.hull,
-            Order::Hull(scene.hull.clone()),
+            Order::Hull(scene.wing_class().to_string()),
             out,
         ) {
             break;
