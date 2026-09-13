@@ -1526,6 +1526,60 @@ one through the same code the game starts with. The wing and the squadron go
 with it, because an escort is a copy of the flagship's class and a fighter
 flies off it.
 
+## A STROKE faces the camera, a FILL faces the plane
+
+Everything drawn as vector graphics in the world (the nav disc and its rim,
+the X, the gold and orange order lines, the selection rings, the pings, the
+sensors horizon and its stalks) is one additive unlit mesh rebuilt every
+frame, and there is no line primitive in it: a line is a QUAD, so the only
+question about one is which way it is turned.
+
+**A line was turned to the eye and a ring was not, and that made every ring
+in the game vanish at nought pitch.** `add_line` took the eye and built a
+ribbon edge on to it, which is the beams' own trick; `add_ring` built a flat
+annulus in the horizontal plane, from `r - w` to `r + w`. So a camera level
+with the plane saw every ring exactly edge on, at zero width: the disc was a
+hairline, the selection ring was nothing, and the gold ring where the order
+lands was nothing. The comment over it even argued the case ("edge on from
+the side is correct, it is what tells a player the plane is a plane"), which
+is true of the PLANE and false of the stroke that marks it. A circle seen
+edge on is a line segment, and a line segment is a thing with a width.
+
+`add_strip` is the one implementation now: a continuous ribbon through a
+polyline, every quad square to the eye. A line is a strip of two points and a
+ring is a strip of its own segments, closed, so the circle stays in the plane
+and what faces the camera is the WIDTH of the line drawn round it. From
+directly above nothing moved at all, because the across vector there comes
+out radial exactly as the annulus was; at nought pitch a ring is now a bar of
+its own width; and in between the stroke is the same width all the way round
+rather than thinning on the arcs that foreshorten. Depth is untouched, since
+every vertex is still at its own place in the world.
+
+**A STRIP and not a quad per segment, because this mesh is ADDITIVE.** Two
+quads meeting at a joint overlap by however far the ribbon bends, and additive
+lays the colour down twice there: a bright pip at every one of a ring's ninety
+six joints. Sharing the joint's two vertices makes it one surface, and the
+across vector there comes off the AVERAGE of the two segments either side, so
+the ribbon does not kink.
+
+**And the fallback is square to the VIEW rather than to the stroke.** Where a
+stroke points straight at the camera the cross is nought and something has to
+stand in. Square to the stroke lays the ribbon flat and puts it out, which on
+a ring at nought pitch is a pinch to nothing at each of its two tangent
+points; square to the view is a width across the screen, which is what a line
+going into the screen actually looks like.
+
+**The disc's FILL is the one thing not turned**, on purpose: it is a fill
+rather than a stroke, so it IS the plane. A disc that always faced the camera
+would be a bubble round the selection washing over every ship inside it from
+every angle, and what a player reads the order off at nought pitch is the rim,
+the X and the lines, which all have width now.
+
+Measured, the order scene at nought pitch: 2.90% of the picture changed
+against the same scene before, nearly all of it the rim and the rings arriving.
+At the default pitch it is 0.87% and the sensors view 1.35%, which is the even
+stroke width and nothing else.
+
 ## A selected ship is OUTLINED, and the shell has to be closed
 
 A cyan ring on the plane under a ship says where it stands rather than which
