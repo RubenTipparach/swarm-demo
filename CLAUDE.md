@@ -46,7 +46,11 @@ first three are checks: `.claude/skills/tidy/SKILL.md` runs them all.
   (`fly_hull`, `draw_nav`), a component is a noun, a marker is an adjective.
   A function that needs a section comment inside it is two functions, and
   `#[allow(clippy::too_many_arguments)]` is the smell that says a struct is
-  missing.
+  missing. That debt comes due at Bevy's own limit on a system's parameters,
+  and the error when it does says nothing about arguments: `sandbox_fire`
+  reached it exactly and the compiler reported a `.after` that no longer
+  resolved. `Forge` is the struct that was missing (the meshes, the materials
+  and the chunk colour cache, which always travel together).
 - **Divergent paths for like functionality are a defect.** Two places that
   need one behaviour call one function; a second caller that needs a
   variation parameterises the one implementation. The single allowed
@@ -260,8 +264,51 @@ crawl; it is `pow(0.985, dt * 60)` now, and a step of nought is no drag.
 Slow motion is `time_scale`, a quarter, on `SceneSpec::step` and on the
 swarm's clock alike, which is the one clock rule paying off. Invulnerable is
 a flag on the flagship the chewers and the reactor rule both read. B is a
-blast where the cursor points on the plane through the flagship, N a fresh
-dummy. The keys are Z, X, V, B and N because F, R and space were taken.
+blast, N a fresh dummy. The keys are Z, X, V, B and N because F, R and space
+were taken.
+
+**And B is a shot now, not a marker on a plane.** It used to go off where the
+cursor met the horizontal plane through the flagship, which is the nav disc's
+rule and wrong for a weapon: aiming at a carrier standing above that plane put
+the blast on the floor underneath it. It is the same ray the range weapons take
+(`blast_point`), against every hull rather than only the dummy, and a shot that
+meets nothing carries on to `BLAST_REACH` and goes off out there, because that
+is what a shell does.
+
+**What it does when it arrives is the whole point, and for a long time it did
+nothing.** The swarm always felt it, since a `Blast` is a capsule of zero length
+and the shader kills whatever is inside one; the HULLS never did. So an
+explosion went off on a frigate and the frigate was untouched, which is an
+effect a player has to take on trust. `blast_hulls` takes a sphere of cells off
+every hull it reaches, throws the chunks those breaches make, and the re-mesh
+comes for free from the breaches. It reads `LiveFx` for nothing and needs no new
+kind of anything.
+
+**The hole is `HULL_HOLE` of what the swarm feels, which is the reactor's own
+rule reused rather than a second number**: a pressure wave goes further than the
+wreck it makes. At the full radius a blast is nine tenths of a hull radius and
+`blast_cells` kills every cell inside it outright, so the first cut took 4818
+cells off a 6486 cell Karisen frigate and the range's target simply vanished. At
+three tenths of that it opens a crater a player can look at: 553 cells off a
+Terran frigate, measured, and the ship flies on.
+
+**And it SAYS what it did.** One line naming where it went off, how wide, how
+many cells came off and how many hulls it landed on. The complaint that started
+this was that a blast was all fireball and no consequence, and a picture of an
+explosion cannot tell a shot that took three hundred cells off a carrier from
+one that went off in empty space. The sandbox panel's `cells lost` is the same
+fact on the screen.
+
+**`--blast TICK` fires one headless, and it is aimed at the FLAGSHIP.** A
+scripted shot is aimed at the dummy; this one is not, and the reason is the
+point of the flag: the range weapons only ever reach a dummy, so a blast taking
+cells off the player's own ship is exactly the thing no other flag can
+photograph. It also has to LAND, and the camera's own forward, which is the
+honest answer to "where is the cursor" when there is no cursor, threads the gap
+between the flagship and the dummy in this scene and went off in empty space
+every time. Like `--fire`, it needs `--hud` in a headless run, because
+`sandbox_fire` is registered in the block a window builds.
+
 
 **The range is a mode.** Arming a weapon (one to five, nought disarms, or
 the panel) puts `OrderMode` in `Range`, so a left click is a shot and never
@@ -310,6 +357,53 @@ since `single()` fails on both. And the shot missed: it was aimed a bit
 under half a radius above the centre, which is inside the LATTICE and above
 the DECK, so the ray crossed empty cells and came out the other side. The
 lattice is not the hull.
+
+## What is a LIGHT, and what was only ever a bright pixel
+
+Everything bright in this scene was emissive and nothing else. A flame is
+geometry with its colour written well over white, a fireball is a thousand
+additive sparks, and both of them are bright PIXELS that light nothing: a
+frigate at full burn lit the black behind it exactly as much as one drifting,
+and a reactor going off a length from a carrier left that carrier the colour it
+was on the frame before. Light with no source in it is a sticker.
+
+Two point lights, which is all it takes, and they are cheap for the reason
+everything else here is cheap: there are DOZENS of hulls and a handful of
+fireballs at a time, so this is the ECS's half of the split. A mote never gets
+one, and cannot: the swarm's own answer to the same problem is `shade.w` off the
+shock ring, which is the section above.
+
+- **A drive plume** is one child of the hull, sitting behind its stern, so it
+  rides the ship's frame with nothing recomputing where that is. One per HULL
+  and not one per engine cluster, because six bells a length apart light the
+  same piece of space and six lights would be six times the cost for a
+  difference nobody can see. Its intensity follows `throttle_of` and the drive
+  cells still alive, which is the SAME question `draw_flames` asks of the same
+  hull: the light and the flame are one fact drawn twice, read off one function,
+  and cannot disagree. A wreck's is nought whatever its cells say; a carrier's
+  is the fixed low throttle its flames are already drawn at.
+- **A fireball** spawns a `Flash`, which fades on the square of its life and
+  despawns. Squared, because a linear fade reads as a lamp on a dimmer and a
+  fireball is bright for an instant and then mostly gone. It reaches several
+  times the blast's own radius, since the point of it is the hulls standing off
+  from the thing that went up rather than the fire, which is already made of
+  light. A reactor is worth forty million lumens and a blast on the range nine.
+
+## Normal maps at a fifth, and the generator was writing somewhere else
+
+The finishes were authored at full strength for a rasteriser that is not this
+one: on a voxel hull every quad is axis aligned and flat, so a normal map has
+nothing but its own bumps to say, and at full strength the plating read as
+gravel. `NORMAL_SCALE` is 0.2 in `tools/make_surface_textures.py` and it is
+applied where the map is built rather than where it is loaded, so the checked in
+PNGs ARE the answer and `--check` is what holds them there.
+
+Two things turned up on the way. The generator's `OUT` still pointed at
+redux-tribes' `web/public/surf`, a path that does not exist in this repo, so it
+had been writing nowhere and the textures on disk were whatever had last been
+copied across: `--check` FAILED before this change, on a window map that had
+drifted from the generator that was supposed to own it. And the mockup bundle is
+written only if its directory exists, for the same reason.
 
 ## The swarm is a field, not a million entities
 
@@ -460,6 +554,75 @@ put the answer: a mote cannot work its shadow out at draw time and cannot be
 told it either, because nothing about a mote ever comes back to the CPU. The
 mote buffer IS the instance buffer, so a field the tick fills is one the vertex
 shader already has, for no upload and no pass.
+
+## A bug DIES, and that takes half a second
+
+A kill used to be one tick: the shot landed, the mote burst, and it was gone
+before the frame it was hit in had been drawn. What a player saw was a puff of
+gore where a bug had been, which reads as motes winking out rather than as
+anything being killed, because the thing being looked at, the bug, is never in
+the picture on the frame anything happens to it.
+
+**So a mortal hit starts a SPIRAL and the burst is what it ends in.** `PH_DYING`
+is a fifth leg of a mote's life, and it is the only one that is not a place to
+be: for `DEATH_SPIN` (0.55 s) the mote is out of control and on fire, and then
+it comes apart exactly as it always did. It costs one phase value and no memory
+at all. The corkscrew is a lateral acceleration whose direction goes round the
+velocity as the fuse burns down, with drag taking the speed off it, so the path
+is a tightening helix; and because a mote is DRAWN along its own velocity
+(`basis_from`), a velocity that is turning is a body that is tumbling. Nothing
+in the draw was touched. It trails a spark most ticks, which is what says the
+thing is coming down rather than flying, and its own phase comes off its own
+seed, so a volley of kills is a dozen bugs going down differently rather than a
+dozen copies of one animation.
+
+**It burns at 0.62 of a full burn, and that number is the tone mapper.** The
+wound ramp is authored at 5.0 red against 0.30 blue, and `NeutralToneMapping`
+desaturates a highlight by scaling every channel toward the peak, so laid on at
+one a dying mote arrives WHITE with a halo round it: a hot spark rather than a
+burning animal, and indistinguishable from the flash it is about to become.
+This is the flames' own lesson (the section on them says the same thing in the
+same words) on a second mesh. At 0.62 it comes out orange, still well over the
+bloom threshold in the red, and still plainly brighter than the throb a mote
+that merely took a hit is carrying.
+
+**And a hit that does NOT kill is a moment too.** Three sparks off the body on
+the tick the shot lands, in the orange a wound burns rather than the violet a
+mote bleeds. Without them the only sign of a non fatal hit is the wound coming
+up over the next few frames, and at the one or two pixels a mote is usually
+drawn at that is a colour changing rather than a thing being struck. It is paid
+per landing and a sweeping beam lands on dozens of motes a tick, which is why
+it is three and not thirty.
+
+**A burst LIGHTS what is round it, and that rides the shock ring.** The ring is
+already the record of what has just died, already read by every mote every tick,
+and already the right size, so the light is one more number off the same loop:
+no new pass, no new memory, no new data. It is the only way an explosion inside
+a cloud can be seen to be inside one, because the shading deliberately puts that
+part of the swarm out. What says where a kill happened is the dozen bodies
+around it coming up warm for a third of a second.
+
+It is carried in `shade.w`, the last free lane of the vector the shading already
+fills, and it lights the BODY in the body's own colour, so a violet bug goes
+warm rather than white. It sits INSIDE the lit channel, which is the one place
+that channel takes a term the field does not attenuate: the sun and the sky
+arrive from outside the cloud and have the whole of it to cross, and a fireball
+fifteen feet away is inside it with nothing in between. Being in that channel
+also means a burn fades it out along with everything else, which is right: a
+mote that is itself on fire is not also being lit by its neighbour's.
+
+**A HARD reach, and that is the whole of the tuning.** The first cut was an
+inverse square with a soft core and no cutoff, which is the honest physics and
+exactly wrong here: sixty four live bursts each throwing a fifth of their light
+at two units and a twenty fifth at five add up to a FLOOR under the entire
+swarm, and the cloud came out uniformly lit violet with every bit of the self
+shadowing washed off it. Measured as 33.6% of the picture changed against the
+same scene before it, nearly all of it the cloud going pale. The falloff goes to
+nought at `WAVE_LIGHT_R` now and the far field is nought rather than small.
+
+**And the shove went up with it**, because the explosion a player can now watch
+is the same event the shock ring always recorded: `WAVE_R` from 2.4 to 5.0 and
+`WAVE_PUSH` from 26 to 60. The swarm visibly opens where one died.
 
 ## A bug bites what it can SEE
 
@@ -715,6 +878,27 @@ position is written there is a hard clamp out of any rock, because steering can
 be beaten: a mote shoved by a blast arrives with more speed than a gradient
 takes off it in one tick. The clamp costs nothing in the normal case and is the
 only thing that makes "never inside a rock" a guarantee rather than a hope.
+
+## The swarm gets out of the way of an EXPLOSION
+
+A fireball opened in the middle of the cloud and the cloud flew through it as
+though nothing had happened: the motes inside it died, and the ones a foot
+outside carried on their line. A blast is a thing EXPANDING, so what it has to
+do to a swarm is OPEN it.
+
+It is the same sphere field the rocks and the shocks already steer on, over the
+shots the app already publishes, so it costs no new data and no new pass. Only
+the BLASTS, which are the capsules of zero length: a beam is a line, it is gone
+in a second, and a mote swerving off one would be dodging something it cannot
+see, while a blast is a place to be away from. The radius it is measured against
+is the one this tick has GROWN to, which is what makes the cloud open as the
+fireball does rather than all at once.
+
+`BLAST_MARGIN` is wider and `BLAST_SHOVE` harder than a rock's, and that is the
+difference between a thing standing still and a wall arriving: a mote has all
+day to round an asteroid, and the margin round a fireball has to be crossed in
+the fraction of a second it takes to reach it, or the push only ever lands on
+motes that are already dead.
 
 ## The reactor is buried, and only the reactor kills the ship
 
@@ -1476,6 +1660,15 @@ as distance fog was two lights.
   It is 6 rather than 40, and not nought: zero puts a hull's shadowed flank at
   the same value as the gap between two stars, and a silhouette with no
   interior is a hole in the picture rather than a ship.
+
+**And a log that does not move when the setting moves is worse than no log.**
+The line reporting where the motherships stand printed `radius * HIVE_NEAR` and
+`radius * HIVE_FAR`, which is where they stand at a stand of one and nowhere
+else, so it said the same two numbers whatever `--stand` was set to. A scene
+with the carriers brought right in reported them at their usual distance, and
+the flag looked broken while it was working: it is the thing you check the
+setting against, and it was the one thing in the run that could not have told
+you. It has the stand in it now.
 
 The general rule, and it is the one this file already keeps twice: **a picture
 that looks wrong names a symptom, not a cause.** "Distance fog" is a real
@@ -2270,6 +2463,17 @@ cargo build --release -p swarm_app
 ./target/release/swarm_app --headless --fixed-dt --motes 200 --frames 12 --screen result --out result.png
 ./target/release/swarm_app --headless --fixed-dt --sandbox --hud --fire slug,30 --motes 600 \
     --hives 2 --rocks 6 --chewers 0 --frames 150 --zoom 5 --out sandbox.png   # the range, two seconds on
+# A blast on the flagship: the crater, the fireball's own light, the swarm
+# opening. `--hud` is not decoration here, it is what registers `sandbox_fire`.
+./target/release/swarm_app --headless --fixed-dt --sandbox --hud --blast 40 --motes 800 \
+    --hives 2 --rocks 2 --chewers 0 --launch-delay 0 --frames 56 --zoom 3 --out blast.png
+# The swarm dying, which needs the swarm to have ARRIVED: `--stand` is a
+# multiplier on where the carriers sit, and a fifth puts the transit at a couple
+# of seconds instead of ten. Raise `DEATH_SPIN` to 3.0 to photograph the spiral:
+# at the shipped 0.55 only a handful of motes are going down at once.
+./target/release/swarm_app --headless --fixed-dt --motes 5000 --stand 0.22 --hives 4 \
+    --cadence 4 --chewers 0 --rocks 0 --launch-delay 0 --frames 300 --zoom 0.9 \
+    --target 8,1,2 --out kills.png
 # The Long Retreat. `--job` is the right click and `--jump` is the button,
 # since a headless run has no pointer, and `--onward` takes the map's first
 # branch so the system after a jump can be photographed.

@@ -345,11 +345,18 @@ fn spawn_hives(
             },
         );
     }
+    // WITH the stand in it. It was `radius * HIVE_NEAR` and `radius *
+    // HIVE_FAR`, which is where the carriers stand at a stand of one and
+    // nowhere else, so the line printed the same two numbers whatever
+    // `--stand` was set to and a scene with the carriers brought right in
+    // reported them at their usual distance. A log that does not move when
+    // the setting moves is worse than no log: it is the thing you check the
+    // setting against.
     info!(
         "{} motherships at {:.1} to {:.1} units, radius {:.2} each",
         scene.hives,
-        radius * HIVE_NEAR,
-        radius * HIVE_FAR,
+        radius * HIVE_NEAR * scene.stand,
+        radius * HIVE_FAR * scene.stand,
         want
     );
 }

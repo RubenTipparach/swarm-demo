@@ -132,6 +132,12 @@ struct Wave {
 /// over a swarm losing dozens a second, is the violet haze this file already
 /// warned about once. A kill is bright and BRIEF.
 const SPARKS_PER_MOTE: u32 = 11u;
+
+/// What a hit that does NOT kill throws. Small, because the thing it has to
+/// say is "that one was struck" and not "that one is gone", and the ring is
+/// shared with everything that dies: a beam sweeping a dense cloud lands on
+/// dozens of motes in a tick, and this is paid per landing.
+const HIT_SPARKS: u32 = 3u;
 const RESPAWN: f32 = 0.9;
 
 /// How many sparks a mote throws off the plating when it bites, and how often
@@ -153,6 +159,33 @@ const PH_TRANSIT: f32 = 0.0;
 const PH_CIRCLE: f32 = 1.0;
 const PH_ATTACK: f32 = 2.0;
 const PH_RETURN: f32 = 3.0;
+/// And a fifth that is not a leg of its life but the end of it: a mote that
+/// has taken a mortal hit is not gone, it is DYING, and for half a second it
+/// is out of control and on fire before it bursts.
+const PH_DYING: f32 = 4.0;
+
+/// The death spiral: how long it lasts, how hard the corkscrew pulls, how
+/// fast that pull goes round, and what is left of the mote's speed a second
+/// later.
+///
+/// A kill used to be one tick: hit, burst, gone, and the burst was the only
+/// thing that ever said a mote had been killed. That reads as motes winking
+/// out, because the thing a player is actually looking at, the bug, is not in
+/// the picture on the frame anything happens to it. Half a second of a body
+/// tumbling out of control and burning is what makes a kill an EVENT, and it
+/// costs one phase and no memory: the mote is already integrating a velocity
+/// and already drawing itself along it, so a corkscrew is an acceleration and
+/// the tumble comes for free from `basis_from` in the draw.
+const DEATH_SPIN: f32 = 0.55;
+const DEATH_TUMBLE: f32 = 30.0;
+const DEATH_RATE: f32 = 17.0;
+const DEATH_DRAG: f32 = 0.55;
+/// How often a dying mote sheds a spark, per tick. It is a TRAIL: what says
+/// the thing is coming down rather than flying.
+const DEATH_TRAIL: f32 = 0.5;
+/// And how hard it burns while it goes down. Under one on purpose: see the
+/// note where it is written.
+const DEATH_BURN: f32 = 0.62;
 
 /// What a shot takes off a mote, and how little it can have left before it
 /// breaks off for home. Two hits kill; one sends it limping.
@@ -179,8 +212,41 @@ const DEBRIS: u32 = 4u;
 /// microsecond of the tick at a million motes.
 const WAVES: u32 = 64u;
 const WAVE_LIFE: f32 = 0.7;
-const WAVE_R: f32 = 2.4;
-const WAVE_PUSH: f32 = 26.0;
+const WAVE_R: f32 = 5.0;
+const WAVE_PUSH: f32 = 60.0;
+
+/// And what a burst LIGHTS: how far the light carries, in world units, and
+/// what it is worth at the middle of it.
+///
+/// A mote beside one that has just gone up is lit by it, which is the only way
+/// an explosion inside a cloud can be seen to be inside one: the shading makes
+/// the deep swarm dark on purpose, so a burst buried in it has nothing to show
+/// against unless it lights its neighbours.
+///
+/// It rides the shock ring rather than a list of its own, because the ring is
+/// already the record of what has just died, already read by every mote every
+/// tick, and already the right size. One number, no new pass, no new memory.
+///
+/// A HARD reach, and that is the whole of the tuning. The first cut was an
+/// inverse square with a soft core and no cutoff, which is the honest physics
+/// and exactly wrong here: sixty four live bursts each throwing a fifth of
+/// their light at two units and a twenty fifth at five add up to a floor under
+/// the entire swarm, and the cloud came out uniformly lit violet with every
+/// bit of the self shadowing washed off it. What a fireball has to do is light
+/// the dozen bodies AROUND it, so the falloff goes to nought at a fixed
+/// distance and the far field is nought rather than small.
+const WAVE_LIGHT_R: f32 = 3.2;
+const WAVE_LIGHT: f32 = 2.6;
+
+/// How far out from a BLAST a mote starts getting out of the way, as a share
+/// of the radius that blast has grown to, and how hard it is shoved.
+///
+/// Wider and harder than a rock's, because a rock is a thing standing still
+/// that a mote has all day to round and a blast is a wall arriving: the margin
+/// has to be crossed in the fraction of a second the fireball takes to reach
+/// it, or the push only ever lands on motes that are already dead.
+const BLAST_MARGIN: f32 = 1.6;
+const BLAST_SHOVE: f32 = 70.0;
 
 /// How far out from a rock a mote starts turning, as a share of its radius.
 const ROCK_MARGIN: f32 = 0.55;
@@ -425,17 +491,119 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     // removed: a hit takes a share off it, two kill, and one leaves it able to
     // fly but not to fight.
     var hp = m.extra.x;
+    var leg = m.extra.y;
+    var fuse = m.extra.z;
     var hit = false;
     for (var s: u32 = 0u; s < p.shots; s = s + 1u) {
         let a = p.shot[s * 2u];
         let b = p.shot[s * 2u + 1u];
         if (capsule_hit(a.xyz, b.xyz, a.w, me)) { hit = true; break; }
     }
-    if (hit) {
+    // A mote that is already dying is past being hurt: it is going to burst on
+    // its own clock and a second shot cannot make that happen twice.
+    if (hit && leg != PH_DYING) {
         hp = hp - SHOT_BITE;
+        // ---- the hit itself ----
+        //
+        // A few sparks off the body on the tick the shot lands, which is the
+        // one moment a hit is a MOMENT. Without it the only sign of a
+        // non fatal hit is the wound coming up on the body over the next few
+        // frames, and at the one or two pixels a mote is usually drawn at
+        // that is a colour changing rather than a thing being struck.
+        //
+        // Orange, because it is a hit, and the same colour the wound burns:
+        // what is violet on a mote is the gore that comes out when it finally
+        // bursts, and this is not that.
+        let hb = atomicAdd(&counter.gpu, HIT_SPARKS);
+        for (var k: u32 = 0u; k < HIT_SPARKS; k = k + 1u) {
+            let slot = p.spark_base + ((hb + k) % p.spark_cap);
+            let h = vec3<f32>(hash(hb + k), hash(hb + k + 31u), hash(hb + k + 67u)) - 0.5;
+            var sp: Spark;
+            sp.pos_life = vec4<f32>(me, 0.16 + 0.16 * hash(hb + k + 5u));
+            sp.vel_size = vec4<f32>(m.vel_seed.xyz * 0.3 + h * 9.0,
+                                    m.pos_scale.w * (0.07 + 0.07 * hash(hb + k + 7u)));
+            let hot = 0.7 + 0.6 * hash(hb + k + 11u);
+            sp.colour_seed = vec4<f32>(4.4 * hot, 2.0 * hot, 0.5 * hot, hash(hb + k + 13u));
+            sparks[slot] = sp;
+        }
     }
 
-    if (hit && hp <= 0.0) {
+    // ---- a mortal hit starts the SPIRAL ----
+    //
+    // Not the burst. The burst is what it ENDS in, half a second later, and
+    // everything between the two is the only part of a kill a player can
+    // actually watch.
+    if (hit && hp <= 0.0 && leg != PH_DYING) {
+        leg = PH_DYING;
+        fuse = DEATH_SPIN;
+        hp = 0.0;
+    }
+
+    if (leg == PH_DYING) {
+        fuse = fuse - p.dt;
+    }
+
+    if (leg == PH_DYING && fuse > 0.0) {
+        // ---- the death spiral ----
+        //
+        // Out of control and on fire. The corkscrew is a lateral acceleration
+        // whose direction goes round the velocity as the fuse burns down, so
+        // the path is a helix that tightens as the drag takes the speed off
+        // it; and because a mote is DRAWN along its own velocity, a velocity
+        // that is turning is a body that is tumbling. Nothing here had to be
+        // added to the draw at all.
+        var v = m.vel_seed.xyz;
+        let sp0 = max(length(v), 1e-4);
+        let fwd = v / sp0;
+        var up = vec3<f32>(0.0, 1.0, 0.0);
+        if (abs(dot(fwd, up)) > 0.95) { up = vec3<f32>(1.0, 0.0, 0.0); }
+        let right = normalize(cross(up, fwd));
+        let over = cross(fwd, right);
+        // Its own phase, so a volley of kills is a dozen bugs going down
+        // differently rather than a dozen copies of one animation.
+        let th = (DEATH_SPIN - fuse) * DEATH_RATE + seed * 71.0;
+        v = v + (right * cos(th) + over * sin(th)) * DEATH_TUMBLE * p.dt;
+        // And it is losing way. Per second rather than per tick, or the spiral
+        // would be a different shape at a different frame rate, which is the
+        // trap the swarm's own drag was in.
+        v = v * pow(DEATH_DRAG, p.dt);
+        m.vel_seed = vec4<f32>(v, seed);
+        m.pos_scale = vec4<f32>(me + v * p.dt, m.pos_scale.w);
+        // It TRAILS. One spark most ticks, thrown off the body and left
+        // behind, which is what says the thing is coming down.
+        if (hash(i * 9176u + p.tick) < DEATH_TRAIL) {
+            let tb = atomicAdd(&counter.gpu, 1u);
+            let slot = p.spark_base + (tb % p.spark_cap);
+            let h = vec3<f32>(hash(tb + 3u), hash(tb + 29u), hash(tb + 71u)) - 0.5;
+            var sp: Spark;
+            sp.pos_life = vec4<f32>(me, 0.3 + 0.3 * hash(tb + 5u));
+            sp.vel_size = vec4<f32>(v * 0.2 + h * 2.0,
+                                    m.pos_scale.w * (0.10 + 0.10 * hash(tb + 7u)));
+            let hot = 0.5 + 0.6 * hash(tb + 11u);
+            sp.colour_seed = vec4<f32>(2.6 * hot, 1.0 * hot, 0.25 * hot, hash(tb + 13u));
+            sparks[slot] = sp;
+        }
+        // Burning steadily, which is the one place a wound does not throb: a
+        // mote that is going down is not pulsing, it is alight. The shading is
+        // left where it was, because a body on fire is lit by the fire and the
+        // draw fades the lit channel out under the burn anyway.
+        //
+        // And it burns at well under a FULL burn, which is the tone mapper's
+        // rule and the same one the drive flames are built on. The wound is
+        // authored at 5.0 red against 0.30 blue, and `NeutralToneMapping`
+        // desaturates a highlight by scaling every channel toward the peak, so
+        // laid on at one a dying mote arrives WHITE with a halo round it: a
+        // hot spark rather than a burning animal, and indistinguishable from
+        // the flash it is about to become. At this it comes out orange, still
+        // well over the bloom threshold in the red, and still plainly brighter
+        // than the throb a mote that merely took a hit is carrying.
+        m.extra = vec4<f32>(hp, leg, fuse, m.extra.w);
+        m.shade = vec4<f32>(m.shade.x, m.shade.y, DEATH_BURN, m.shade.w);
+        motes[i] = m;
+        return;
+    }
+
+    if (leg == PH_DYING) {
         // It comes APART. The ring is claimed with one atomic for the whole
         // burst rather than one each, so a mote's pieces stay together in the
         // buffer and cannot interleave with another's half written ones.
@@ -753,24 +921,70 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
     }
 
+    // ---- out of the way of a BLAST ----
+    //
+    // The swarm knew about a blast in exactly one way, which was dying in it:
+    // a shell went off in the middle of the cloud and the motes outside its
+    // radius flew on through the fire as though nothing had happened. A blast
+    // is a thing EXPANDING, so what it should do to the cloud is open it.
+    //
+    // The same sphere field the rocks and the shocks steer on, over the shots
+    // the app already publishes, so it costs no new data and no new pass. Only
+    // the BLASTS: a capsule of zero length. A beam is a line, it is gone in a
+    // second, and a mote that swerved off one would be dodging something it
+    // cannot see; a blast is a place to be away from.
+    //
+    // The radius here is the one this tick has GROWN to, which is what makes
+    // the cloud open as the fireball does rather than all at once.
+    for (var s: u32 = 0u; s < p.shots; s = s + 1u) {
+        let a = p.shot[s * 2u];
+        let b = p.shot[s * 2u + 1u];
+        let along = b.xyz - a.xyz;
+        if (dot(along, along) > 1e-6) { continue; }
+        let off = me - a.xyz;
+        let dr = max(length(off), 1e-4);
+        let margin = a.w * BLAST_MARGIN;
+        let sdf = dr - a.w;
+        if (sdf < margin) {
+            // Squared, as the rocks are: barely a nudge out at the edge of the
+            // margin and a hard shove for a mote about to be inside it.
+            let push = clamp((margin - sdf) / max(margin, 1e-4), 0.0, 2.0);
+            acc = acc + (off / dr) * push * push * BLAST_SHOVE;
+        }
+    }
+
     // ---- the shocks ----
     //
     // Every mote that died recently is a sphere to get out of, opening over
     // its life and fading as it goes. Same shape as the rock field and the
     // same gradient steering, so a swarm flying through its own dead reads as
     // one flowing round obstacles rather than as one ignoring them.
+    var flare = 0.0;
     for (var w: u32 = 0u; w < WAVES; w = w + 1u) {
         let wv = waves[w].at;
         let age = p.time - wv.w;
         if (age < 0.0 || age > WAVE_LIFE) { continue; }
         let off = me - wv.xyz;
         let dr = max(length(off), 1e-4);
+        let fade = 1.0 - age / WAVE_LIFE;
+        // ---- what it LIGHTS ----
+        //
+        // Outside the push, and reaching further than it, because a fireball
+        // throws light further than it throws anything else. Squared into its
+        // own reach and squared again in the fade, so a mote standing in one
+        // is washed out, one at the edge of it is untouched, and a fire dies
+        // faster than it fills.
+        if (dr < WAVE_LIGHT_R) {
+            let near = 1.0 - dr / WAVE_LIGHT_R;
+            flare = flare + WAVE_LIGHT * fade * fade * near * near;
+        }
+        // ---- and what it SHOVES ----
+        //
         // Opens fast and stops, which is what a shock does, and is the same
         // `sqrt` curve a blast's radius already uses.
         let grow = sqrt(age / WAVE_LIFE);
         let r = WAVE_R * grow * m.pos_scale.w;
         if (dr < r) {
-            let fade = 1.0 - age / WAVE_LIFE;
             acc = acc + (off / dr) * (1.0 - dr / r) * WAVE_PUSH * fade;
         }
     }
@@ -893,6 +1107,6 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (hp < 1.0) {
         throb = 0.55 + 0.45 * sin(p.time * (7.0 + 5.0 * hash(sh + 311u)) + seed * 53.0);
     }
-    m.shade = vec4<f32>(lf.x, lf.y, throb, 0.0);
+    m.shade = vec4<f32>(lf.x, lf.y, throb, min(flare, 3.0));
     motes[i] = m;
 }

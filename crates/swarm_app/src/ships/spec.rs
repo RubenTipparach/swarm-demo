@@ -143,6 +143,10 @@ pub(crate) fn spawn_ship(
     let model = model;
     let damage = DamageGrid::with_armour(&model, armour);
     let hull_entity = commands.spawn((at, Visibility::default())).id();
+    // Its drives LIGHT what is round them, which a flame made of geometry with
+    // its colour written over white does not: a ship at full burn lit the black
+    // behind it exactly as much as one drifting.
+    add_plume_light(commands, hull_entity, radius);
     match station {
         Some(station) => {
             commands.entity(hull_entity).insert(Escort { station });

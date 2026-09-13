@@ -23,6 +23,10 @@ pub(crate) struct Sandbox {
     /// `--fire WEAPON,TICK`: one shot at the dummy's centre, off centre by
     /// a little, from the camera, so a headless run can photograph a tumble.
     pub(crate) auto: Option<(Weapon, u32)>,
+    /// `--blast TICK`: one blast down the camera's own line, for the same
+    /// reason and because a blast is aimed with a cursor and a headless run
+    /// has none.
+    pub(crate) auto_blast: Option<u32>,
 }
 
 #[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
@@ -174,14 +178,23 @@ pub(crate) fn sandbox_fire(
     tex: Res<Textures>,
     windows: Query<&Window>,
     cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    flagship: Query<&Transform, With<Flagship>>,
     dummies: Query<Entity, With<Dummy>>,
+    lead: Query<&Transform, With<Flagship>>,
+    // Every hull the blast can reach: the flagship, its wing, the dummy and
+    // the carriers. A blast that only moved the swarm was a blast a player
+    // could not aim at anything.
+    mut hulls: Query<(&mut Hull, &Transform)>,
     mut fx: ResMut<LiveFx>,
     mut sparks: ResMut<SparkQueue>,
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut forge: Forge,
+    mut cube: Local<Option<Handle<Mesh>>>,
 ) {
+    let scripted = sb.auto_blast == Some(tick.tick);
+    if scripted {
+        info!("sandbox: scripted blast at tick {}", tick.tick);
+        sb.pending.push(SandboxAction::Blast);
+    }
     let pending = std::mem::take(&mut sb.pending);
     for a in pending {
         match a {
@@ -191,8 +204,8 @@ pub(crate) fn sandbox_fire(
                 }
                 spawn_dummy(
                     &mut commands,
-                    &mut meshes,
-                    &mut materials,
+                    &mut forge.meshes,
+                    &mut forge.materials,
                     &tex,
                     &scene,
                     cfg.hull_radius,
@@ -200,19 +213,31 @@ pub(crate) fn sandbox_fire(
                 sb.shots = 0;
             }
             SandboxAction::Blast => {
-                let Some(ray) = cursor_ray(&windows, &cams) else {
+                let Some(at) = blast_point(&windows, &cams, &lead, &hulls, &cfg, scripted) else {
                     continue;
                 };
-                let y0 = flagship.iter().next().map_or(0.0, |x| x.translation.y);
-                if ray.direction.y.abs() < 1e-4 {
-                    continue;
-                }
-                let t = (y0 - ray.origin.y) / ray.direction.y;
-                if t <= 0.0 {
-                    continue;
-                }
-                let at = ray.origin + *ray.direction * t;
                 let radius = cfg.hull_radius * 0.9;
+                let cube = cube
+                    .get_or_insert_with(|| forge.meshes.add(Cuboid::from_length(0.06)))
+                    .clone();
+                let (took, hit) = blast_hulls(
+                    &mut hulls,
+                    at,
+                    radius,
+                    tick.tick,
+                    cube,
+                    &mut commands,
+                    &mut forge,
+                );
+
+                // SAY what it did. The complaint that started this was that a
+                // blast was all fireball and no consequence, and a picture of
+                // an explosion cannot tell a shot that took three hundred
+                // cells off a carrier from one that went off in empty space.
+                info!(
+                    "blast at {:.1},{:.1},{:.1} r {:.1}: {} cells off {} hulls",
+                    at.x, at.y, at.z, radius, took, hit
+                );
                 fx.blasts.push(Blast {
                     at: at.to_array(),
                     radius,
@@ -222,10 +247,173 @@ pub(crate) fn sandbox_fire(
                 blast_sparks(tick.tick ^ 0xB1A5, at.to_array(), radius, 220, &mut list);
                 fx.sparked += list.len();
                 sparks.extend(list);
+                flash_light(&mut commands, at, radius, BLAST_LUMENS, tick.tick);
             }
             _ => {}
         }
     }
+}
+
+/// Where a sandbox blast goes off: whatever is in FRONT of the cursor, or its
+/// own full range into open space when the line meets nothing.
+///
+/// It used to land on the horizontal plane through the flagship, which is the
+/// nav disc's rule and wrong for a shot: aiming at a carrier standing above
+/// that plane put the blast on the floor underneath it. It is the same ray the
+/// range weapons take, against every hull rather than only the dummy, and a
+/// shot that meets nothing carries on and goes off out there, which is what a
+/// shell does.
+///
+/// A SCRIPTED blast is aimed from the camera at the FLAGSHIP, the way a
+/// scripted shot is aimed at the dummy. Two reasons, and the second is the
+/// point of the flag. The camera's own forward is the honest answer to "where
+/// is the cursor" when there is no cursor, and in the scene the harness renders
+/// it threads the gap between the flagship and the dummy, so the flag went off
+/// in empty space every time and proved nothing. And the ship this has to land
+/// on is the PLAYER's: the range weapons only ever reach a dummy, so a blast
+/// taking cells off the flagship is exactly the thing no other flag can
+/// photograph.
+fn blast_point(
+    windows: &Query<&Window>,
+    cams: &Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    lead: &Query<&Transform, With<Flagship>>,
+    hulls: &Query<(&mut Hull, &Transform)>,
+    cfg: &SwarmConfig,
+    scripted: bool,
+) -> Option<Vec3> {
+    let ray = aim_ray(windows, cams)?;
+    let ray = match scripted.then(|| lead.iter().next()).flatten() {
+        Some(xf) => Ray3d::new(
+            ray.origin,
+            Dir3::new(xf.translation - ray.origin).unwrap_or(Dir3::Z),
+        ),
+        None => ray,
+    };
+    let dir = *ray.direction;
+    let reach = cfg.hull_radius * BLAST_REACH;
+    Some(nearest_hull_hit(hulls, ray.origin, dir, reach).unwrap_or(ray.origin + dir * reach))
+}
+
+/// What a blast does to every hull it reaches: a sphere of cells off each,
+/// and the chunks those breaches throw. Returns how many cells came off and
+/// how many hulls it landed on, which is what the log reports.
+///
+/// The swarm feels the blast as a capsule, which it always did. What is new is
+/// that the HULLS do: a blast that only killed motes was an explosion a player
+/// had to take on trust.
+///
+/// The hole is `HULL_HOLE` of what the swarm feels, which is the reactor's own
+/// rule reused rather than a second number: a pressure wave goes further than
+/// the wreck it makes. At the full radius a blast is nine tenths of a hull
+/// radius and kills every cell inside it outright, so one shot took 4818 cells
+/// off a 6486 cell frigate and the range's target simply vanished. At three
+/// tenths of that it opens a crater a player can look at: 553 off a Terran
+/// frigate, measured, and the ship flies on.
+fn blast_hulls(
+    hulls: &mut Query<(&mut Hull, &Transform)>,
+    at: Vec3,
+    radius: f32,
+    tick: u32,
+    cube: Handle<Mesh>,
+    commands: &mut Commands,
+    forge: &mut Forge,
+) -> (usize, usize) {
+    let mut took = 0usize;
+    let mut hit = 0usize;
+    for (mut hull, xf) in hulls.iter_mut() {
+        if hull.dead_hull || hull.invulnerable {
+            continue;
+        }
+        let hull = &mut *hull;
+        let local = xf.to_matrix().inverse().transform_point3(at);
+        // In the hull's own frame, and so is the radius: a carrier is drawn
+        // scaled and `blast_cells` works in cells.
+        let scale = xf.scale.x.max(1e-4);
+        let hole = radius * HULL_HOLE / scale;
+        if local.length() > hull.model.radius() + hole {
+            continue;
+        }
+        let b = Blast {
+            at: local.to_array(),
+            radius: hole,
+            born: tick,
+        };
+        let breaches = hull.damage.blast_cells(&hull.model, &b, tick);
+        if breaches.is_empty() {
+            continue;
+        }
+        hull.breaches += breaches.len();
+        took += breaches.len();
+        hit += 1;
+        let chunks: Vec<Chunk> = breaches
+            .iter()
+            .map(|br| chunk_for(&hull.model, br))
+            .collect();
+        throw_chunks(
+            chunks,
+            xf,
+            cube.clone(),
+            commands,
+            &mut forge.materials,
+            &mut forge.chunks,
+        );
+    }
+    (took, hit)
+}
+
+/// How far a blast flies before it goes off in open space, in hull radii.
+/// Past the carriers, so a shot aimed at nothing still crosses the picture.
+const BLAST_REACH: f32 = 40.0;
+
+/// The nearest live cell of any hull along a ray, in the world.
+///
+/// The same walk `first_hit` does for the range, over every hull rather than
+/// over the dummies: holes included, so a blast aimed into a crater goes off
+/// on the crater's floor.
+fn nearest_hull_hit(
+    hulls: &Query<(&mut Hull, &Transform)>,
+    origin: Vec3,
+    dir: Vec3,
+    reach: f32,
+) -> Option<Vec3> {
+    let mut best: Option<(f32, Vec3)> = None;
+    for (hull, xf) in hulls.iter() {
+        let inv = xf.to_matrix().inverse();
+        let o = inv.transform_point3(origin);
+        let d = inv.transform_vector3(dir);
+        let live = |n: usize| !hull.damage.is_dead(n);
+        let Some(h) = swarm_core::ray::march(&hull.model, live, o.to_array(), d.to_array(), reach)
+        else {
+            continue;
+        };
+        let world = xf.transform_point(Vec3::from(h.point));
+        let t = world.distance(origin);
+        if best.is_none_or(|(b, _)| t < b) {
+            best = Some((t, world));
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
+/// Where a blast is aimed: the cursor's ray, or the camera's own line when
+/// there is no cursor to take one from.
+///
+/// A headless run has no window and a window with the pointer outside it has
+/// no cursor position, and in both the honest answer is the middle of the
+/// screen: a blast goes where you are LOOKING. It is also the only way a
+/// scripted blast can be aimed at all, which is what makes this provable.
+pub(crate) fn aim_ray(
+    windows: &Query<&Window>,
+    cams: &Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+) -> Option<Ray3d> {
+    if let Some(r) = cursor_ray(windows, cams) {
+        return Some(r);
+    }
+    let (_, cam_xf) = cams.iter().next()?;
+    Some(Ray3d::new(
+        cam_xf.translation(),
+        Dir3::new(cam_xf.forward().as_vec3()).unwrap_or(Dir3::NEG_Z),
+    ))
 }
 
 /// The camera's ray through the cursor, or nothing when there is no cursor.

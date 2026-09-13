@@ -33,7 +33,8 @@ struct Vertex {
     @location(10) i_life: vec4<f32>,
     // And what the cloud does to the light on it: x how much of the sun
     // reaches it through the rest of the swarm, y how much of the sky does,
-    // z the beat a wound throbs on.
+    // z the beat a wound throbs on, w how much a mote that has just burst
+    // nearby is lighting it.
     @location(11) i_shade: vec4<f32>,
 };
 
@@ -47,8 +48,8 @@ struct VertexOutput {
     // over one for a drive at transit speed.
     @location(4) glow: f32,
     // x = the sun that got through, y = the sky that got through, z = the
-    // beat a wound throbs on.
-    @location(5) shade: vec3<f32>,
+    // beat a wound throbs on, w = the fire of a burst standing next to it.
+    @location(5) shade: vec4<f32>,
     // How hurt it is: nought whole, one about to come apart.
     @location(6) hurt: f32,
 };
@@ -131,7 +132,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     // threshold, which is the sentence above going silently false.
     let speed = length(vertex.i_vel_seed.xyz);
     out.glow = (1.0 - vertex.color.a) * (0.5 + 1.4 * clamp(speed / 7.0, 0.0, 1.0));
-    out.shade = vertex.i_shade.xyz;
+    out.shade = vertex.i_shade;
     out.hurt = clamp(1.0 - vertex.i_life.x, 0.0, 1.0);
     return out;
 }
@@ -166,12 +167,28 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let sun = in.shade.x;
     let sky = in.shade.y;
     let shade = 0.088 * sky + max(dot(n, key), 0.0) * sun + 0.06 * max(dot(n, -key), 0.0) * sky;
+    // ---- and a mote that burst beside this one is a LIGHT ----
+    //
+    // The one term in this channel that the field does NOT attenuate, and for
+    // the reason the extinction exists at all: the sun and the sky arrive from
+    // outside the cloud and have the whole of it to cross, and a fireball
+    // fifteen feet away is INSIDE it, with nothing in between to stop. It is
+    // also the only way an explosion buried in a dense swarm can be seen to be
+    // buried in one, because the shading deliberately puts that part of the
+    // cloud out: what says where a kill happened is the dozen bodies around it
+    // coming up warm for a third of a second.
+    //
+    // It lights the BODY, in the body's own colour, so a violet bug goes warm
+    // rather than white, and it sits inside the lit channel so the burn fades
+    // it out along with everything else: a mote that is itself on fire is not
+    // also being lit by its neighbour's.
     // A tighter, brighter specular off the wet looking chitin, since a harsh
     // key is what a highlight needs to read. It is the sun again, so it goes
     // out with the sun.
     let h = normalize(key + vec3<f32>(0.0, 0.0, 1.0));
     let spec = pow(max(dot(n, h), 0.0), 40.0) * 0.5 * sun;
-    let body = in.color.rgb * shade + vec3<f32>(spec);
+    let flare = vec3<f32>(1.30, 0.86, 0.52) * in.shade.w;
+    let body = in.color.rgb * (shade + flare) + vec3<f32>(spec);
 
     // ---- the emissive channel ----
     //

@@ -55,13 +55,35 @@ from texkit import (   # noqa: E402
     tri, value_noise, wrap_delta,
 )
 
-# The PNGs SHIP, so they live where the client's build copies from, and the
-# mockup gets the same bytes as data URIs because it takes no network. One home
-# for the pixels: two copies of a binary in a repo is two things to keep in
-# step and no way to notice when they part.
-OUT = ROOT / "web" / "public" / "surf"
+# The PNGs SHIP, so they live where the build reads them from, and the mockup
+# gets the same bytes as data URIs because it takes no network. One home for
+# the pixels: two copies of a binary in a repo is two things to keep in step
+# and no way to notice when they part.
+#
+# That home is `crates/swarm_app/assets` HERE. This tool came over from
+# redux-tribes pointing at that project's `web/public/surf`, which does not
+# exist in this repo, so the finishes on disk had been copied in by hand and a
+# run of the generator would have written them somewhere nothing reads. Exactly
+# the two copies the paragraph above warns about, with the generator on the far
+# side of the split. The mockup bundle is written only where there is a mockup
+# to read it.
+OUT = ROOT / "crates" / "swarm_app" / "assets" / "textures" / "surf"
 MOCKUP = ROOT / "mockups" / "surface-finishes"
 SIZE = 128
+
+# What a finish's authored strength is multiplied by.
+#
+# A FIFTH. The table below is redux-tribes' own, and at its numbers a hull in
+# this game reads as hammered metal: every cell face a few units across carries
+# a full rivet pattern, so a frigate at any range is a mass of highlights and
+# the SHAPE of it, which is what the voxels are for, comes second to the tooth
+# on its plating. That project draws its hulls a few metres from the camera in
+# an inspector; this one draws a fleet.
+#
+# One knob rather than ten edited numbers, so the finishes keep their relative
+# strengths: a rivet is still deeper than a weave, and the ratio a reader of
+# that table sees is the ratio that ships.
+NORMAL_SCALE = 0.2
 
 
 # ------------------------------------------------------- armour finishes --
@@ -756,7 +778,8 @@ def main() -> int:
 
     for key, _label, _blurb, build, strength in ARMOUR:
         h = build()
-        files.append((f"armour_{key}_n.png", normal_png(h, SIZE, SIZE, strength, True)))
+        files.append((f"armour_{key}_n.png",
+                      normal_png(h, SIZE, SIZE, strength * NORMAL_SCALE, True)))
 
     for key, _label, _blurb, build, variants in WINDOWS:
         made = [build(v) for v in range(variants)]
@@ -804,12 +827,14 @@ def main() -> int:
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
+    # Only where there is a mockup to read it: this repo has no `mockups/`,
+    # and writing the bundle would create a directory nothing opens.
     bundle = MOCKUP / "textures.js"
-    if args.check:
-        ok = emit(bundle, js, True) and ok
-    else:
-        bundle.parent.mkdir(parents=True, exist_ok=True)
-        bundle.write_bytes(js)
+    if MOCKUP.exists():
+        if args.check:
+            ok = emit(bundle, js, True) and ok
+        else:
+            bundle.write_bytes(js)
 
     total = sum(len(d) for _p, d in files)
     if args.check:
