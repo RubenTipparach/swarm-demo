@@ -44,6 +44,18 @@ body {
 }
 .hint b { color: var(--teal); font-weight: 400; }
 
+/* The skin picker belongs to the PAGE, not to the HUD: it is a thing this
+   document does to the mockup, and a control that wore the skin it sets would
+   be unreadable in exactly the moment somebody needed to press it again. */
+.skins { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.skins button {
+  font-family: inherit; font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 6px 11px; cursor: pointer; color: var(--dim);
+  background: #0a141c; border: 1px solid #1c2c3a;
+}
+.skins button:hover { color: var(--ink); border-color: #2e5f78; }
+.skins button[aria-pressed="true"] { color: var(--gold); border-color: var(--gold-dim); background: #17160b; }
+
 /* ---------- the game stage ---------- */
 .stage {
   position: relative; width: 100%; aspect-ratio: 16 / 9;
@@ -51,41 +63,87 @@ body {
   user-select: none; touch-action: none;
 }
 #world { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* The HUD's palette is a SCOPE, not a global, which is what lets a skin be a
+   skin. Every colour in the chrome was written where it was used (a hundred
+   and twenty five literals over three hundred lines) and a colour written a
+   hundred and twenty five times is a theme nobody can change: they are twenty
+   roles now, declared here, and a skin is a row that overwrites them on this
+   element alone. So the workbench under the stage keeps its own look while
+   the HUD wears whatever it was handed. */
 #hud {
   position: absolute; left: 0; top: 0; width: 1600px; height: 900px;
   transform-origin: 0 0; pointer-events: none; z-index: 2;
   font-size: 13px; line-height: 1;
+  font-family: var(--hud-font);
+  /* Stated here and not left to the page. `color` is INHERITED as a computed
+     value, so `body { color: var(--ink) }` resolves against the root's ink and
+     hands every node inside the HUD that answer: a skin could set --ink all it
+     liked and the text stayed the colour the document booted in. A property
+     has to be re-resolved in the scope the token lives in. */
+  color: var(--ink);
+
+  --g-deep: #04121b;   /* the darkest ground: inside a box, behind a bar */
+  --g-fill: #0d2231;   /* a filled cell that is not a button */
+  --btn-a: #123549;    /* a button's top */
+  --btn-b: #0a1f2c;    /* a button's bottom */
+  --row: rgba(9,26,37,.85);      /* a list row over the world */
+  --row-hot: rgba(18,46,63,.82); /* the same row, pointed at */
+  --hover: rgba(90,170,200,.16); /* a wash where there is no row to light */
+  --tip: rgba(5,16,26,.94);      /* a tooltip, which may not be see through */
+  --edge: #1d3f52;     /* every ordinary border and divider */
+  --edge-hot: #2e5f78; /* a border that belongs to a control */
+  --edge-lit: #47869e; /* that border, pointed at */
+  --ink-hot: #7fd8ea;  /* the text on a control */
+  --gold-a: #3f3307;   /* armed: top */
+  --gold-b: #191504;   /* armed: bottom */
+  --go-a: #14501e;     /* launch: top */
+  --go-b: #07260d;     /* launch: bottom */
+  --go-lit: #1e8c2f;   /* launch: armed */
+  --go-edge: #2c8a3a;
+  --go-ink: #9df06f;
+  --go-ink-hot: #d4ffbe;
 }
 #hud > * { pointer-events: auto; }
 #hud button { font-family: inherit; color: inherit; cursor: pointer; padding: 0; }
+/* A skin that draws its controls as RAISED light rather than as a border gets
+   one line each. Windows 98 is a bevel and nothing else, and a bevel is an
+   inset shadow, so a skin with no opinion leaves both at none and every other
+   skin is untouched. */
+#hud button { box-shadow: var(--bevel, none); }
+#hud button[aria-pressed="true"] { box-shadow: var(--bevel-in, var(--bevel, none)); }
 #hud button:focus-visible { outline: 1px solid var(--cyan); outline-offset: -2px; }
 
 /* Nine sliced frames. The url is a 48 px texture baked at boot and the slice
    is 16, so a corner bracket is the same size on a 24 px strip and on a 724 px
    panel and nothing stretches that should not. */
-.nine   { border: 16px solid transparent; border-image: var(--n-panel) 16 fill / 16px stretch; }
-.nine-w { border: 12px solid transparent; border-image: var(--n-well) 16 fill / 12px stretch; }
+.nine   { border: 16px solid transparent; border-image: var(--n-panel) 16 fill / 16px var(--n-rep); }
+.nine-w { border: 12px solid transparent; border-image: var(--n-well) 16 fill / 12px var(--n-rep); }
 
 .ru { position: absolute; right: 6px; top: 2px; width: 428px; height: 44px;
       display: flex; align-items: stretch; gap: 8px; }
 .ru .res { display: flex; align-items: center; gap: 7px; }
 .ru .res svg { width: 20px; height: 20px; flex: none; }
-.ru .ore { padding-right: 10px; border-right: 1px solid #24485c; }
+.ru .ore { padding-right: 10px; border-right: 1px solid var(--edge); }
 .ru .ore svg { color: var(--ore); }
-.ru .ore .v { font-family: "Share Tech Mono", monospace; font-size: 19px; color: var(--ore); }
+.ru .ore .v { font-family: var(--hud-mono); font-size: 19px; color: var(--ore); }
 .ru .cry { flex: 1; min-width: 0; }
 .ru .cry svg { color: var(--cry); }
 .fuel { flex: 1; min-width: 0; }
 .fn { display: flex; align-items: baseline; gap: 5px; line-height: 1; }
-.fn b { font-family: "Share Tech Mono", monospace; font-size: 16px; font-weight: 400; color: var(--cry); }
-.fn i { font-style: normal; font-family: "Share Tech Mono", monospace; font-size: 11px; color: var(--faint); }
-.fbar { margin-top: 3px; height: 5px; background: #0a1b22; border: 1px solid #1c4048; }
+.fn b { font-family: var(--hud-mono); font-size: 16px; font-weight: 400; color: var(--cry); }
+.fn i { font-style: normal; font-family: var(--hud-mono); font-size: 11px; color: var(--faint); }
+.fbar { margin-top: 3px; height: 5px; background: var(--g-deep); border: 1px solid var(--edge); }
 .fbar span { display: block; height: 100%; width: 0; background: var(--cry); transition: width .3s; }
 .ru[data-jump="1"] .fbar span { background: var(--green); }
 .ru[data-jump="1"] .fn b, .ru[data-jump="1"] .fn i { color: var(--green); }
 
-.gt { position: absolute; left: 12px; top: 10px; font-family: "Share Tech Mono", monospace;
-      font-size: 12.5px; color: var(--ink); text-shadow: 0 0 6px #000; }
+/* The clock and the roster counts are the only readouts that sit on the WORLD
+   rather than on a panel, and space is black under every skin. So they have
+   their own ink: a parchment HUD writes in sepia on its own pages and in chalk
+   on the sky, because a skin may change what a panel is made of and may not
+   change what is behind the window. */
+.gt { position: absolute; left: 12px; top: 10px; font-family: var(--hud-mono);
+      font-size: 12.5px; color: var(--sky-ink); text-shadow: 0 0 6px #000; }
 
 /* left roster */
 .roster { position: absolute; left: 8px; top: 50px; width: 38px; }
@@ -96,91 +154,91 @@ body {
         background: transparent; border: 0; padding: 0 0 3px; font-family: inherit; }
 .rrow img { position: absolute; inset: 0 0 3px; width: 38px; height: 24px; object-fit: contain; }
 .rrow .c { position: absolute; right: 0; bottom: 1px; padding: 0 2px; line-height: 1.2;
-           background: rgba(3,9,14,.72); font-family: "Share Tech Mono", monospace;
-           font-size: 10.5px; color: var(--green); }
-.rrow:hover { background: rgba(90,170,200,.16); }
+           background: var(--row); font-family: var(--hud-mono);
+           font-size: 10.5px; color: var(--green); text-shadow: 0 0 5px #000; }
+.rrow:hover { background: var(--hover); }
 .rtip { position: absolute; left: 42px; padding: 3px 7px; white-space: nowrap; pointer-events: none;
-        background: rgba(5,16,26,.94); border: 1px solid var(--edge-hot, #2d4258);
+        background: var(--tip); border: 1px solid var(--edge-hot);
         font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); z-index: 8; }
-.rtip b { font-family: "Share Tech Mono", monospace; letter-spacing: 0; color: var(--teal);
+.rtip b { font-family: var(--hud-mono); letter-spacing: 0; color: var(--teal);
           text-transform: none; margin-left: 6px; }
 
 /* right panel */
 .rpanel { position: absolute; right: 6px; top: 50px; width: 428px; height: 698px;
           display: flex; flex-direction: column; }
 .phead { display: flex; align-items: center; height: 26px; margin: -8px -8px 5px;
-         background: linear-gradient(180deg,#2e2506,#15150a); border: 1px solid var(--gold-dim); padding: 0 4px; }
+         background: linear-gradient(180deg,var(--gold-a),var(--gold-b)); border: 1px solid var(--gold-dim); padding: 0 4px; }
 .phead .t { font-weight: 700; font-size: 15px; letter-spacing: 0.1em; color: var(--gold); text-transform: uppercase; }
-.phead .x { margin-left: auto; width: 20px; height: 18px; background: #1b1a08;
+.phead .x { margin-left: auto; width: 20px; height: 18px; background: var(--gold-b);
             border: 1px solid var(--gold-dim); color: var(--gold); font-size: 12px; line-height: 1; }
 .pbody { flex: 1; display: flex; flex-direction: column; gap: 4px; min-height: 0; }
 
 .sel1 { height: 21px; display: flex; align-items: center; padding: 0 6px;
-  background: linear-gradient(180deg,#123549,#0a1f2c); border: 1px solid #2e5f78;
-  font-size: 13.5px; font-weight: 600; color: #bfe6f5; letter-spacing: 0.04em; }
+  background: linear-gradient(180deg,var(--btn-a),var(--btn-b)); border: 1px solid var(--edge-hot);
+  font-size: 13.5px; font-weight: 600; color: var(--ink-hot); letter-spacing: 0.04em; }
 .sel1 .ca { margin-left: auto; color: var(--gold); font-size: 9px; }
 .pstage { display: flex; align-items: stretch; gap: 4px; }
-.pstage .arw { width: 18px; background: #0d2231; border: 1px solid #2b5268; color: var(--teal); font-size: 10px; }
-.schembox { flex: 1; height: 124px; position: relative; background: #04121b; border: 1px solid #1d4459; overflow: hidden; }
+.pstage .arw { width: 18px; background: var(--g-fill); border: 1px solid var(--edge); color: var(--teal); font-size: 10px; }
+.schembox { flex: 1; height: 124px; position: relative; background: var(--g-deep); border: 1px solid var(--edge); overflow: hidden; }
 .schembox img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.hbar { height: 6px; background: #0a1a12; border: 1px solid #1c3a22; }
+.hbar { height: 6px; background: var(--g-deep); border: 1px solid var(--edge); }
 .hbar span { display: block; height: 100%; background: var(--green); }
 
 .slots div { display: flex; font-size: 13.5px; padding: 1px 3px; }
-.slots div .v { margin-left: auto; font-family: "Share Tech Mono", monospace; font-size: 12.5px; color: var(--teal); }
+.slots div .v { margin-left: auto; font-family: var(--hud-mono); font-size: 12.5px; color: var(--teal); }
 
-.wide { width: 100%; height: 21px; background: linear-gradient(180deg,#123549,#0a1f2c);
-        border: 1px solid #2e5f78; color: #7fd8ea; font-weight: 600; font-size: 12.5px;
+.wide { width: 100%; height: 21px; background: linear-gradient(180deg,var(--btn-a),var(--btn-b));
+        border: 1px solid var(--edge-hot); color: var(--ink-hot); font-weight: 600; font-size: 12.5px;
         letter-spacing: 0.18em; text-transform: uppercase; }
 
 .cats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
 .cats button { height: 42px; display: flex; align-items: center; gap: 5px; padding: 0 5px 0 2px;
-               background: #0b1e2b; border: 1px solid #26495c; color: #5f92a8; text-align: left; }
+               background: var(--g-fill); border: 1px solid var(--edge); color: var(--dim); text-align: left; }
 .cats .ic { width: 46px; height: 28px; flex: none; }
 .cats .tx { min-width: 0; }
 .cats .tx b { display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.07em;
-              text-transform: uppercase; color: #a8c4d4; line-height: 1.2; }
-.cats .tx i { font-style: normal; font-family: "Share Tech Mono", monospace; font-size: 10px; color: #4e6274; }
-.cats button:hover { border-color: #47869e; }
-.cats button[aria-pressed="true"] { background: linear-gradient(180deg,#3f3307,#191504);
+              text-transform: uppercase; color: var(--ink); line-height: 1.2; }
+.cats .tx i { font-style: normal; font-family: var(--hud-mono); font-size: 10px; color: var(--faint); }
+.cats button:hover { border-color: var(--edge-lit); }
+.cats button[aria-pressed="true"] { background: linear-gradient(180deg,var(--gold-a),var(--gold-b));
                                     border-color: var(--gold); color: var(--gold); }
 .cats button[aria-pressed="true"] .tx b { color: var(--gold); }
-.cats button[aria-pressed="true"] .tx i { color: #b99433; }
+.cats button[aria-pressed="true"] .tx i { color: var(--gold-dim); }
 
 .cathead { display: flex; align-items: center; height: 19px; padding: 0 3px;
-           background: #17160b; border-bottom: 1px solid var(--gold-dim); }
+           background: var(--gold-b); border-bottom: 1px solid var(--gold-dim); }
 .cathead .t { font-weight: 700; font-size: 13.5px; letter-spacing: 0.08em; color: var(--gold); text-transform: uppercase; }
-.cathead .c { margin-left: auto; font-family: "Share Tech Mono", monospace; font-size: 12.5px; color: var(--gold); }
+.cathead .c { margin-left: auto; font-family: var(--hud-mono); font-size: 12.5px; color: var(--gold); }
 
 .list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
 .list::-webkit-scrollbar { width: 7px; }
-.list::-webkit-scrollbar-track { background: #071620; }
-.list::-webkit-scrollbar-thumb { background: #24485c; }
+.list::-webkit-scrollbar-track { background: var(--g-deep); }
+.list::-webkit-scrollbar-thumb { background: var(--edge); }
 .brow { display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 6px 0 0;
-        background: rgba(9,26,37,.72); border: 1px solid #1d3f52; width: 100%; text-align: left; }
-.brow:hover { border-color: #47869e; background: rgba(18,46,63,.82); }
-.brow[data-on="1"] { border-color: var(--gold); background: linear-gradient(180deg,rgba(62,50,7,.85),rgba(12,28,38,.85)); }
+        background: var(--row); border: 1px solid var(--edge); width: 100%; text-align: left; }
+.brow:hover { border-color: var(--edge-lit); background: var(--row-hot); }
+.brow[data-on="1"] { border-color: var(--gold); background: linear-gradient(180deg,var(--gold-a),var(--btn-b)); }
 .brow[data-poor="1"] { opacity: .4; }
-.brow .go { width: 17px; align-self: stretch; background: #0d2231; border-right: 1px solid #24485c;
+.brow .go { width: 17px; align-self: stretch; background: var(--g-fill); border-right: 1px solid var(--edge);
             color: var(--teal); font-size: 9px; display: flex; align-items: center; justify-content: center; }
 .brow img.ic { width: 96px; height: 34px; object-fit: contain; }
 .brow .pips { display: grid; grid-template-columns: repeat(3, 6px); gap: 2px; }
-.brow .pips i { width: 6px; height: 6px; background: #16323f; display: block; }
+.brow .pips i { width: 6px; height: 6px; background: var(--g-fill); display: block; }
 .brow .pips i.on { background: var(--teal); }
 .brow .nm { margin-left: auto; text-align: right; }
-.brow .nm b { display: block; font-weight: 700; font-size: 14px; color: #7fd8ea; letter-spacing: 0.03em; }
+.brow .nm b { display: block; font-weight: 700; font-size: 14px; color: var(--ink-hot); letter-spacing: 0.03em; }
 .brow[data-on="1"] .nm b { color: var(--gold); }
-.brow .nm i { font-style: normal; font-family: "Share Tech Mono", monospace; font-size: 13px; color: #7fd8ea; }
+.brow .nm i { font-style: normal; font-family: var(--hud-mono); font-size: 13px; color: var(--ink-hot); }
 .brow[data-poor="1"] .nm i { color: var(--red); }
 .empty { padding: 10px 6px; font-size: 13px; color: var(--faint); }
 
 .qhead { display: flex; align-items: center; height: 19px; padding: 0 2px 0 5px;
-         background: rgba(9,22,31,.82); border: 1px solid #1d3f52; font-size: 13px; color: var(--dim); }
+         background: var(--row); border: 1px solid var(--edge); font-size: 13px; color: var(--dim); }
 .qhead .b { margin-left: auto; display: flex; gap: 2px; }
-.qhead .b button { width: 17px; height: 15px; background: #123549; border: 1px solid #2e5f78;
-                   color: #7fd8ea; font-size: 8px; line-height: 1; }
+.qhead .b button { width: 17px; height: 15px; background: var(--btn-a); border: 1px solid var(--edge-hot);
+                   color: var(--ink-hot); font-size: 8px; line-height: 1; }
 .queue { height: 104px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 3px; overflow: hidden; }
-.qslot { position: relative; width: 98px; height: 30px; background: rgba(9,26,37,.85); border: 1px solid #1d3f52;
+.qslot { position: relative; width: 98px; height: 30px; background: var(--row); border: 1px solid var(--edge);
          display: flex; align-items: center; gap: 4px; padding: 0 3px; overflow: hidden; }
 .qslot img { width: 40px; height: 20px; object-fit: contain; flex: none; }
 .qslot .qi { width: 18px; height: 18px; flex: none; color: var(--gold); }
@@ -189,67 +247,67 @@ body {
 .qslot[data-wait="1"] { opacity: .48; border-style: dashed; }
 .queue { overflow-y: auto; }
 .queue::-webkit-scrollbar { width: 6px; }
-.queue::-webkit-scrollbar-track { background: #071620; }
-.queue::-webkit-scrollbar-thumb { background: #24485c; }
-.qslot .qn { font-size: 10px; line-height: 1.05; color: #9fd0e0; overflow: hidden; }
+.queue::-webkit-scrollbar-track { background: var(--g-deep); }
+.queue::-webkit-scrollbar-thumb { background: var(--edge); }
+.qslot .qn { font-size: 10px; line-height: 1.05; color: var(--ink); overflow: hidden; }
 .qslot .f { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--green); }
 
 /* bottom rows */
 .groups { position: absolute; left: 452px; top: 752px; width: 700px; height: 22px; display: flex; gap: 1px; }
-.groups button { flex: 1; background: linear-gradient(180deg,#123549,#0a1f2c); border: 1px solid #2e5f78;
-                 font-family: "Share Tech Mono", monospace; font-size: 12px; color: #7fd8ea; }
-.groups button[aria-pressed="true"] { background: linear-gradient(180deg,#4f3f06,#231c04); border-color: var(--gold); color: var(--gold); }
+.groups button { flex: 1; background: linear-gradient(180deg,var(--btn-a),var(--btn-b)); border: 1px solid var(--edge-hot);
+                 font-family: var(--hud-mono); font-size: 12px; color: var(--ink-hot); }
+.groups button[aria-pressed="true"] { background: linear-gradient(180deg,var(--gold-a),var(--gold-b)); border-color: var(--gold); color: var(--gold); }
 
 .tabs { display: flex; gap: 2px; }
-.tabs button { height: 24px; background: linear-gradient(180deg,#123549,#0a1f2c);
-               border: 1px solid #2e5f78; color: #7fd8ea; font-weight: 700; font-size: 13px;
+.tabs button { height: 24px; background: linear-gradient(180deg,var(--btn-a),var(--btn-b));
+               border: 1px solid var(--edge-hot); color: var(--ink-hot); font-weight: 700; font-size: 13px;
                letter-spacing: 0.14em; text-transform: uppercase; }
-.tabs button[aria-pressed="true"] { background: linear-gradient(180deg,#4f3f06,#231c04); border-color: var(--gold); color: var(--gold); }
+.tabs button[aria-pressed="true"] { background: linear-gradient(180deg,var(--gold-a),var(--gold-b)); border-color: var(--gold); color: var(--gold); }
 .ltabs { position: absolute; left: 6px; top: 776px; }
 .ltabs button { width: 142px; }
 .mtabs { position: absolute; left: 452px; top: 776px; width: 700px; }
 .mtabs button { flex: 1; }
 .rtabs { position: absolute; right: 6px; top: 776px; }
 .rtabs button { width: 140px; }
-.rtabs button.go { background: linear-gradient(180deg,#14501e,#07260d); border-color: #2c8a3a; color: #9df06f; }
-.rtabs button.go[aria-pressed="true"] { background: linear-gradient(180deg,#1e8c2f,#0b3d14); color: #d4ffbe; }
+.rtabs button.go { background: linear-gradient(180deg,var(--go-a),var(--go-b)); border-color: var(--go-edge); color: var(--go-ink); }
+.rtabs button.go[aria-pressed="true"] { background: linear-gradient(180deg,var(--go-lit),var(--go-b)); color: var(--go-ink-hot); }
 
 .brow3 { position: absolute; left: 6px; right: 6px; top: 802px; height: 92px; display: flex; gap: 6px; }
 .cmd { width: 344px; display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: repeat(2, 1fr); gap: 3px; }
-.cmd button { background: radial-gradient(circle at 50% 28%, #17415a, #071a26); border: 1px solid #2a5c74;
+.cmd button { background: radial-gradient(circle at 50% 28%, var(--btn-a), var(--btn-b)); border: 1px solid var(--edge-hot);
               display: flex; align-items: center; justify-content: center; }
-.cmd button svg { width: 23px; height: 23px; color: #7fd8ea; }
-.cmd button[aria-pressed="true"] { border-color: var(--gold); background: radial-gradient(circle at 50% 28%, #634a10, #1c1504); }
+.cmd button svg { width: 23px; height: 23px; color: var(--ink-hot); }
+.cmd button[aria-pressed="true"] { border-color: var(--gold); background: radial-gradient(circle at 50% 28%, var(--gold-a), var(--gold-b)); }
 .cmd button[aria-pressed="true"] svg { color: var(--gold); }
 
 .unit { width: 520px; display: flex; flex-direction: column; gap: 4px; }
 .unit .kv { display: flex; gap: 10px; font-size: 15px; }
 .unit .kv .k { width: 56px; font-weight: 600; letter-spacing: 0.08em; color: var(--dim); text-transform: uppercase; font-size: 13px; padding-top: 1px; }
 .unit .kv .v { color: var(--gold); font-weight: 600; }
-.unit .kv .v.t { color: #7fd8ea; }
+.unit .kv .v.t { color: var(--ink-hot); }
 .unit .stats { margin-top: auto; display: flex; gap: 4px; }
 .unit .stats div { flex: 1; height: 22px; display: flex; align-items: center; gap: 6px; padding: 0 6px;
-                   background: rgba(9,26,37,.85); border: 1px solid #1d3f52; }
+                   background: var(--row); border: 1px solid var(--edge); }
 .unit .stats svg { width: 13px; height: 13px; color: var(--teal); flex: none; }
-.unit .stats b { font-family: "Share Tech Mono", monospace; font-size: 13px; font-weight: 400; color: var(--ink); }
+.unit .stats b { font-family: var(--hud-mono); font-size: 13px; font-weight: 400; color: var(--ink); }
 
 .thumb { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-.thumb .box { flex: 1; position: relative; background: #04121b; border: 1px solid #1d4459; overflow: hidden; }
+.thumb .box { flex: 1; position: relative; background: var(--g-deep); border: 1px solid var(--edge); overflow: hidden; }
 .thumb .box img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 
 .mods { width: 428px; display: flex; flex-direction: column; gap: 3px; }
 .mh { display: flex; align-items: center; height: 12px; font-size: 10px; letter-spacing: 0.16em;
       text-transform: uppercase; color: var(--dim); }
-.mh b { margin-left: auto; font-family: "Share Tech Mono", monospace; font-size: 10px;
+.mh b { margin-left: auto; font-family: var(--hud-mono); font-size: 10px;
         font-weight: 400; color: var(--teal); }
 .mgrid { flex: 1; display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
 .mgrid button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-                background: linear-gradient(180deg,#0f2d3e,#071a26); border: 1px solid #2a5c74; color: #5f92a8; }
+                background: linear-gradient(180deg,var(--btn-a),var(--btn-b)); border: 1px solid var(--edge-hot); color: var(--dim); }
 .mgrid button svg { width: 19px; height: 19px; }
 .mgrid button span { font-size: 8px; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600; }
-.mgrid button:hover { border-color: #47869e; }
+.mgrid button:hover { border-color: var(--edge-lit); }
 .mgrid button[data-on="in"] { border-color: var(--gold); color: var(--gold);
-                              background: linear-gradient(180deg,#3f3307,#191504); }
+                              background: linear-gradient(180deg,var(--gold-a),var(--gold-b)); }
 .mgrid button[data-on="work"] { border-color: var(--cyan); color: var(--cyan); }
 .mgrid button[data-on="no"] { opacity: .28; cursor: default; }
 
@@ -389,7 +447,8 @@ body {
   <header class="masthead">
     <div>
       <h1>Swarm <span>Command</span></h1>
-      <p>The skirmish HUD in Homeworld's own shape: nine sliced translucent frames over the live field, every ship shown by a schematic baked off its own voxel model and every class by a drawn mark that serves any navy. Everything on it works.</p>
+      <p>The skirmish HUD in Homeworld's own shape: nine sliced translucent frames over the live field, every ship shown by a schematic baked off its own voxel model and every class by a drawn mark that serves any navy. Everything on it works, and the row under this one
+      reskins the whole of it.</p>
     </div>
     <div class="sp"></div>
     <div class="hint">
@@ -397,6 +456,8 @@ body {
       <b>build row</b> queue it &nbsp;&nbsp;<b>1..0</b> control group &nbsp;&nbsp;<b>tabs</b> build, research, launch
     </div>
   </header>
+
+  <div class="skins" id="skins" aria-label="HUD skin"></div>
 
   <div class="stage" id="stage">
     <canvas id="world"></canvas>
@@ -520,6 +581,37 @@ body {
   <section class="sect">
     <h2>What each decision is</h2>
     <div class="grid2">
+      <div>
+        <h3>A SKIN is a row, and the chrome had to become a layer first</h3>
+        <p>Seven of them, above the stage: the fleet's own, Windows 98, Vista, wood, parchment, brushed steel
+        and the swarm's chitin. A skin owns the palette, the two typefaces, the four frame textures and the
+        style they are drawn in, whether a frame's middle stretches or tiles, and the ink a schematic is baked
+        in. It owns nothing else. The layout, the rules and every number are the same on all seven, which is
+        the claim the picker exists to let you check rather than take on trust.</p>
+        <p>What it cost was finding out the chrome was NOT a layer. A hundred and twenty five colours were
+        written where they were used, over three hundred lines of stylesheet, and a colour written a hundred
+        and twenty five times is a theme nobody can change. They are twenty roles now (a ground, a fill, a
+        button's two ends, a row and the row pointed at, three grades of edge, the ink on a control, armed,
+        launch) declared on the HUD element alone, so the workbench you are reading keeps its own look while
+        the HUD wears whatever it was handed.</p>
+        <p>Two things caught by the pictures rather than by the code. <b>Colour is inherited as a COMPUTED
+        value</b>, so the page's own <code>body { color: var(--ink) }</code> resolved against the document's
+        ink and handed it to every node in the HUD: a skin could set that token all it liked and the text
+        stayed the colour the page booted in. A property has to be re-resolved in the scope its token lives
+        in. And <b>the clock and the roster counts sit on the WORLD</b>, not on a panel, and space is black
+        under every skin, so they have an ink of their own: a parchment HUD writes in sepia on its own pages
+        and in chalk on the sky.</p>
+        <p>Wood, parchment, steel and chitin TILE their middles rather than stretching them, because a grain
+        pulled across a seven hundred pixel panel is a smear. That is why every texture here is whole numbers
+        of cycles across its tile: it wraps by construction, so there is no seam down the centre of a panel.
+        Windows 98 is the one that needed something other than a texture, since a 98 frame is not a border, it
+        is two rings of light and shade and an inset shadow on every control, and <code>sunk</code> swapping
+        both rings is the whole difference between a button and a field.</p>
+        <p>The honest cost is that a schematic is a BAKE, so the only way to draw one in another ink is to
+        draw it again: a skin change re-renders all eighteen ship pictures and the four frames, measured at
+        about 1.2 seconds in this software rasterised container and far less on a GPU. That is the boot cost
+        paid over, and paying it is better than a picture that disagrees with the panel it sits in.</p>
+      </div>
       <div>
         <h3>One layer at a fixed design size</h3>
         <p>The HUD is authored at 1600 by 900 and scaled to whatever the viewport is, which is how a game does it
@@ -948,15 +1040,19 @@ body {
     });
     var grp = new THREE.Group();
     var geo = geomOf(mesh, model);
-    // The body fills dark and the subsystems fill orange; the lines are every
-    // greedy quad's own border, which is where the panel detail comes from.
+    // The body fills dark and the subsystems fill in the machinery's colour;
+    // the lines are every greedy quad's own border, which is where the panel
+    // detail comes from. Every one of those four is the SKIN's, because a
+    // schematic is drawn in the HUD's own ink: a cyan readout on parchment is
+    // a picture somebody pasted on rather than a page.
+    var P = skin.plan;
     grp.add(new THREE.Mesh(geo, new THREE.ShaderMaterial({
       vertexShader: SCHEM_VS, fragmentShader: SCHEM_FS,
-      uniforms: { hull: { value: new THREE.Color(0x0d3a52) }, subs: { value: new THREE.Color(0x8e3d05) } }
+      uniforms: { hull: { value: new THREE.Color(P.hull) }, subs: { value: new THREE.Color(P.subs) } }
     })));
     grp.add(new THREE.LineSegments(lineGeomOf(mesh, model), new THREE.ShaderMaterial({
       vertexShader: LINE_VS, fragmentShader: LINE_FS,
-      uniforms: { hull: { value: new THREE.Color(0x3fc8e8) }, subs: { value: new THREE.Color(0xff9a3c) } }
+      uniforms: { hull: { value: new THREE.Color(P.line) }, subs: { value: new THREE.Color(P.lsub) } }
     })));
     B.scene.add(grp);
     frame(B.cam, model, o, w, h);
@@ -983,7 +1079,7 @@ body {
         img.data[t + 2] = buf[s + 2]; img.data[t + 3] = buf[s + 3];
       }
     }
-    rim(img, w, h, o.rim, o.rings);
+    rim(img, w, h, P.rim, o.rings);
     g.putImageData(img, 0, 0);
     // Scanlines: what says "a readout of a ship" rather than "a picture of
     // one". SOURCE-ATOP, or the pass paints the whole canvas and every pixel
@@ -1068,16 +1164,6 @@ body {
     s.mesh = greedy(s.model);
     s.cells = 0;
     for (var i = 0; i < s.model.g.length; i++) { if (s.model.g[i]) { s.cells++; } }
-    s.schem = bake(s.model, s.mesh, {
-      w: 440, h: 140, view: "plan", pad: 1.05, rim: [126, 234, 255], rings: 2
-    }).toDataURL();
-    // The roster's is SQUARE, and that is what normalises them: the wide bake
-    // fits a hull's extents into a 3:1 frame, so a long frigate filled it and
-    // a squat platform came out a third the size in the same row. In a square
-    // every ship fills the same box, whichever way it is long.
-    s.thumb = bake(s.model, s.mesh, {
-      w: 96, h: 64, view: "plan", pad: 1.04, rim: [126, 234, 255], rings: 1
-    }).toDataURL();
   });
 
   // A class needs the class's LEAD for the roster to pick with, and nothing
@@ -1088,47 +1174,412 @@ body {
   });
 
   // ===================================================================
-  // 5. Nine slice textures, baked the way an atlas would be.
+  // 5. Nine slice frames, and the SKIN that decides what one looks like.
+  //
+  //    Four frames (a panel, a well, a button and an armed button) and one
+  //    baker. What a skin changes is the DESCRIPTOR handed to that baker and
+  //    the style it is drawn in, never the baker: a new look is a row here
+  //    and at most one entry in CHROME, which is the same rule the weapons,
+  //    the hulls and the missions already keep.
   // ===================================================================
-  function sliceTex(o) {
-    var s = 48, c = document.createElement("canvas");
-    c.width = c.height = s;
-    var g = c.getContext("2d");
+  var FRAMES = [
+    { id: "panel", name: "Panel" },
+    { id: "well", name: "Well" },
+    { id: "btn", name: "Button" },
+    { id: "hot", name: "Button armed" }
+  ];
+
+  // A frame's FILL is the same question in every style and its EDGE is not,
+  // so the fill is written once and the edge is written seven times.
+  function paintFill(g, s, o) {
     if (o.grad) {
       var lg = g.createLinearGradient(0, 0, 0, s);
       lg.addColorStop(0, o.grad[0]); lg.addColorStop(1, o.grad[1]);
       g.fillStyle = lg;
     } else { g.fillStyle = o.fill; }
     g.fillRect(0, 0, s, s);
-    g.strokeStyle = o.line; g.lineWidth = 1;
-    g.strokeRect(0.5, 0.5, s - 1, s - 1);
-    if (o.inner) { g.strokeStyle = o.inner; g.strokeRect(3.5, 3.5, s - 7, s - 7); }
-    g.strokeStyle = o.corner; g.lineWidth = 2;
-    var L = 11;
-    [[1, 1, 1, 1], [s - 1, 1, -1, 1], [1, s - 1, 1, -1], [s - 1, s - 1, -1, -1]].forEach(function (k) {
-      g.beginPath();
-      g.moveTo(k[0], k[1] + k[3] * L);
-      g.lineTo(k[0], k[1]);
-      g.lineTo(k[0] + k[2] * L, k[1]);
-      g.stroke();
-    });
+  }
+
+  // Every texture here has to TILE, because a skin whose middle repeats
+  // (wood, parchment, steel) shows a seam down the centre of a panel
+  // otherwise. So the noise is whole numbers of cycles across the tile and
+  // nothing else, which wraps by construction.
+  function wave(u, k, ph) { return Math.sin(u * Math.PI * 2 * k + ph); }
+
+  function roundPath(g, x, y, w, h, r) {
+    g.beginPath();
+    g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r);
+    g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+  }
+
+  // One ring of a bevel: light along the top and left, dark along the bottom
+  // and right. Two of these ARE a Windows 98 frame.
+  function bevelRing(g, s, i, lt, dk) {
+    var n = s - i * 2;
+    g.fillStyle = lt;
+    g.fillRect(i, i, n, 1); g.fillRect(i, i, 1, n);
+    g.fillStyle = dk;
+    g.fillRect(i, s - i - 1, n, 1); g.fillRect(s - i - 1, i, 1, n);
+  }
+
+  var CHROME = {
+    // The sci fi frame: a hairline box with an L at each corner, which is
+    // what says "instrument" without drawing an instrument.
+    bracket: function (g, s, o) {
+      paintFill(g, s, o);
+      g.strokeStyle = o.line; g.lineWidth = 1;
+      g.strokeRect(0.5, 0.5, s - 1, s - 1);
+      if (o.inner) { g.strokeStyle = o.inner; g.strokeRect(3.5, 3.5, s - 7, s - 7); }
+      g.strokeStyle = o.corner; g.lineWidth = 2;
+      var L = 11;
+      [[1, 1, 1, 1], [s - 1, 1, -1, 1], [1, s - 1, 1, -1], [s - 1, s - 1, -1, -1]].forEach(function (k) {
+        g.beginPath();
+        g.moveTo(k[0], k[1] + k[3] * L);
+        g.lineTo(k[0], k[1]);
+        g.lineTo(k[0] + k[2] * L, k[1]);
+        g.stroke();
+      });
+    },
+    // Windows 98: the frame IS the light. Two rings, the outer hard pair and
+    // the inner soft one, and `sunk` swaps both, which is the whole of the
+    // difference between a button and a field somebody types into.
+    bevel: function (g, s, o) {
+      paintFill(g, s, o);
+      bevelRing(g, s, 0, o.sunk ? o.line : o.corner, o.sunk ? o.corner : o.line);
+      bevelRing(g, s, 1, o.sunk ? o.mid : o.inner, o.sunk ? o.inner : o.mid);
+    },
+    // Aero: a rounded pane with a sheen over its top half and a light rim.
+    // The sheen stops at 46 percent because that HARD line across the glass
+    // is what the eye reads as a curved surface rather than as a gradient.
+    gloss: function (g, s, o) {
+      var r = 7;
+      g.save();
+      roundPath(g, 0, 0, s, s, r); g.clip();
+      paintFill(g, s, o);
+      var sh = g.createLinearGradient(0, 0, 0, s * 0.46);
+      sh.addColorStop(0, o.inner); sh.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = sh; g.fillRect(0, 0, s, s * 0.46);
+      g.restore();
+      g.lineWidth = 1;
+      g.strokeStyle = o.line; roundPath(g, 0.5, 0.5, s - 1, s - 1, r); g.stroke();
+      g.strokeStyle = o.corner; roundPath(g, 1.5, 1.5, s - 3, s - 3, r - 1); g.stroke();
+    },
+    // Wood: bands that RUN, which means the noise has to be stretched along
+    // one axis rather than isotropic. A ring is the same wave displaced by a
+    // slower one, which is what makes a grain wander instead of striping.
+    grain: function (g, s, o) {
+      paintFill(g, s, o);
+      var x, y, v, u;
+      for (y = 0; y < s; y++) {
+        for (x = 0; x < s; x++) {
+          u = x / s + 0.06 * wave(y / s, 1, 0.9) + 0.03 * wave(y / s, 2, 2.4);
+          v = wave(u, 3, 0) * 0.6 + wave(u, 7, 1.3) * 0.3 + wave(y / s, 11, 2.2) * 0.1;
+          if (v > 0.45) { g.fillStyle = o.inner; g.fillRect(x, y, 1, 1); }
+          else if (v < -0.55) { g.fillStyle = o.line; g.fillRect(x, y, 1, 1); }
+        }
+      }
+      g.strokeStyle = o.line; g.lineWidth = 2; g.strokeRect(1, 1, s - 2, s - 2);
+      g.fillStyle = o.corner;
+      [[2, 2], [s - 7, 2], [2, s - 7], [s - 7, s - 7]].forEach(function (k) {
+        g.fillRect(k[0], k[1], 5, 5);
+      });
+    },
+    // Parchment: fibres rather than grain, so the noise is isotropic and
+    // SPARSE. A dense speckle at this size reads as dirt; what says paper is
+    // a few long fibres and a rim that has soaked up its own ink.
+    fibre: function (g, s, o) {
+      paintFill(g, s, o);
+      var x, y, v;
+      for (y = 0; y < s; y++) {
+        for (x = 0; x < s; x++) {
+          v = wave(x / s, 5, 0.4) * wave(y / s, 3, 1.1) + wave(x / s, 2, 2.7) * wave(y / s, 9, 0.2);
+          if (v > 1.15) { g.fillStyle = o.inner; g.fillRect(x, y, 1, 1); }
+        }
+      }
+      g.strokeStyle = o.line; g.lineWidth = 1; g.strokeRect(2.5, 2.5, s - 5, s - 5);
+      g.strokeStyle = o.corner; g.lineWidth = 1; g.strokeRect(4.5, 4.5, s - 9, s - 9);
+    },
+    // Steel: streaks ALONG one axis and rivets at the corners. The streak is
+    // per row rather than per pixel, because a brushed finish is a direction
+    // and per pixel noise is sand.
+    brushed: function (g, s, o) {
+      paintFill(g, s, o);
+      var y, a;
+      for (y = 0; y < s; y++) {
+        a = wave(y / s, 7, 0.3) * 0.5 + wave(y / s, 17, 2.1) * 0.3 + wave(y / s, 23, 4.0) * 0.2;
+        g.globalAlpha = Math.abs(a) * 0.22;
+        g.fillStyle = a > 0 ? o.inner : o.line;
+        g.fillRect(0, y, s, 1);
+      }
+      g.globalAlpha = 1;
+      bevelRing(g, s, 0, o.inner, o.line);
+      g.fillStyle = o.corner;
+      [[5, 5], [s - 5, 5], [5, s - 5], [s - 5, s - 5]].forEach(function (k) {
+        g.beginPath(); g.arc(k[0], k[1], 2.1, 0, Math.PI * 2); g.fill();
+      });
+    },
+    // Chitin: a plate rather than a panel. Lumps where the shell is thick,
+    // veins in the seams, and a lit node at each corner, which is the one
+    // thing on an alien that is ALIVE rather than armour.
+    chitin: function (g, s, o) {
+      paintFill(g, s, o);
+      var x, y, v;
+      for (y = 0; y < s; y++) {
+        for (x = 0; x < s; x++) {
+          v = wave(x / s, 2, 0.5) * wave(y / s, 2, 1.4) + 0.5 * wave(x / s, 5, 2.2) * wave(y / s, 3, 0.8);
+          g.globalAlpha = Math.min(0.5, Math.abs(v) * 0.4);
+          g.fillStyle = v > 0 ? o.inner : o.line;
+          g.fillRect(x, y, 1, 1);
+        }
+      }
+      g.globalAlpha = 1;
+      g.strokeStyle = o.line; g.lineWidth = 2;
+      roundPath(g, 1, 1, s - 2, s - 2, 9); g.stroke();
+      g.fillStyle = o.corner;
+      [[4, 4], [s - 4, 4], [4, s - 4], [s - 4, s - 4]].forEach(function (k) {
+        g.beginPath(); g.arc(k[0], k[1], 2.6, 0, Math.PI * 2); g.fill();
+      });
+    }
+  };
+
+  function sliceTex(o, style) {
+    var s = 48, c = document.createElement("canvas");
+    c.width = c.height = s;
+    (CHROME[style] || CHROME.bracket)(c.getContext("2d"), s, o);
     return c.toDataURL();
   }
-  var SLICES = [
-    { id: "panel", name: "Panel", fill: "rgba(5,16,26,0.88)", line: "rgba(96,158,188,0.42)",
-      inner: "rgba(96,158,188,0.16)", corner: "#f5c542" },
-    { id: "well", name: "Well", fill: "rgba(2,9,15,0.86)", line: "rgba(60,112,142,0.36)",
-      inner: null, corner: "rgba(73,182,200,0.55)" },
-    { id: "btn", name: "Button", grad: ["rgba(22,64,86,0.9)", "rgba(7,24,35,0.9)"],
-      line: "rgba(120,200,220,0.5)", inner: null, corner: "rgba(140,224,244,0.75)" },
-    { id: "hot", name: "Button armed", grad: ["rgba(96,76,10,0.92)", "rgba(30,23,4,0.92)"],
-      line: "rgba(245,197,66,0.7)", inner: null, corner: "#ffd964" }
+
+  // A skin is a ROW. It owns the palette the HUD's twenty roles resolve to,
+  // the two typefaces, the four frame descriptors and the style they are
+  // drawn in, how the middle of a frame repeats, and the ink a schematic is
+  // baked in. It owns nothing else: the world under it, the layout, and
+  // every rule about what a control DOES are the same on all seven.
+  var SKINS = [
+    { id: "command", name: "Fleet Command", style: "bracket", rep: "stretch",
+      font: '"Barlow Semi Condensed", system-ui, sans-serif',
+      mono: '"Share Tech Mono", monospace',
+      tok: { "sky-ink": "#cfe2ee", gold: "#f5c542", "gold-dim": "#8a6d18", teal: "#49b6c8", cyan: "#6ff0ff",
+             ink: "#cfe2ee", dim: "#7e94a6", faint: "#4e6274", green: "#63d12b",
+             red: "#e8563c", ore: "#e8a33c", cry: "#58d8c4",
+             "g-deep": "#04121b", "g-fill": "#0d2231", "btn-a": "#123549", "btn-b": "#0a1f2c",
+             row: "rgba(9,26,37,.85)", "row-hot": "rgba(18,46,63,.82)",
+             hover: "rgba(90,170,200,.16)", tip: "rgba(5,16,26,.94)",
+             edge: "#1d3f52", "edge-hot": "#2e5f78", "edge-lit": "#47869e", "ink-hot": "#7fd8ea",
+             "gold-a": "#3f3307", "gold-b": "#191504",
+             "go-a": "#14501e", "go-b": "#07260d", "go-lit": "#1e8c2f",
+             "go-edge": "#2c8a3a", "go-ink": "#9df06f", "go-ink-hot": "#d4ffbe" },
+      slice: {
+        panel: { fill: "rgba(5,16,26,0.88)", line: "rgba(96,158,188,0.42)",
+                 inner: "rgba(96,158,188,0.16)", corner: "#f5c542" },
+        well: { fill: "rgba(2,9,15,0.86)", line: "rgba(60,112,142,0.36)",
+                inner: null, corner: "rgba(73,182,200,0.55)" },
+        btn: { grad: ["rgba(22,64,86,0.9)", "rgba(7,24,35,0.9)"],
+               line: "rgba(120,200,220,0.5)", inner: null, corner: "rgba(140,224,244,0.75)" },
+        hot: { grad: ["rgba(96,76,10,0.92)", "rgba(30,23,4,0.92)"],
+               line: "rgba(245,197,66,0.7)", inner: null, corner: "#ffd964" }
+      },
+      plan: { hull: 0x0d3a52, subs: 0x8e3d05, line: 0x3fc8e8, lsub: 0xff9a3c, rim: [126, 234, 255] } },
+
+    // Opaque on purpose. Nothing in 1998 was translucent, and a 98 frame with
+    // the battle showing through it is a mood board rather than a skin.
+    { id: "win98", name: "Windows 98", style: "bevel", rep: "stretch",
+      bevel: "inset 1px 1px 0 #fff, inset -1px -1px 0 #000, inset 2px 2px 0 #dfdfdf, inset -2px -2px 0 #808080",
+      bevelIn: "inset 1px 1px 0 #000, inset -1px -1px 0 #fff, inset 2px 2px 0 #808080, inset -2px -2px 0 #dfdfdf",
+      font: 'Tahoma, "MS Sans Serif", Verdana, system-ui, sans-serif',
+      mono: '"Courier New", Courier, monospace',
+      tok: { "sky-ink": "#ffffff", gold: "#000080", "gold-dim": "#000080", teal: "#000080", cyan: "#000080",
+             ink: "#000", dim: "#3a3a3a", faint: "#6a6a6a", green: "#008000",
+             red: "#a80000", ore: "#804000", cry: "#000080",
+             "g-deep": "#fff", "g-fill": "#c0c0c0", "btn-a": "#c0c0c0", "btn-b": "#c0c0c0",
+             row: "#c0c0c0", "row-hot": "#d6d6d6", hover: "rgba(0,0,128,.12)", tip: "#ffffe1",
+             edge: "#808080", "edge-hot": "#808080", "edge-lit": "#000080", "ink-hot": "#000080",
+             "gold-a": "#000080", "gold-b": "#1084d0",
+             "go-a": "#c0c0c0", "go-b": "#c0c0c0", "go-lit": "#c0c0c0",
+             "go-edge": "#808080", "go-ink": "#006000", "go-ink-hot": "#008000" },
+      slice: {
+        panel: { fill: "#c0c0c0", line: "#000", mid: "#808080", inner: "#dfdfdf", corner: "#fff" },
+        well: { fill: "#fff", line: "#000", mid: "#808080", inner: "#dfdfdf", corner: "#fff", sunk: true },
+        btn: { fill: "#c0c0c0", line: "#000", mid: "#808080", inner: "#dfdfdf", corner: "#fff" },
+        hot: { fill: "#c0c0c0", line: "#000", mid: "#808080", inner: "#dfdfdf", corner: "#fff", sunk: true }
+      },
+      plan: { hull: 0x9a9a9a, subs: 0x000080, line: 0x000000, lsub: 0x000080, rim: [0, 0, 0] } },
+
+    { id: "vista", name: "Windows Vista", style: "gloss", rep: "stretch",
+      font: '"Segoe UI", Frutiger, Calibri, system-ui, sans-serif',
+      mono: 'Consolas, "Courier New", monospace',
+      tok: { "sky-ink": "#eaf6ff", gold: "#ffd45e", "gold-dim": "#9a7a22", teal: "#7fc8ff", cyan: "#b9e6ff",
+             ink: "#eaf6ff", dim: "#a8c6dc", faint: "#7191a8", green: "#78e83c",
+             red: "#ff7a5e", ore: "#ffc061", cry: "#7fe6ff",
+             "g-deep": "rgba(10,28,46,0.55)", "g-fill": "rgba(40,86,130,0.5)",
+             "btn-a": "rgba(120,190,240,0.55)", "btn-b": "rgba(24,64,104,0.55)",
+             row: "rgba(18,48,80,0.5)", "row-hot": "rgba(90,160,220,0.42)",
+             hover: "rgba(255,255,255,.18)", tip: "rgba(12,34,56,.92)",
+             edge: "rgba(190,225,255,0.35)", "edge-hot": "rgba(210,240,255,0.6)",
+             "edge-lit": "#cfefff", "ink-hot": "#d8f2ff",
+             "gold-a": "rgba(255,208,96,0.55)", "gold-b": "rgba(120,86,10,0.5)",
+             "go-a": "rgba(120,230,110,0.55)", "go-b": "rgba(20,86,30,0.55)",
+             "go-lit": "rgba(150,250,140,0.7)", "go-edge": "rgba(190,255,180,0.6)",
+             "go-ink": "#e2ffd6", "go-ink-hot": "#fff" },
+      slice: {
+        panel: { grad: ["rgba(36,84,130,0.62)", "rgba(10,30,52,0.72)"],
+                 line: "rgba(200,235,255,0.42)", inner: "rgba(255,255,255,0.34)",
+                 corner: "rgba(255,255,255,0.22)" },
+        well: { grad: ["rgba(8,24,40,0.66)", "rgba(6,18,32,0.74)"],
+                line: "rgba(170,210,240,0.3)", inner: "rgba(255,255,255,0.16)",
+                corner: "rgba(255,255,255,0.1)" },
+        btn: { grad: ["rgba(96,170,226,0.62)", "rgba(22,62,104,0.66)"],
+               line: "rgba(220,245,255,0.55)", inner: "rgba(255,255,255,0.5)",
+               corner: "rgba(255,255,255,0.3)" },
+        hot: { grad: ["rgba(255,206,104,0.7)", "rgba(122,76,10,0.7)"],
+               line: "rgba(255,236,180,0.7)", inner: "rgba(255,255,255,0.55)",
+               corner: "rgba(255,255,255,0.3)" }
+      },
+      plan: { hull: 0x1b4a68, subs: 0xa04a08, line: 0x8fe0ff, lsub: 0xffc06a, rim: [180, 232, 255] } },
+
+    // Wood and parchment REPEAT their middles rather than stretching them:
+    // a grain pulled across a seven hundred pixel panel is a smear, and the
+    // seam that would show is the reason every texture here tiles.
+    { id: "wood", name: "Wood", style: "grain", rep: "repeat",
+      font: 'Georgia, "Iowan Old Style", "Times New Roman", serif',
+      mono: '"Courier New", Courier, monospace',
+      tok: { "sky-ink": "#f2e2c4", gold: "#e0b34a", "gold-dim": "#8a6a22", teal: "#c9a86a", cyan: "#f0d9a8",
+             ink: "#f2e2c4", dim: "#bda684", faint: "#8a7255", green: "#8fbf4a",
+             red: "#d4552f", ore: "#e0a040", cry: "#7fc4b0",
+             "g-deep": "#2a1b10", "g-fill": "#4a3018", "btn-a": "#6b4423", "btn-b": "#3d2512",
+             row: "rgba(58,36,18,.88)", "row-hot": "rgba(96,62,30,.9)",
+             hover: "rgba(230,190,120,.14)", tip: "#2a1b10",
+             edge: "#5a3c1e", "edge-hot": "#8a5c2a", "edge-lit": "#c8912f", "ink-hot": "#f0cf8a",
+             "gold-a": "#8a6a22", "gold-b": "#3a2c0c",
+             "go-a": "#4a6a20", "go-b": "#22300c", "go-lit": "#6f9a2c",
+             "go-edge": "#8fbf4a", "go-ink": "#d8f0a0", "go-ink-hot": "#f0ffd0" },
+      slice: {
+        panel: { fill: "#563519", line: "#2e1b0c", inner: "#6f4522", corner: "#c8912f" },
+        well: { fill: "#35200f", line: "#1d1107", inner: "#482c15", corner: "#8a6a22" },
+        btn: { fill: "#6b4423", line: "#331d0d", inner: "#8a5c30", corner: "#d9a440" },
+        hot: { fill: "#8a5a24", line: "#40230c", inner: "#b07a34", corner: "#ffd06a" }
+      },
+      plan: { hull: 0x6b4423, subs: 0xc8912f, line: 0xf0cf8a, lsub: 0xffe0a0, rim: [240, 207, 138] } },
+
+    { id: "parchment", name: "Parchment", style: "fibre", rep: "repeat",
+      font: '"Iowan Old Style", Georgia, "Times New Roman", serif',
+      mono: '"Courier New", Courier, monospace',
+      tok: { "sky-ink": "#f0e4c8", gold: "#8a5a12", "gold-dim": "#b08a44", teal: "#6a5230", cyan: "#3c2c14",
+             ink: "#2e2414", dim: "#6a5a40", faint: "#8a7a60", green: "#3c6a20",
+             red: "#9a2c18", ore: "#8a5a12", cry: "#2c5a6a",
+             "g-deep": "#efe2c4", "g-fill": "#e2d3b0", "btn-a": "#e8dbbc", "btn-b": "#d4c29c",
+             row: "rgba(236,223,193,.94)", "row-hot": "rgba(222,204,166,.96)",
+             hover: "rgba(120,90,40,.12)", tip: "#3c2c14",
+             edge: "#b9a67e", "edge-hot": "#8a7450", "edge-lit": "#5c4420", "ink-hot": "#5c3a10",
+             "gold-a": "#d9c08a", "gold-b": "#b99a5e",
+             "go-a": "#c6d0a0", "go-b": "#a2b078", "go-lit": "#b6c88a",
+             "go-edge": "#6a7a3a", "go-ink": "#2c4410", "go-ink-hot": "#1c3006" },
+      slice: {
+        panel: { fill: "#eee0c0", line: "#8a7450", inner: "#cfbc94", corner: "#b9a67e" },
+        well: { fill: "#e2d3ae", line: "#a08a62", inner: "#c4ad82", corner: "#8a7450" },
+        btn: { fill: "#e8dbbc", line: "#8a7450", inner: "#cbb890", corner: "#b9a67e" },
+        hot: { fill: "#d8c48e", line: "#6a5430", inner: "#b9a06a", corner: "#8a6a30" }
+      },
+      plan: { hull: 0xc9b48a, subs: 0x8a5a12, line: 0x3c2c14, lsub: 0x7a3a08, rim: [60, 44, 20] } },
+
+    { id: "steel", name: "Brushed Steel", style: "brushed", rep: "repeat",
+      font: '"Barlow Semi Condensed", "Roboto Condensed", system-ui, sans-serif',
+      mono: '"Share Tech Mono", monospace',
+      tok: { "sky-ink": "#e6edf2", gold: "#ffb000", "gold-dim": "#8a6000", teal: "#9fb4c4", cyan: "#dceaf4",
+             ink: "#e6edf2", dim: "#a4b0ba", faint: "#7a868f", green: "#4ad24a",
+             red: "#e8402c", ore: "#ffa22c", cry: "#5ec8e0",
+             "g-deep": "#232729", "g-fill": "#3a4044", "btn-a": "#5c6469", "btn-b": "#3c4246",
+             row: "rgba(48,53,57,.92)", "row-hot": "rgba(74,82,88,.94)",
+             hover: "rgba(255,255,255,.1)", tip: "#1c1f21",
+             edge: "#5a6469", "edge-hot": "#7c888f", "edge-lit": "#b4c2cc", "ink-hot": "#dbe6ee",
+             "gold-a": "#7a5400", "gold-b": "#2e2000",
+             "go-a": "#2c6a2c", "go-b": "#143414", "go-lit": "#3f9a3f",
+             "go-edge": "#4ad24a", "go-ink": "#c6f0c6", "go-ink-hot": "#e8ffe8" },
+      slice: {
+        panel: { fill: "#42484c", line: "#22262a", inner: "#8e9aa2", corner: "#c0ccd4" },
+        well: { fill: "#2a2e31", line: "#16191b", inner: "#5c656b", corner: "#8e9aa2" },
+        btn: { fill: "#565e63", line: "#2a2e31", inner: "#a4b0b8", corner: "#d0dae0" },
+        hot: { fill: "#7a5400", line: "#2e2000", inner: "#d09a20", corner: "#ffc74a" }
+      },
+      plan: { hull: 0x565e63, subs: 0xb06000, line: 0xdbe6ee, lsub: 0xffb000, rim: [219, 230, 238] } },
+
+    // The swarm's own colours: chitin violet with the acid green every living
+    // cell on an alien is lit in. This is the one skin that is a FACTION
+    // rather than a material, and it is what the HUD would look like if the
+    // cloud were reading it.
+    { id: "alien", name: "Alien", style: "chitin", rep: "repeat",
+      font: '"Barlow Semi Condensed", system-ui, sans-serif',
+      mono: '"Share Tech Mono", monospace',
+      tok: { "sky-ink": "#e4d2f4", gold: "#6fb835", "gold-dim": "#3d6a1c", teal: "#b07ae0", cyan: "#d6a8ff",
+             ink: "#e4d2f4", dim: "#a98cc4", faint: "#6f5a88", green: "#6fb835",
+             red: "#ff6a2c", ore: "#c88a3c", cry: "#9ce0c0",
+             "g-deep": "#160a24", "g-fill": "#2c1442", "btn-a": "#46215e", "btn-b": "#22103a",
+             row: "rgba(34,14,52,.9)", "row-hot": "rgba(62,28,90,.92)",
+             hover: "rgba(160,110,220,.18)", tip: "#1a0c2a",
+             edge: "#4a2470", "edge-hot": "#7038a8", "edge-lit": "#a86ae0", "ink-hot": "#c8a0f0",
+             "gold-a": "#2e5a16", "gold-b": "#16290a",
+             "go-a": "#3d6a1c", "go-b": "#1a2e0c", "go-lit": "#5a9a28",
+             "go-edge": "#6fb835", "go-ink": "#b8f080", "go-ink-hot": "#e0ffc0" },
+      slice: {
+        panel: { fill: "rgba(38,16,58,0.9)", line: "#16082a", inner: "#5c2a86", corner: "#6fb835" },
+        well: { fill: "rgba(20,8,32,0.9)", line: "#0e0420", inner: "#3c1a5c", corner: "#3d6a1c" },
+        btn: { fill: "rgba(60,28,88,0.92)", line: "#1c0a30", inner: "#7c3cb0", corner: "#6fb835" },
+        hot: { fill: "rgba(52,84,26,0.92)", line: "#16290a", inner: "#8fd048", corner: "#d6ff90" }
+      },
+      plan: { hull: 0x3c1a5c, subs: 0x3d6a1c, line: 0xb07ae0, lsub: 0x6fb835, rim: [176, 122, 224] } }
   ];
+
+  var byId = {};
+  SKINS.forEach(function (k) { byId[k.id] = k; });
+  var skin = SKINS[0];
   var sliceUrl = {};
-  SLICES.forEach(function (s) {
-    sliceUrl[s.id] = sliceTex(s);
-    document.documentElement.style.setProperty("--n-" + s.id, "url(" + sliceUrl[s.id] + ")");
-  });
+
+  // Every ship's two pictures, in the skin's own ink. A schematic is a BAKE,
+  // so the only way to draw one in another colour is to draw it again: this
+  // is the boot cost paid over, and paying it is the honest answer.
+  //
+  // The roster's is SQUARE, and that is what normalises them: the wide bake
+  // fits a hull's extents into a 3:1 frame, so a long frigate filled it and a
+  // squat platform came out a third the size in the same row. In a square
+  // every ship fills the same box, whichever way it is long.
+  function bakeFleet() {
+    SHIPS.forEach(function (s) {
+      s.schem = bake(s.model, s.mesh, { w: 440, h: 140, view: "plan", pad: 1.05, rings: 2 }).toDataURL();
+      s.thumb = bake(s.model, s.mesh, { w: 96, h: 64, view: "plan", pad: 1.04, rings: 1 }).toDataURL();
+    });
+  }
+
+  // Wearing a skin is: the palette on the HUD element, the two typefaces, the
+  // four frames rebaked, the ship pictures rebaked, and every panel redrawn
+  // because the pictures are in their markup. Nothing else moves, and that is
+  // the claim the picker exists to test.
+  function applySkin(id) {
+    skin = byId[id] || SKINS[0];
+    var h = document.getElementById("hud");
+    Object.keys(skin.tok).forEach(function (n) { h.style.setProperty("--" + n, skin.tok[n]); });
+    h.style.setProperty("--hud-font", skin.font);
+    h.style.setProperty("--hud-mono", skin.mono);
+    h.style.setProperty("--n-rep", skin.rep);
+    h.style.setProperty("--bevel", skin.bevel || "none");
+    h.style.setProperty("--bevel-in", skin.bevelIn || skin.bevel || "none");
+    FRAMES.forEach(function (f) {
+      sliceUrl[f.id] = sliceTex(skin.slice[f.id], skin.style);
+      h.style.setProperty("--n-" + f.id, "url(" + sliceUrl[f.id] + ")");
+    });
+    bakeFleet();
+    drawRoster(); drawCats(); drawList(); drawProducer(); drawQueue();
+    drawBank(); drawMods(); drawSlices(); drawUnitShot(); drawBench();
+    // The selection ring belongs to the HUD rather than to the world, so it
+    // wears the skin too. Everything else in the field is the GAME and is the
+    // same picture whatever the panels are made of.
+    outline.material.uniforms.tint.value.set(skin.tok.cyan);
+    document.querySelectorAll("#skins button").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.skin === skin.id));
+    });
+  }
 
   // ===================================================================
   // 6. The field.
@@ -1863,27 +2314,45 @@ body {
   // ===================================================================
   // 9. The workbench under the stage: the assets themselves.
   // ===================================================================
-  document.getElementById("bench").innerHTML = SHIPS.map(function (s) {
-    return '<div class="bcell"><img class="sh" src="' + s.schem + '" alt="' + s.name + ' schematic">' +
-      '<div class="ft"><img src="' + s.schem + '" width="96" height="31" alt="">' +
-      '<span class="m"><b>' + s.name + "</b><i>" + s.cells + " cells &middot; " + s.mesh.quads +
-      " quads</i></span></div></div>";
-  }).join("");
+  function drawBench() {
+    document.getElementById("bench").innerHTML = SHIPS.map(function (s) {
+      return '<div class="bcell"><img class="sh" src="' + s.schem + '" alt="' + s.name + ' schematic">' +
+        '<div class="ft"><img src="' + s.schem + '" width="96" height="31" alt="">' +
+        '<span class="m"><b>' + s.name + "</b><i>" + s.cells + " cells &middot; " + s.mesh.quads +
+        " quads</i></span></div></div>";
+    }).join("");
+  }
   document.getElementById("marks").innerHTML = CATS.map(function (c) {
     return '<div class="mark"><svg aria-hidden="true"><use href="#' + c.icon + '"></use></svg>' +
       "<b>" + c.name + "</b></div>";
   }).join("");
 
-  document.getElementById("slices").innerHTML = SLICES.map(function (s) {
-    return '<div class="slice"><div class="img"><img src="' + sliceUrl[s.id] + '" alt="' + s.name + ' nine slice">' +
-      '<i style="left:0;right:0;top:48px;height:1px"></i><i style="left:0;right:0;top:96px;height:1px"></i>' +
-      '<i style="top:0;bottom:0;left:48px;width:1px"></i><i style="top:0;bottom:0;left:96px;width:1px"></i></div>' +
-      '<div class="cap"><b>' + s.name + "</b>48 px, slice 16</div></div>";
+  function drawSlices() {
+    document.getElementById("slices").innerHTML = FRAMES.map(function (f) {
+      return '<div class="slice"><div class="img"><img src="' + sliceUrl[f.id] + '" alt="' + f.name + ' nine slice">' +
+        '<i style="left:0;right:0;top:48px;height:1px"></i><i style="left:0;right:0;top:96px;height:1px"></i>' +
+        '<i style="top:0;bottom:0;left:48px;width:1px"></i><i style="top:0;bottom:0;left:96px;width:1px"></i></div>' +
+        '<div class="cap"><b>' + f.name + "</b>48 px, slice 16</div></div>";
+    }).join("");
+  }
+
+  // The unit panel's picture is set on SELECTION rather than on a draw, so a
+  // skin change has to put the fresh bake back on whatever is already picked.
+  function drawUnitShot() {
+    if (sel) { document.getElementById("uschem").src = sel.spec.schem; }
+  }
+
+  document.getElementById("skins").innerHTML = SKINS.map(function (k) {
+    return '<button type="button" data-skin="' + k.id + '" aria-pressed="false">' + k.name + "</button>";
   }).join("");
+  document.getElementById("skins").addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (b) { applySkin(b.dataset.skin); }
+  });
 
   // ---- go ----
-  drawRoster(); drawCats(); drawList(); drawProducer(); drawQueue(); drawBank(); drawBars();
-  syncTabs(); select(hulls[0]); drawMods(); fit();
+  applySkin(SKINS[0].id);
+  drawBars(); syncTabs(); select(hulls[0]); fit();
   requestAnimationFrame(loop);
 })();
 </script>
