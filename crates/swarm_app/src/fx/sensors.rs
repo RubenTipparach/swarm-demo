@@ -1,4 +1,5 @@
-//! The sensors manager's furniture: the horizon, its rings and the stalks.
+//! The sensors manager's picture: the ground, what the fleet can SEE of it,
+//! the horizon and its rings, and a stalk under every contact.
 //!
 //! It is a camera MODE and not a screen, which is the mockup's own rule and
 //! the whole reason it is worth having: it does not open over the field, it
@@ -6,50 +7,80 @@
 //! real size, a press is the same raycast the field uses, and the map cannot
 //! be out of register with the world because there is only one of them.
 //!
-//! What this file draws is laid ON TOP of the live view and paints no ground
-//! of its own, because the ground IS the battle.
+//! **What it says is COVERAGE.** The operational area is washed dark and each
+//! ship lights the ground it can see, so the picture answers the one question
+//! this view exists for: where is the fleet blind. An enemy standing in the
+//! dark is not drawn at all, which is what makes moving a ship worth doing
+//! here rather than only on the field.
 
 use crate::*;
 
-/// The mesh the furniture is rebuilt into every frame.
+/// The furniture: the horizon, its rings, the bearings and the stalks. Lines,
+/// so it is ADDITIVE.
 #[derive(Resource)]
 pub(crate) struct SensorHandle(pub(crate) Handle<Mesh>);
 
-/// How many rings inside the horizon, and how tall a contact's stalk may
-/// stand before it is clamped.
+/// The ground and what the fleet sees of it. Fills, so it is ALPHA BLENDED,
+/// and that is the whole reason it cannot share the furniture's mesh: a wash
+/// that DARKENS is a thing additive blending cannot express at all.
+#[derive(Resource)]
+pub(crate) struct GroundHandle(pub(crate) Handle<Mesh>);
+
+/// How many rings inside the horizon.
 ///
-/// Three rings, because the horizon and the pivot are already two edges and a
-/// reader counts three gaps without having to: a ring every quarter is a
-/// dartboard and a ring at the halfway is a target.
-const RINGS: usize = 3;
+/// Four, at a quarter of the horizon each, which is the mockup's own step and
+/// what lets a range label be read off a ring rather than estimated between
+/// two of them.
+const RINGS: usize = 4;
 
 /// The ink the furniture is drawn in: the HUD's own cyan, so the map reads as
 /// part of the deck rather than as a second thing over the field.
 const SENSOR_INK: [f32; 3] = [0.29, 0.72, 0.85];
 const STALK_INK: [f32; 3] = [0.42, 0.88, 0.98];
 
-/// Draw the horizon, the rings and a stalk under every contact.
+/// The unseen ground: a dark blue wash over the whole operational area.
 ///
-/// A STALK is what makes a position in three dimensions readable at all: a
-/// contact drawn on its own is a dot whose height nobody can judge, and a line
-/// down to the pivot's plane with a ring at its foot says both where it is and
-/// how far above the plane it stands. It is Homeworld's own answer and it is
-/// the reason this view can be worked in rather than only looked at.
+/// Alpha rather than additive, because the point of it is that unwatched
+/// space is DARKER: additive can only ever add light, so a wash built that
+/// way would make the blind half of the map the bright half.
+const DARK_INK: [f32; 3] = [0.02, 0.05, 0.17];
+const DARK_ALPHA: f32 = 0.44;
+
+/// What a ship lights up, and it goes to nothing at its own range.
+///
+/// The mockup's own three stops (0.30 at the middle, 0.16 at about two
+/// thirds, nothing at the rim) as the two a fan can carry. Laid over the wash
+/// rather than added to it, so two ships watching the same ground are a
+/// little brighter there and never a blown out white: this is a map, and the
+/// information in it is the EDGE of what is covered.
+const SEEN_INK: [f32; 3] = [0.22, 0.58, 1.0];
+const SEEN_ALPHA: (f32, f32) = (0.40, 0.0);
+
+/// A little under the plane, so the back to front sort of the transparent
+/// pass puts the ground behind the furniture standing on it.
+const GROUND_DROP: f32 = 0.6;
+
+/// Draw the ground, the coverage, the horizon and the contacts.
 pub(crate) fn draw_sensors(
     views: Res<Views>,
     handle: Option<Res<SensorHandle>>,
+    ground: Option<Res<GroundHandle>>,
     cam: Query<(&Transform, &Orbit), With<Camera3d>>,
     hulls: Contacts,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    let Some(handle) = handle else { return };
+    let (Some(handle), Some(ground)) = (handle, ground) else {
+        return;
+    };
     let Ok((xf, orbit)) = cam.single() else {
         return;
     };
-    // Off, and the mesh is EMPTIED rather than the entity hidden: the view is
-    // rebuilt from state every frame, so there is no stale picture to hide.
+    // Off, and both meshes are EMPTIED rather than the entities hidden: the
+    // view is rebuilt from state every frame, so there is no stale picture to
+    // hide.
     if views.open != Some(ViewTab::Sensors) {
         let _ = meshes.insert(handle.0.id(), empty_mesh());
+        let _ = meshes.insert(ground.0.id(), empty_mesh());
         return;
     }
     let eye = xf.translation;
@@ -57,40 +88,24 @@ pub(crate) fn draw_sensors(
     // a move order is already given on: two planes would be two answers to
     // "where is that ship really".
     let floor = orbit.target.y;
-    let (mut pos, mut col, mut idx) = (Vec::new(), Vec::new(), Vec::new());
+    let hub = Vec3::new(orbit.target.x, floor, orbit.target.z);
     // The line widths ride the eye's own distance, or a line a thousand units
     // out is a line under a pixel wide.
     let w = orbit.eye * 0.0016;
-    let hub = Vec3::new(orbit.target.x, floor, orbit.target.z);
 
-    horizon(&mut pos, &mut col, &mut idx, eye, hub, w);
-    contacts(
-        &mut pos,
-        &mut col,
-        &mut idx,
-        (eye, floor, orbit.eye, w),
-        &hulls,
-    );
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    );
-    if pos.is_empty() {
-        mesh = empty_mesh();
-    } else {
-        let n = pos.len();
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n]);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32; 2]; n]);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, col);
-        mesh.insert_indices(Indices::U32(idx));
-    }
-    let _ = meshes.insert(handle.0.id(), mesh);
+    let mut furniture = Draw::default();
+    horizon(&mut furniture, eye, hub, w);
+    contacts(&mut furniture, (eye, floor, orbit.eye, w), &hulls);
+    let _ = meshes.insert(handle.0.id(), furniture.mesh());
+
+    let mut lit = Draw::default();
+    cover(&mut lit, hub, &hulls);
+    let _ = meshes.insert(ground.0.id(), lit.mesh());
 }
 
-/// Every contact the manager draws a stalk for.
+/// Every contact the manager draws, and what it can see with.
 ///
-/// A type alias because the tuple is three optionals over two filters, which
+/// A type alias because the tuple is four optionals over two filters, which
 /// is exactly the complexity clippy is right to name: the QUERY is the
 /// interface here and it reads better with a name on it.
 type Contacts<'w, 's> = Query<
@@ -98,27 +113,76 @@ type Contacts<'w, 's> = Query<
     's,
     (
         &'static Transform,
+        &'static Hull,
         Option<&'static Hive>,
         Option<&'static Selected>,
     ),
     (With<Hull>, Without<Camera3d>),
 >;
 
-/// The horizon, the rings inside it and the four bearings.
-fn horizon(
-    pos: &mut Vec<[f32; 3]>,
-    col: &mut Vec<[f32; 4]>,
-    idx: &mut Vec<u32>,
-    eye: Vec3,
-    hub: Vec3,
-    w: f32,
-) {
+/// How far one hull sees, in world units.
+///
+/// The CATEGORY's, which is the core's answer, so a class added tomorrow sees
+/// tomorrow. A hull with no class is a carrier or a rock: neither is yours and
+/// neither lights anything, so nothing is watching from it.
+fn eyes(hull: &Hull) -> f32 {
+    if hull.dead_hull {
+        return 0.0;
+    }
+    match hull.class.as_deref() {
+        Some(class) => Category::of(class).sensor_range(),
+        None => 0.0,
+    }
+}
+
+/// The dark ground, and the patches the fleet lights on it.
+fn cover(d: &mut Draw, hub: Vec3, hulls: &Contacts) {
+    let floor = hub - Vec3::Y * GROUND_DROP;
+    add_disc(
+        &mut d.pos,
+        &mut d.col,
+        &mut d.idx,
+        floor,
+        SENSORS_R,
+        DARK_INK,
+        (DARK_ALPHA, DARK_ALPHA),
+        96,
+    );
+    // Then what is watched, laid OVER the wash in the same mesh so the order
+    // is the submission order and needs no second material to arrange.
+    for (ship, hull, hive, _) in hulls {
+        if hive.is_some() {
+            continue;
+        }
+        let r = eyes(hull);
+        if r <= 0.0 {
+            continue;
+        }
+        let at = Vec3::new(ship.translation.x, floor.y, ship.translation.z);
+        add_disc(
+            &mut d.pos, &mut d.col, &mut d.idx, at, r, SEEN_INK, SEEN_ALPHA, 64,
+        );
+    }
+}
+
+/// Whether anything of the fleet's can see a point on the plane.
+fn watched(at: Vec3, hulls: &Contacts) -> bool {
+    hulls.iter().any(|(ship, hull, hive, _)| {
+        hive.is_none() && {
+            let r = eyes(hull);
+            r > 0.0 && Vec2::new(at.x - ship.translation.x, at.z - ship.translation.z).length() < r
+        }
+    })
+}
+
+/// The horizon, the rings inside it, the bearings and the pivot.
+fn horizon(d: &mut Draw, eye: Vec3, hub: Vec3, w: f32) {
     for n in 1..=RINGS {
         let t = n as f32 / RINGS as f32;
         add_ring(
-            pos,
-            col,
-            idx,
+            &mut d.pos,
+            &mut d.col,
+            &mut d.idx,
             eye,
             hub,
             SENSORS_R * t,
@@ -128,38 +192,61 @@ fn horizon(
             96,
         );
     }
-    // Four bearings out to the horizon, so the ring has an orientation and a
-    // player can say which way a contact lies rather than only how far.
-    for n in 0..4 {
-        let a = n as f32 * std::f32::consts::FRAC_PI_2;
+    // A tick every fifteen degrees round the horizon, longer every forty
+    // five, because a contact at nine o'clock is only useful if the screen
+    // agrees with the order about to be given. The NUMBERS beside them are
+    // `place_sensor_marks`: text is a UI node here and the rest of this is a
+    // mesh, and a label is worth the crossing.
+    for n in 0..24 {
+        let a = n as f32 / 24.0 * std::f32::consts::TAU;
+        let big = n % 3 == 0;
+        let out = Vec3::new(a.sin(), 0.0, -a.cos());
         add_line(
-            pos,
-            col,
-            idx,
+            &mut d.pos,
+            &mut d.col,
+            &mut d.idx,
             eye,
-            hub,
-            hub + Vec3::new(a.sin(), 0.0, a.cos()) * SENSORS_R,
-            w * 0.5,
+            hub + out * SENSORS_R * if big { 0.94 } else { 0.97 },
+            hub + out * SENSORS_R,
+            w * if big { 0.8 } else { 0.5 },
             SENSOR_INK,
-            0.16,
+            if big { 0.5 } else { 0.22 },
+        );
+    }
+    // The pivot itself, because the whole map is drawn about it and a map
+    // whose own centre is invisible cannot say where it is looking.
+    let arm = SENSORS_R * 0.02;
+    for out in [Vec3::X, Vec3::Z] {
+        add_line(
+            &mut d.pos,
+            &mut d.col,
+            &mut d.idx,
+            eye,
+            hub - out * arm,
+            hub + out * arm,
+            w * 0.7,
+            GOLD,
+            0.8,
         );
     }
 }
 
-/// A stalk and a foot ring under every contact.
-fn contacts(
-    pos: &mut Vec<[f32; 3]>,
-    col: &mut Vec<[f32; 4]>,
-    idx: &mut Vec<u32>,
-    fit: (Vec3, f32, f32, f32),
-    hulls: &Contacts,
-) {
+/// A stalk and a foot ring under every contact the fleet can SEE.
+fn contacts(d: &mut Draw, fit: (Vec3, f32, f32, f32), hulls: &Contacts) {
     let (eye, floor, out, w) = fit;
-    for (ship, hive, picked) in hulls {
+    for (ship, hull, hive, picked) in hulls {
         let at = ship.translation;
         let foot = Vec3::new(at.x, floor, at.z);
-        // A carrier is a contact too, and it is the one a player most wants to
-        // find: this view exists to say where everything ELSE is.
+        // Yours is always on the map, because it is the thing doing the
+        // looking. An ENEMY is on it only where something can see that
+        // ground, which is the whole claim this screen makes: a carrier in
+        // the dark is a carrier you have not found yet.
+        if hive.is_some() && !watched(foot, hulls) {
+            continue;
+        }
+        if hull.dead_hull && hive.is_none() && hull.class.is_none() {
+            continue;
+        }
         let ink = if picked.is_some() {
             STALK_INK
         } else if hive.is_some() {
@@ -168,11 +255,21 @@ fn contacts(
             SENSOR_INK
         };
         let lit = if picked.is_some() { 0.95 } else { 0.5 };
-        add_line(pos, col, idx, eye, foot, at, w * 0.6, ink, lit);
+        add_line(
+            &mut d.pos,
+            &mut d.col,
+            &mut d.idx,
+            eye,
+            foot,
+            at,
+            w * 0.6,
+            ink,
+            lit,
+        );
         add_ring(
-            pos,
-            col,
-            idx,
+            &mut d.pos,
+            &mut d.col,
+            &mut d.idx,
             eye,
             foot,
             out * 0.012,

@@ -1407,6 +1407,47 @@ already the pause. The tab is the way in, which is the control a player can
 actually find, and `--view mission|sensors|menu` is the headless flag, since
 a harness has no pointer to press a tab with.
 
+**What it SAYS is coverage, and that is the whole reason it is worth
+opening.** The operational area is washed dark blue and every ship lights the
+ground it can see, so the picture answers the one question this view exists
+for: where is the fleet blind. An enemy standing in the dark is not drawn at
+all, which is what makes moving a ship worth doing HERE rather than only on
+the field: a carrier you have not covered is a carrier you have not found.
+
+**The wash is ALPHA and the furniture is ADDITIVE, and that is two meshes
+rather than a preference.** What the ground says is that unwatched space is
+DARKER, and additive blending can only ever add light: built that way the
+blind half of the map would be the bright half. So the ground is its own
+entity with its own material, because a blend mode is a material and a
+material is a draw. It sits a little UNDER the pivot's plane, so the back to
+front sort of the transparent pass puts it behind the rings standing on it.
+The coverage patches are laid OVER the wash in the same mesh, which is why
+they need no second material to arrange: within one mesh the order is the
+submission order.
+
+**How far a ship sees is the CATEGORY's**, `Category::sensor_range` in the
+core, and the numbers are the mockup's own table (`CATS[].sr`): 150 for a
+fighter up to 400 for a capital, with a PLATFORM at 450 seeing furthest of
+anything in the fleet, which is the whole of its argument since it is a
+corvette hull denied its flight and the only thing it can be worth is
+standing somewhere and looking. Against the 900 the horizon is set at, which
+is the mockup's figure and was already this project's. The category's and not
+the class's, so a class added tomorrow sees tomorrow.
+
+**And the numbers are UI nodes, which is the one place the two halves of this
+view meet.** There is no text in a `TriangleList`, and a map with no numbers
+on it is a picture of a fleet rather than something a player can give an
+order off: eight bearings round the horizon and a range on every ring, each
+placed by projecting its own point on the plane, which is what keeps a label
+ON the ring it names at every angle the camera can be turned to. Divided by
+`UiScale`, and that is the arithmetic worth writing down: the deck is authored
+at 1600 by 900 and scaled by the window's height, so a `Val::Px` is an
+AUTHORED pixel while `world_to_viewport` hands back a window one, and a label
+placed straight from the projection lands at that fraction of the way across
+the screen. The ranges are stacked due WEST because the side panel is four
+hundred and twenty eight wide on the right: the first cut put them on the
+forty five diagonal and the two outer rings were behind the build menu.
+
 Still to come on it: a press does not yet select through the view, and the
 Mission and Menu tabs still draw nothing.
 
@@ -2823,8 +2864,10 @@ cargo build --release -p swarm_app
     --chewers 0 --hud --build fighter,20 --frames 200 --zoom 4 --out yard.png
 # The sensors manager, which is the camera pulling back rather than a screen:
 # `--view` is the tab, since a headless run has no pointer to press one with.
+# What to check is the dark wash, the patch the fleet lights on it, and the
+# bearings and ranges reading round the horizon.
 ./target/release/swarm_app --headless --fixed-dt --motes 900 --hives 5 --rocks 4 \
-    --chewers 0 --hud --view sensors --frames 60 --zoom 4 --out sensors.png
+    --chewers 0 --hud --view sensors --reinforce 2 --frames 60 --zoom 4 --out sensors.png
 # A selected ship's outline, which is the flagship out of the box: the rim is
 # the check, and so is the escort beside it having none.
 ./target/release/swarm_app --headless --fixed-dt --motes 800 --reinforce 2 --hives 2 \

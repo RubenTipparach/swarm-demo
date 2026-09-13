@@ -136,14 +136,19 @@ pub(crate) fn add_ring(
     add_strip(pos, col, idx, eye, &ring, true, w, c, alpha);
 }
 
-/// A filled disc in the horizontal plane, as a fan.
+/// A filled disc in the horizontal plane, as a fan, fading from `inner` at
+/// the centre to `outer` at the rim.
 ///
 /// The one thing here that is NOT turned toward the eye, and on purpose: this
-/// is a fill rather than a stroke, so it is the plane itself. A disc that
-/// always faced the camera would be a bubble round the selection washing over
-/// every ship inside it from every angle, and at nought pitch what a player
-/// reads the order off is the rim, the X and the lines, which all have width
-/// now.
+/// is a fill rather than a stroke, so it is the plane. A disc that always
+/// faced the camera would be a bubble round its own centre washing over every
+/// ship inside it from every angle.
+///
+/// Two alphas rather than one because the sensors manager's coverage is a
+/// falloff and the nav disc's wash is flat, and those are one shape with two
+/// settings rather than two fans: a second implementation is the divergent
+/// path this file's own rules name.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn add_disc(
     pos: &mut Vec<[f32; 3]>,
     col: &mut Vec<[f32; 4]>,
@@ -151,16 +156,16 @@ pub(crate) fn add_disc(
     centre: Vec3,
     r: f32,
     c: [f32; 3],
-    alpha: f32,
+    (inner, outer): (f32, f32),
     segments: usize,
 ) {
     let base = pos.len() as u32;
     pos.push(centre.to_array());
-    col.push([c[0], c[1], c[2], alpha]);
+    col.push([c[0], c[1], c[2], inner]);
     for n in 0..=segments {
         let a = n as f32 / segments as f32 * std::f32::consts::TAU;
         pos.push((centre + Vec3::new(a.cos(), 0.0, a.sin()) * r).to_array());
-        col.push([c[0], c[1], c[2], alpha]);
+        col.push([c[0], c[1], c[2], outer]);
     }
     for n in 0..segments as u32 {
         idx.extend_from_slice(&[base, base + 1 + n, base + 2 + n]);
@@ -277,7 +282,16 @@ pub(crate) fn draw_nav(
         // The fill is ADDITIVE and in linear light, so the prototype's 0.13
         // of alpha blended sRGB is about 0.03 here: at 0.13 the whole field
         // went teal and the ships inside it read as under water.
-        add_disc(&mut pos, &mut col, &mut idx, at, reach, CYAN, 0.03, 96);
+        add_disc(
+            &mut pos,
+            &mut col,
+            &mut idx,
+            at,
+            reach,
+            CYAN,
+            (0.03, 0.03),
+            96,
+        );
         add_ring(
             &mut pos,
             &mut col,
@@ -389,19 +403,5 @@ pub(crate) fn draw_nav(
         );
     }
 
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    );
-    if pos.is_empty() {
-        mesh = empty_mesh();
-    } else {
-        let n = pos.len();
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n]);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0f32; 2]; n]);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, col);
-        mesh.insert_indices(Indices::U32(idx));
-    }
-    let _ = meshes.insert(handle.0.id(), mesh);
+    let _ = meshes.insert(handle.0.id(), Draw { pos, col, idx }.mesh());
 }

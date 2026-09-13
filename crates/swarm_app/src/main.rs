@@ -645,6 +645,7 @@ fn main() {
                     // gate with the nav disc: an overview with the world
                     // stopped is worth exactly as much as an order is.
                     draw_sensors,
+                    place_sensor_marks,
                     slide_deck,
                     light_deck,
                     deck_readouts,

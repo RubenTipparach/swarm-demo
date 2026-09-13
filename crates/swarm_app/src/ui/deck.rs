@@ -261,6 +261,11 @@ pub(crate) fn build_deck(
         clock(p, &skin);
         strip(p, &skin, &glyphs, &scene);
         rail(p, &skin, &fleet);
+        // The sensors manager's numbers. Built with the deck rather than with
+        // the view, because a mark is a UI node and this is where UI is torn
+        // down: a set spawned on opening the view would be a set the teardown
+        // never saw.
+        sensor_marks(p, &skin);
         // The build menu in a skirmish and a run, the range in a sandbox:
         // one panel, two contents, chosen by the mode.
         side_panel(p, &skin, &glyphs, &scene);
