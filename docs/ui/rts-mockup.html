@@ -254,21 +254,27 @@ body {
 .tl { display: flex; justify-content: space-between; font-family: var(--hud-mono);
       font-size: 10.5px; color: var(--faint); }
 
-/* The sensors manager is the WHOLE battlefield, so it IS the screen: it has no
-   scrim and no box, it fills everything above the command bar and draws the
-   field itself. A box on the map would be a minimap, and a minimap is the one
-   thing this is not. */
-.sensors { position: absolute; left: 0; right: 0; top: 0; height: 724px; }
+/* The sensors manager is not a screen OVER the field, it is the field seen
+   from further out: the camera pulls back and this canvas draws the furniture
+   on top of the real view, at the HUD's own 1600 by 900, which is the stage's
+   own size, so a ring drawn here lands exactly where the world camera would
+   put it. It paints NOTHING of its own ground, because the ground is the
+   battle. */
+.sensors { position: absolute; inset: 0; }
 .sensors canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-.shead { position: absolute; left: 14px; right: 14px; top: 12px; display: flex;
+/* Clear of the clock on the left and the resource strip on the right, because
+   this view does not replace the HUD any more: it is the same screen with the
+   camera further out, so everything that was already there is still there. */
+.shead { position: absolute; left: 210px; right: 460px; top: 12px; display: flex;
          align-items: baseline; gap: 12px; height: 22px; }
 .shead .t { font-weight: 700; font-size: 15px; letter-spacing: 0.1em; color: var(--gold); text-transform: uppercase; }
 .shead .sub { font-family: var(--hud-mono); font-size: 12px; color: var(--dim); }
 .shead .x { margin-left: auto; width: 20px; height: 18px; background: var(--gold-b);
             border: 1px solid var(--gold-dim); color: var(--gold); font-size: 12px; line-height: 1;
             align-self: center; }
-.scap { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center;
+.scap { position: absolute; left: 0; right: 0; bottom: 190px; text-align: center;
         font-size: 13px; letter-spacing: 0.06em; color: var(--ink); text-shadow: 0 0 8px #000; }
+.scap b { color: var(--gold); font-weight: 600; }
 
 .menu { width: 300px; }
 .mitems { display: flex; flex-direction: column; gap: 4px; }
@@ -661,7 +667,7 @@ body {
 
       <div class="vlayer" data-layer="sensors">
         <div class="sensors">
-          <canvas id="sensorcv" width="1600" height="724"></canvas>
+          <canvas id="sensorcv" width="1600" height="900"></canvas>
           <div class="shead"><span class="t">Sensors Manager</span><span class="sub" id="scount"></span><button class="x" type="button" data-act="close-view" title="Close">X</button></div>
           <div class="scap" id="scap"></div>
         </div>
@@ -684,9 +690,9 @@ body {
         <button type="button" aria-pressed="false">Tactics</button>
       </div>
       <div class="tabs mtabs" id="mtabs">
-        <button type="button" data-view="mission" aria-pressed="false">Mission</button>
-        <button type="button" data-view="sensors" aria-pressed="false">Sensors</button>
-        <button type="button" data-view="menu" aria-pressed="false">Menu</button>
+        <button type="button" data-open="mission" aria-pressed="false">Mission</button>
+        <button type="button" data-open="sensors" aria-pressed="false">Sensors</button>
+        <button type="button" data-open="menu" aria-pressed="false">Menu</button>
       </div>
       <div class="tabs rtabs" id="rtabs">
         <button type="button" data-tab="build" aria-pressed="true">Build</button>
@@ -764,16 +770,28 @@ body {
         a goal that tracks something and a goal that is simply ticked are the same kind of thing. Under them
         is the swarm tide, three phases with a marker where the run actually is, because when to leave is the
         decision the whole mode turns on.</p>
-        <p>The SENSORS manager is a 3D map of the real field and not a minimap, which is why it has no box
-        and no scrim: it fills the screen above the command bar and draws the field itself. <b>The shot is
-        the GAME's own camera pulled back</b>: the same pivot, the same yaw and pitch, so the map is already
-        oriented the way you were looking when you opened it, and dragging in it turns the same orbit, so the
-        map and the world behind it turn together. There is no second projection anywhere in it: the rings,
-        the coverage, the specks and the stalks all go through the scene's camera, which is the only way a
-        map and the world it is a map OF can be guaranteed to line up.</p>
-        <p>The DISTANCE is the map's own, though, and that is the one thing it does not inherit: a sensors
-        view that took the zoom as well would show a tenth of the horizon whenever you happened to be in
-        close. It is solved rather than tuned, in angles, because that is what a perspective camera frames
+        <p><b>The SENSORS manager is a camera MODE, not a screen.</b> It does not open over the field, it
+        pulls the camera back off it: the eye eases out to whatever frames the horizon and eases back to your
+        own zoom on the way out, and the whole time it is the same camera on the same battle. So the ships on
+        it are the real ships at their real size, a press is the same raycast the field uses, and the map
+        cannot be out of register with the world because there is only one of them. The furniture (the
+        horizon, the rings, the bearings, the coverage, the stalks) is drawn on top of the live view and
+        paints no ground of its own, because the ground IS the battle. Space toggles it, which is the key
+        Homeworld gives its own.</p>
+        <p><b>And you can work in it.</b> A press selects, right click orders the selection to a point on the
+        pivot's plane, and a drag turns the orbit, which turns the map and the world together. Nothing in the
+        view closes it: a sensors manager that shut every time somebody pressed the empty space between two
+        contacts is a mode nobody can work in, so the ways out are the ones a player chose, the tab, space,
+        escape or the X.</p>
+        <p>That was a real defect and its cause is worth keeping. The tabs carried <code>data-view</code> as
+        the action and the HUD carries <code>data-view</code> as its STATE, so a press anywhere inside an
+        open view found no button, walked all the way up to <code>#hud</code>, read the open view off it as
+        though it were a button that had been pressed, and closed the thing. <b>An attribute that names an
+        ACTION and an attribute that names STATE must not share a name</b>, because one selector matches both
+        and the ancestor always wins. The action is <code>data-open</code> now.</p>
+        <p>The ANGLE and the PIVOT are yours; the DISTANCE is the map's own, and that is the one thing it
+        does not inherit: a sensors view that took the zoom as well would show a tenth of the horizon
+        whenever you happened to be in close. It is solved rather than tuned, in angles, because that is what a perspective camera frames
         with: the horizon is 2R across on screen at every angle and 2R sin(pitch) tall, and the distance is
         whichever of those needs the most room. Looking down the height binds, edge on the width does, and
         the sphere fills the frame either way instead of shrinking to a coin the flatter the camera gets.
@@ -1839,6 +1857,7 @@ body {
   var scene = new THREE.Scene();
   var camera = new THREE.PerspectiveCamera(46, 16 / 9, 1, 8000);
   var orbit = { yaw: 0.62, pitch: 0.28, dist: 300, focus: new THREE.Vector3() };
+  var camDist = orbit.dist;   // what the eye is actually at, eased toward the goal
   // Where an orbit's eye stands, written ONCE. The field's camera and the
   // sensors map are the same orbit at two distances, and two copies of this
   // expression is two cameras that can disagree about which way the player is
@@ -2437,7 +2456,7 @@ body {
       b.setAttribute("aria-pressed", String(b.dataset.tab === tab));
     });
     document.querySelectorAll("#mtabs button").forEach(function (b) {
-      b.setAttribute("aria-pressed", String(b.dataset.view === view));
+      b.setAttribute("aria-pressed", String(b.dataset.open === view));
     });
     document.getElementById("ptitle").textContent =
       tab === "build" ? "Build Menu" : tab === "research" ? "Research Menu" : "Launch Manager";
@@ -2445,7 +2464,7 @@ body {
 
   // One click handler, and what the target carries decides what it meant.
   hud.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-act],[data-view],[data-cat],[data-buy],[data-res],[data-tab],[data-cmd],[data-mod],[data-grp],[data-prod],[data-launch],[data-pick],#showall");
+    var t = e.target.closest("[data-act],[data-open],[data-cat],[data-buy],[data-res],[data-tab],[data-cmd],[data-mod],[data-grp],[data-prod],[data-launch],[data-pick],#showall");
     if (!t) { return; }
 
     if (t.dataset.act === "panel") { setPanel(!open.panel); return; }
@@ -2458,7 +2477,16 @@ body {
     // A tab that is already showing its view CLOSES it, which is the one
     // convention a tab bar over a map has to keep: the way out of a view is
     // the control that opened it.
-    if (t.dataset.view) { setView(view === t.dataset.view ? "none" : t.dataset.view); return; }
+    //
+    // `data-open` and NOT `data-view`, and that is a bug rather than a taste.
+    // `data-view` is the HUD's own STATE, set on `#hud`, and `closest` walks
+    // all the way up: a press anywhere inside an open view found no button,
+    // reached `#hud`, read the open view off it as though it were a button
+    // that had been pressed, and closed the thing. A press on empty space in
+    // the sensors map shut the map. An attribute that names an ACTION and an
+    // attribute that names STATE must not share a name, because one selector
+    // matches both and the ancestor always wins.
+    if (t.dataset.open) { setView(view === t.dataset.open ? "none" : t.dataset.open); return; }
 
     if (t.dataset.pick) {
       var own = hulls.filter(function (h) { return h.spec.key === t.dataset.pick; });
@@ -2556,7 +2584,12 @@ body {
     if (e.key === "b" || e.key === "B") { setPanel(!open.panel); }
     if (e.key === "c" || e.key === "C") { setBottom(!open.bottom); }
     if (e.key === "m" || e.key === "M") { setView(view === "mission" ? "none" : "mission"); }
-    if (e.key === "s" || e.key === "S") { setView(view === "sensors" ? "none" : "sensors"); }
+    // Space AND S, because space is the key Homeworld gives the sensors
+    // manager and the one a player's thumb is already on.
+    if (e.key === "s" || e.key === "S" || e.key === " ") {
+      e.preventDefault();
+      setView(view === "sensors" ? "none" : "sensors");
+    }
     // A view is over everything, so it is what escape reaches first.
     if (e.key === "Escape") {
       if (view !== "none") { setView("none"); }
@@ -2606,12 +2639,29 @@ body {
     drawBank();
 
     hulls.forEach(function (h) {
-      h.mesh.position.addScaledVector(h.drift, dt * 8);
+      // An ORDER beats the drift, and arriving clears it: a ship still nudging
+      // itself sideways at its destination is a ship that never got there.
+      if (h.goal) {
+        var to = h.goal.clone().sub(h.mesh.position);
+        var far = to.length();
+        if (far < 2) { h.goal = null; }
+        else { h.mesh.position.addScaledVector(to.multiplyScalar(1 / far), Math.min(far, dt * 34)); }
+      } else {
+        h.mesh.position.addScaledVector(h.drift, dt * 8);
+      }
       h.mesh.rotation.y += h.spin;
     });
 
     if (sel) { orbit.focus.lerp(sel.mesh.position, 0.05); }
-    orbitEye(camera.position, orbit.dist);
+    // Sensors is a CAMERA MODE, not a screen. The eye eases out to whatever
+    // frames the horizon and eases back to the player's own zoom on the way
+    // out, so the view arrives rather than cutting, and the whole time it is
+    // the same camera looking at the same field: the ships are the real ships,
+    // a click is the same raycast, and the map cannot be out of register with
+    // the world because there is only one of them.
+    var want = view === "sensors" ? sensorFit() : orbit.dist;
+    camDist += (want - camDist) * (1 - Math.exp(-5.5 * dt));
+    orbitEye(camera.position, camDist);
     camera.lookAt(orbit.focus);
     poseOutline();
     // The frame clears itself rather than the renderer doing it, because the
@@ -2739,7 +2789,6 @@ body {
   var SENSOR_R = 300;        // world units to the sensor horizon
   var SENSOR_FILL = 0.88;    // what share of the frame the horizon takes up
   var SENSOR_NEAR = 2.2;     // and never closer than this many radii
-  var sensorCam = new THREE.PerspectiveCamera(50, 16 / 9, 1, 12000);
   var ink = {};
   function sensorInk() {
     var cs = getComputedStyle(document.getElementById("hud"));
@@ -2760,8 +2809,12 @@ body {
   // is whichever of those two needs the most room. Looking down, the height
   // binds; edge on, the width does, and the sphere fills the frame either way
   // instead of shrinking to a coin the flatter the camera gets.
-  function aimSensor(w, h) {
-    var asp = w / h, t = Math.tan(sensorCam.fov * Math.PI / 360);
+  // How far out the map wants the camera. The ANGLE and the PIVOT are the
+  // player's; only this is the map's own, because a sensors view that took the
+  // zoom as well would show a tenth of the horizon whenever the player
+  // happened to be in close.
+  function sensorFit() {
+    var asp = camera.aspect, t = Math.tan(camera.fov * Math.PI / 360);
     // Solved in ANGLES, not in units, because that is what a perspective
     // camera actually frames with: the horizon is 2R across on screen at every
     // angle and 2R*sin(pitch) tall, so it is whichever of those two needs the
@@ -2775,17 +2828,13 @@ body {
     // to the pixel sits with its near rim almost against the lens, and the
     // near arc then comes out four times the far one: honest perspective, and
     // a horizon nobody can read a bearing off.
-    sensorCam.aspect = asp;
-    orbitEye(sensorCam.position, Math.max(fit, SENSOR_R * SENSOR_NEAR));
-    sensorCam.lookAt(orbit.focus);
-    sensorCam.updateMatrixWorld(true);
-    sensorCam.updateProjectionMatrix();
+    return Math.max(fit, SENSOR_R * SENSOR_NEAR);
   }
   // Screen pixels from a world point, and NULL for anything behind the eye:
   // a point past the near plane projects to a mirrored position, which draws
   // a ring inside out rather than not at all.
   function sp(x, y, z, w, h) {
-    sv.set(x, y, z).project(sensorCam);
+    sv.set(x, y, z).project(camera);
     if (sv.z > 1) { return null; }
     return [(sv.x * 0.5 + 0.5) * w, (-sv.y * 0.5 + 0.5) * h];
   }
@@ -2885,8 +2934,11 @@ body {
     var g = cvs.getContext("2d"), w = cvs.width, h = cvs.height;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, w, h);
-    g.fillStyle = "rgba(3,9,16,.965)"; g.fillRect(0, 0, w, h);
-    aimSensor(w, h);
+    // Drawn over the WORLD now rather than over a flat ground, so every
+    // hairline gets a shadow: a one pixel cyan ring over a lit hull or a
+    // nebula is a ring that disappears wherever the background is bright.
+    g.shadowColor = "rgba(0,0,0,.85)";
+    g.shadowBlur = 3;
 
     // Coverage first and ADDITIVE, so two ships watching the same volume are
     // visibly brighter there than one. That is the information this screen
@@ -2931,13 +2983,37 @@ body {
       g.fillStyle = hh.hp > 0.6 ? ink.green : hh.hp > 0.3 ? ink.gold : ink.red;
       g.fillRect(q[0] - big / 2, q[1] + big / 2 + 2, big, 2);
       blips.push({ h: hh, x: q[0], y: q[1] });
+
+      // An ORDER is drawn where it was given: the line out to it, the drop to
+      // the plane, and a ring on the plane at the point. That is the move
+      // order's own disc seen from outside, and it is the only thing on this
+      // map that says what the fleet is about to do rather than where it is.
+      if (hh.goal) {
+        var gp = sp(hh.goal.x, hh.goal.y, hh.goal.z, w, h);
+        if (gp) {
+          g.strokeStyle = ink.gold; g.lineWidth = 1;
+          g.setLineDash([5, 4]);
+          g.beginPath(); g.moveTo(q[0], q[1]); g.lineTo(gp[0], gp[1]); g.stroke();
+          g.setLineDash([]);
+          var r1 = sp(hh.goal.x + 9, hh.goal.y, hh.goal.z, w, h);
+          var r2 = sp(hh.goal.x, hh.goal.y, hh.goal.z + 9, w, h);
+          if (r1 && r2) {
+            g.save();
+            g.setTransform(r1[0] - gp[0], r1[1] - gp[1], r2[0] - gp[0], r2[1] - gp[1], gp[0], gp[1]);
+            g.beginPath(); g.arc(0, 0, 1, 0, Math.PI * 2);
+            g.restore();
+            g.stroke();
+          }
+        }
+      }
     });
 
     document.getElementById("scount").innerHTML =
       hulls.length + " contacts &#183; 1 field &#183; horizon " + SENSOR_R + "u";
     document.getElementById("scap").innerHTML =
       "Ashfall Reach &#183; pivot " + Math.round(orbit.focus.x) + ", " + Math.round(orbit.focus.y) +
-      ", " + Math.round(orbit.focus.z) + " &#183; coverage " + Math.round(coverage()) + "%";
+      ", " + Math.round(orbit.focus.z) + " &#183; coverage " + Math.round(coverage()) +
+      "% &#183; <b>click</b> select &#183; <b>right click</b> move &#183; <b>space</b> back";
   }
 
   // What share of the horizon the fleet can see into, which is the one NUMBER
@@ -2956,20 +3032,54 @@ body {
     var scv = document.getElementById("sensorcv");
     scv.addEventListener("pointerdown", orbitDown);
     scv.addEventListener("pointermove", orbitMove);
-    scv.addEventListener("pointerup", orbitEnd(function (e) { pickBlip(e); }));
+    scv.addEventListener("pointerup", orbitEnd(pickOut));
     scv.addEventListener("pointercancel", function () { drag = null; });
+    // Right click ORDERS, exactly as it would on the field. The sensors view
+    // is where a fleet is actually positioned, so a view you could only look
+    // at would be the one screen in this game where the verb does not work.
+    scv.addEventListener("contextmenu", function (e) {
+      e.preventDefault();
+      orderTo(e);
+    });
   })();
 
-  function pickBlip(e) {
+  // Nothing in this view CLOSES it. A press either names a ship or names
+  // nothing, and a sensors manager that shut every time a player pressed the
+  // empty space between two contacts would be a mode nobody could work in. The
+  // ways out are the ones a player chose: the tab, space, escape, the X.
+  function pickOut(e) {
+    // The ships on screen are the REAL ships, so the field's own raycast
+    // answers first and is exact. The blip is the fallback for a contact drawn
+    // smaller than a finger, which at this range is most of them.
+    var was = sel;
+    pick(e);
+    if (sel !== was) { say(sel.spec.name + " selected"); return; }
     var b = document.getElementById("sensorcv").getBoundingClientRect();
     var x = (e.clientX - b.left) / b.width * 1600;
-    var y = (e.clientY - b.top) / b.height * 724;
-    var best = null, bd = 20 * 20;
+    var y = (e.clientY - b.top) / b.height * 900;
+    var best = null, bd = 22 * 22;
     blips.forEach(function (p) {
       var d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
       if (d < bd) { bd = d; best = p; }
     });
     if (best) { select(best.h); say(best.h.spec.name + " selected"); }
+  }
+
+  // A move order lands on the horizontal plane through the PIVOT, which is the
+  // plane every ring and stalk on this map is already measured from, so where
+  // a player presses and where the ship ends up are the same place by
+  // construction rather than by a second convention.
+  var ordPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  var ordHit = new THREE.Vector3();
+  function orderTo(e) {
+    if (!sel) { say("Nothing selected"); return; }
+    var r = cv.getBoundingClientRect();
+    ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1,
+      -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+    ordPlane.constant = -orbit.focus.y;
+    if (!ray.ray.intersectPlane(ordPlane, ordHit)) { return; }
+    sel.goal = ordHit.clone();
+    say(sel.spec.name + " under way");
   }
 
   function setView(id) {
