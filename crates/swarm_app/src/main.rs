@@ -66,7 +66,7 @@ use swarm_core::voxel::{mat, SURF_DRIVE};
 use swarm_core::{
     alien::{generate, Archetype},
     body::Body,
-    build::Tier,
+    build::{self, Category, Module, Order, Slots, Task, Tier, Yard},
     damage::{chunk_for, Breach, Chunk, DamageGrid, Vent},
     economy::{yield_of, Cube, Cut, Pack, Yield, DATA_CUBE, ORE_CUBE},
     formation::{self, Shape},
@@ -141,6 +141,15 @@ struct Args {
     /// state, which goes critical once enough of it is gone.
     explode: u32,
     wreck: u32,
+    /// `--view mission|sensors|menu` opens one of the middle views at start,
+    /// since a headless run has no pointer to press its tab with. The sensors
+    /// manager is a camera MODE, so this is the only way to photograph what
+    /// the eye does when it is asked for.
+    view: String,
+    /// `--build WHAT,TICK`: press one build row at that tick, so a hull coming
+    /// off the queue can be photographed. WHAT is a class key or `fighter`.
+    build: u32,
+    build_what: String,
     /// Ticks between one gun firing and the next. Nought silences them.
     cadence: u32,
     /// How many motherships the swarm flies from.
@@ -229,6 +238,9 @@ fn parse_args() -> Args {
         target: Vec3::ZERO,
         explode: 0,
         wreck: 0,
+        build: 0,
+        build_what: String::new(),
+        view: String::new(),
         cadence: 70,
         hives: 10,
         order: None,
@@ -296,6 +308,17 @@ fn parse_args() -> Args {
             }
             "--chewers" => {
                 a.chewers = next().parse().expect("--chewers N");
+                i += 1;
+            }
+            "--view" => {
+                a.view = next();
+                i += 1;
+            }
+            "--build" => {
+                let arg = next();
+                let (what, tick) = arg.split_once(',').expect("--build WHAT,TICK");
+                a.build_what = what.to_string();
+                a.build = tick.parse().expect("--build WHAT,TICK");
                 i += 1;
             }
             "--wreck" => {
@@ -472,6 +495,8 @@ fn main() {
         target: args.target,
         explode: args.explode,
         wreck: args.wreck,
+        build: args.build,
+        build_what: args.build_what.clone(),
         cadence: args.cadence,
         hives: args.hives.min(swarm::MAX_HIVES),
         order: args.order,
@@ -606,10 +631,21 @@ fn main() {
                 Update,
                 (
                     (deck_tabs, deck_commands).chain().before(nav_input),
+                    // The HUD is authored at 1600 by 900 and scaled, so this
+                    // runs before anything reads a layout.
+                    scale_hud,
                     // Guard reads the left press, so it runs with the other
                     // input systems and after the cell that opens its mode.
                     guard_input.after(deck_commands),
-                    call_class,
+                    // The build menu: what it says, then what a press on it
+                    // does, in that order so a press names the row that was
+                    // actually drawn.
+                    (fill_build_list, build_input).chain(),
+                    // The sensors furniture DRAWS, so it sits outside the run
+                    // gate with the nav disc: an overview with the world
+                    // stopped is worth exactly as much as an order is.
+                    draw_sensors,
+                    place_sensor_marks,
                     slide_deck,
                     light_deck,
                     deck_readouts,
@@ -669,6 +705,16 @@ fn main() {
         .init_resource::<Wing>()
         .init_resource::<Docked>()
         .init_resource::<Rally>()
+        .insert_resource(Views {
+            open: match args.view.as_str() {
+                "mission" => Some(ViewTab::Mission),
+                "sensors" => Some(ViewTab::Sensors),
+                "menu" => Some(ViewTab::Menu),
+                _ => None,
+            },
+            ..default()
+        })
+        .init_resource::<Offers>()
         .init_resource::<Deck>()
         .init_resource::<OrderMode>()
         .init_resource::<Pings>()
@@ -728,7 +774,10 @@ fn main() {
                     advance_tick,
                     (
                         apply_nav_to,
-                        call_reinforcements,
+                        // The yard: it is opened on the flagship, then
+                        // ordered, then worked, so a job ordered this frame
+                        // is advanced this frame rather than next.
+                        (open_yards, call_reinforcements, script_build, work_yards).chain(),
                         fly_hull,
                         tumble,
                         publish_hull,
@@ -793,6 +842,10 @@ fn main() {
                     glow_engines,
                     aim_turrets,
                     hold_guard,
+                    // An outline is what is SELECTED, which is a fact about
+                    // the picture rather than about the world, so it keeps
+                    // running with the paused frame like everything else here.
+                    light_outline,
                 ),
                 remesh_dirty,
                 (orbit_camera, ride_the_eye),

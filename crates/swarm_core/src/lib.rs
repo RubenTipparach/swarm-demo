@@ -43,6 +43,7 @@ pub mod mesh;
 pub mod ray;
 pub mod rng;
 pub mod rock;
+pub mod rung;
 pub mod sky;
 pub mod tide;
 pub mod voxel;

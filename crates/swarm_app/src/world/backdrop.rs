@@ -77,65 +77,72 @@ fn spawn_fx_meshes(
     // quad is turned to face the eye in the shader; this is only its corners.
     spawn_spark_mesh(commands, meshes.add(Rectangle::new(1.0, 1.0)));
 
-    // The beams, as one mesh rebuilt every frame: there are a few dozen and
-    // they are a function of where the eye is, so there is nothing to cache.
-    let beam_mesh = meshes.add(empty_mesh());
-    commands.spawn((
-        Mesh3d(beam_mesh.clone()),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::WHITE,
-            unlit: true,
-            alpha_mode: AlphaMode::Add,
-            // A beam is turned edge on to the eye every frame, so which way
-            // its winding comes out depends on where the camera is: culled,
-            // it disappeared from half the orbit.
-            cull_mode: None,
-            ..default()
-        })),
-        Transform::IDENTITY,
-        bevy::camera::visibility::NoFrustumCulling,
-        BeamMesh,
-    ));
-    commands.insert_resource(BeamHandle(beam_mesh));
+    // Five meshes rebuilt every frame, each one a function of where the eye
+    // is: there are at most a few hundred vertices in any of them and nothing
+    // to cache. They differ in exactly two things, so `live_mesh` takes those
+    // two and the spawn is written once.
+    let beam = live_mesh(commands, meshes, materials, AlphaMode::Add, None);
+    commands.entity(beam.0).insert(BeamMesh);
+    commands.insert_resource(BeamHandle(beam.1));
 
-    // The nav disc, on the same footing as the beams: one mesh rebuilt every
-    // frame, because it is a function of where the eye is and there are at
-    // most a few hundred vertices in it.
-    let nav_mesh = meshes.add(empty_mesh());
-    commands.spawn((
-        Mesh3d(nav_mesh.clone()),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::WHITE,
-            unlit: true,
-            alpha_mode: AlphaMode::Add,
-            cull_mode: None,
-            ..default()
-        })),
-        Transform::IDENTITY,
-        bevy::camera::visibility::NoFrustumCulling,
-    ));
-    commands.insert_resource(NavHandle(nav_mesh));
+    let nav = live_mesh(commands, meshes, materials, AlphaMode::Add, None);
+    commands.insert_resource(NavHandle(nav.1));
 
-    // The flames, on the same footing: geometry rebuilt every frame. Additive
-    // and BACK FACE CULLED, which the nav disc is not, and the difference is
-    // the whole look. Additive on a closed surface lays its colour down twice
-    // per ray, once on the way in and once on the way out, so the silhouette
-    // and the middle come out the same brightness and the cone reads as a
-    // smear of light rather than as a shape. Culled, a ray crosses one facet
-    // and the facet's own flat colour is what arrives.
-    let flame_mesh = meshes.add(empty_mesh());
-    commands.spawn((
-        Mesh3d(flame_mesh.clone()),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::WHITE,
-            unlit: true,
-            alpha_mode: AlphaMode::Add,
-            ..default()
-        })),
-        Transform::IDENTITY,
-        bevy::camera::visibility::NoFrustumCulling,
-    ));
-    commands.insert_resource(FlameHandle(flame_mesh));
+    // The sensors manager's furniture: lines, so additive like the disc.
+    let furniture = live_mesh(commands, meshes, materials, AlphaMode::Add, None);
+    commands.insert_resource(SensorHandle(furniture.1));
+
+    // And its GROUND, which is the one thing in this scene that is alpha
+    // blended rather than additive, and it has to be: what it says is that
+    // unwatched space is DARK, and additive blending can only ever add light.
+    // Its own entity for the same reason, because a blend mode is a material
+    // and a material is a draw.
+    let ground = live_mesh(commands, meshes, materials, AlphaMode::Blend, None);
+    commands.insert_resource(GroundHandle(ground.1));
+
+    // The flames are BACK FACE CULLED, which the nav disc is not, and that is
+    // the whole difference in the look. Additive on a closed surface lays its
+    // colour down twice per ray, once on the way in and once on the way out,
+    // so the silhouette and the middle come out the same brightness and the
+    // cone reads as a smear of light rather than as a shape. Culled, a ray
+    // crosses one facet and the facet's own flat colour is what arrives.
+    let flames = live_mesh(
+        commands,
+        meshes,
+        materials,
+        AlphaMode::Add,
+        Some(bevy::render::render_resource::Face::Back),
+    );
+    commands.insert_resource(FlameHandle(flames.1));
+}
+
+/// One unlit mesh rebuilt every frame, by its blend mode and its culling.
+///
+/// Hands back the entity and the handle, because a caller wants the handle to
+/// keep in a resource and the beams want the entity as well, to mark.
+fn live_mesh(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    alpha_mode: AlphaMode,
+    cull_mode: Option<bevy::render::render_resource::Face>,
+) -> (Entity, Handle<Mesh>) {
+    let mesh = meshes.add(empty_mesh());
+    let e = commands
+        .spawn((
+            Mesh3d(mesh.clone()),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::WHITE,
+                unlit: true,
+                alpha_mode,
+                cull_mode,
+                ..default()
+            })),
+            Transform::IDENTITY,
+            bevy::camera::visibility::NoFrustumCulling,
+        ))
+        .id();
+    (e, mesh)
 }
 
 /// The nebula, baked once on the CPU into a half float cubemap.
@@ -330,6 +337,7 @@ fn spawn_camera(
         yaw: scene.yaw,
         pitch: scene.pitch,
         dist,
+        eye: dist,
         target: scene.target,
         follow: false,
     };

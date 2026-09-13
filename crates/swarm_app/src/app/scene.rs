@@ -59,6 +59,14 @@ pub(crate) struct SceneSpec {
     /// cells rather than exploding the ship itself, so the death goes through
     /// the same `go_critical` rule every other one does.
     pub(crate) wreck: u32,
+    /// `--build WHAT,TICK` presses one build row at that tick, since a
+    /// headless run has no pointer. It goes through `order_one` exactly as the
+    /// button does, so what is photographed is the mechanic and not a second
+    /// path to it. WHAT is a class key or `fighter`, because a frigate is
+    /// fifty seconds of queue and a fighter is two and a half: the cheap one
+    /// is what lets a run photograph a hull ARRIVING rather than only a bar.
+    pub(crate) build: u32,
+    pub(crate) build_what: String,
     pub(crate) cadence: u32,
     pub(crate) hives: usize,
     pub(crate) order: Option<Vec3>,
@@ -609,6 +617,9 @@ fn aim_camera(
             yaw: scene.yaw,
             pitch: scene.pitch,
             dist,
+            // Opens where the player's own zoom is: the sensors view is the
+            // only thing that moves it, and it eases.
+            eye: dist,
             target,
             follow: false,
         };

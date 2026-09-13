@@ -195,6 +195,7 @@ pub(crate) enum Glyph {
     Slug,
     Torpedo,
     Bite,
+    Caret,
 }
 
 impl Glyph {
@@ -204,7 +205,7 @@ impl Glyph {
     /// Form, Dock and Salvage all came out wearing the fighter's mark for
     /// exactly that reason. `every_glyph_is_baked` is what makes that a failed
     /// test rather than a picture somebody has to notice.
-    pub(crate) const ALL: [Glyph; 28] = [
+    pub(crate) const ALL: [Glyph; 29] = [
         Glyph::Fighter,
         Glyph::Corvette,
         Glyph::Frigate,
@@ -233,6 +234,7 @@ impl Glyph {
         Glyph::Form,
         Glyph::Dock,
         Glyph::Salv,
+        Glyph::Caret,
     ];
 
     fn mark(self) -> &'static Mark {
@@ -246,6 +248,7 @@ impl Glyph {
             Glyph::Move | Glyph::Speed => &MOVE,
             Glyph::Attack => &ATTACK,
             Glyph::Guard | Glyph::Armour => &GUARD,
+            Glyph::Caret => &CARET,
             Glyph::Stop => &STOP,
             Glyph::Stance => &STANCE,
             Glyph::Launch => &LAUNCH,
@@ -429,6 +432,20 @@ static GUARD: Mark = Mark {
         (5.0, 6.0),
         (12.0, 3.0),
     ])],
+};
+
+/// The caret on the bottom deck's own toggle, pointing DOWN.
+///
+/// One mark and not two, because up is this one flipped: `ImageNode.flip_y` is
+/// what says which way the deck will go, so a player reads the button as the
+/// direction it is about to move the deck rather than as a label. Baked like
+/// every other mark rather than typed as a character, which is the trap this
+/// project already sprang once: the default font has no glyph for `\u{25be}`
+/// and it drew as a hollow box.
+static CARET: Mark = Mark {
+    w: 24.0,
+    h: 24.0,
+    parts: &[Ink2::Poly(&[(5.0, 8.0), (19.0, 8.0), (12.0, 17.0)], 1.0)],
 };
 
 static STOP: Mark = Mark {
@@ -644,7 +661,7 @@ mod tests {
         // list has fallen behind.
         assert_eq!(
             Glyph::ALL.len(),
-            28,
+            29,
             "a glyph was added or removed without the list"
         );
         for (n, g) in Glyph::ALL.iter().enumerate() {

@@ -57,18 +57,24 @@ impl Ink {
 }
 
 /// One frame: its fill, its hairline, an optional inner hairline and the
-/// colour of the four corner brackets.
+/// colour of the four corner brackets, when it has any.
 ///
 /// The fill is a vertical gradient when `grad` is set, because a button is lit
 /// from above and a panel is not, and that is the whole of the difference
 /// between the two descriptors.
+///
+/// `corner` is OPTIONAL because a bracket is a decoration and a decoration on
+/// every frame is a decoration that reads as noise: the gold ones on the panel
+/// and on an armed button were on every panel edge and every lit tab at once,
+/// which is what made the bottom deck busy. An armed button still says so with
+/// its gold fill, its gold hairline and its gold text.
 #[derive(Clone, Copy)]
 pub(crate) struct Slice {
     pub(crate) fill: Ink,
     pub(crate) grad: Option<Ink>,
     pub(crate) line: Ink,
     pub(crate) inner: Option<Ink>,
-    pub(crate) corner: Ink,
+    pub(crate) corner: Option<Ink>,
 }
 
 /// Which frame a node wears. Four, and a fifth would be a frame nobody could
@@ -117,6 +123,12 @@ pub(crate) struct Plan {
     pub(crate) line: Ink,
     pub(crate) lsub: Ink,
     pub(crate) rim: Ink,
+    /// The lattice itself, one line a CELL over the fill. It is what makes a
+    /// plan read as a plan rather than as a silhouette with panels on it, and
+    /// it is the scale: a reader can count cells off a hull and compare two
+    /// ships by the grid they are drawn on. Faint, because the panel lines
+    /// are the subject and this is the paper they are drawn on.
+    pub(crate) grid: Ink,
 }
 
 /// The four frames a skin bakes, and the palette they are drawn beside.
@@ -158,28 +170,28 @@ pub(crate) const COMMAND: SkinRow = SkinRow {
         grad: None,
         line: Ink::hex(0x609ebc).a(0.42),
         inner: Some(Ink::hex(0x609ebc).a(0.16)),
-        corner: Ink::hex(0xf5c542),
+        corner: None,
     },
     well: Slice {
         fill: Ink::hex(0x02090f).a(0.86),
         grad: None,
         line: Ink::hex(0x3c708e).a(0.36),
         inner: None,
-        corner: Ink::hex(0x49b6c8).a(0.55),
+        corner: Some(Ink::hex(0x49b6c8).a(0.55)),
     },
     btn: Slice {
         fill: Ink::hex(0x164056).a(0.90),
         grad: Some(Ink::hex(0x071823).a(0.90)),
         line: Ink::hex(0x78c8dc).a(0.50),
         inner: None,
-        corner: Ink::hex(0x8ce0f4).a(0.75),
+        corner: Some(Ink::hex(0x8ce0f4).a(0.75)),
     },
     hot: Slice {
         fill: Ink::hex(0x604c0a).a(0.92),
         grad: Some(Ink::hex(0x1e1704).a(0.92)),
         line: Ink::hex(0xf5c542).a(0.70),
         inner: None,
-        corner: Ink::hex(0xffd964),
+        corner: None,
     },
     plan: Plan {
         hull: Ink::hex(0x0d3a52),
@@ -187,6 +199,7 @@ pub(crate) const COMMAND: SkinRow = SkinRow {
         line: Ink::hex(0x3fc8e8),
         lsub: Ink::hex(0xff9a3c),
         rim: Ink::hex(0x7eeaff),
+        grid: Ink::hex(0x7eeaff).a(0.10),
     },
 };
 
@@ -289,13 +302,18 @@ fn bake(s: Slice) -> Image {
             line(n - 4, i, c);
         }
     }
-    // And the four brackets: an L two pixels thick and twelve long, drawn from
-    // each corner along both edges.
-    for (cx, cy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+    // And the four brackets, on the frames that have them: an L two pixels
+    // thick and twelve long, drawn from each corner along both edges.
+    for (cx, cy) in s
+        .corner
+        .iter()
+        .flat_map(|_| [(0, 0), (1, 0), (0, 1), (1, 1)])
+    {
+        let Some(corner) = s.corner else { continue };
         let put = |px: &mut Vec<u8>, u: u32, v: u32| {
             let x = if cx == 0 { u } else { SLICE_PX - 1 - u } as usize;
             let y = if cy == 0 { v } else { SLICE_PX - 1 - v } as usize;
-            over(px, (y * n + x) * 4, s.corner);
+            over(px, (y * n + x) * 4, corner);
         };
         for u in 0..ARM {
             for v in 0..ARM_W {

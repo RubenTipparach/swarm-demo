@@ -25,7 +25,31 @@ pub(crate) struct Orbit {
     /// it arrives and cleared the instant the player pans, because a focus
     /// that fought the pan keys would be a camera arguing with its own user.
     pub(crate) follow: bool,
+    /// Where the camera is actually PLACED, eased toward either the player's
+    /// own `dist` or the sensors manager's own.
+    ///
+    /// Two numbers rather than one saved and restored, because the mockup's
+    /// rule is that the angle and the pivot are the player's and the distance
+    /// is the map's: keeping the zoom untouched means coming back out of the
+    /// sensors view lands on exactly the zoom that went in, with nothing to
+    /// remember and nothing to get wrong.
+    pub(crate) eye: f32,
 }
+
+/// How far the eye stands back in the sensors manager, in world units.
+///
+/// The operational area is what it has to frame, and that is a great deal
+/// wider than a fight: the field camera lives inside 400 and this is five
+/// times it, so the fleet becomes the cluster it actually IS and the empty
+/// space round it is the part worth seeing, because empty space is where the
+/// swarm is not yet. Measured against the horizon rather than taken from the
+/// mockup: at the two thousand it specifies the ring is cut hard at two
+/// corners, because the eye looks across the plane at a pitch rather than
+/// straight down at it.
+pub(crate) const SENSORS_EYE: f32 = 2600.0;
+
+/// The horizon it draws, which is the operational area itself.
+pub(crate) const SENSORS_R: f32 = 900.0;
 
 /// The camera's own controls, and nothing else touches them.
 ///
@@ -142,7 +166,7 @@ pub(crate) fn orbit_input(
         // Scaled by how far out the camera is, so one press covers the same
         // share of the screen at every zoom: panning at a hundred units with
         // a step tuned for ten is a camera that will not move.
-        let step = o.dist * PAN_RATE * dt;
+        let step = o.eye.max(o.dist) * PAN_RATE * dt;
         o.target += pan.normalize() * step;
         // The player has taken the wheel, so the focus lets go.
         o.follow = false;
@@ -165,6 +189,7 @@ pub(crate) fn orbit_input(
             yaw: 0.6,
             pitch: 0.38,
             dist: 40.0,
+            eye: 40.0,
             target: Vec3::ZERO,
             follow: true,
         };
@@ -188,10 +213,12 @@ pub(crate) fn orbit_input(
 pub(crate) fn orbit_camera(
     time: Res<Time>,
     scene: Res<SceneSpec>,
+    views: Res<Views>,
     hulls: Query<&Transform, (With<Flagship>, Without<Camera3d>)>,
     mut q: Query<(&mut Orbit, &mut Transform), With<Camera3d>>,
 ) {
     let dt = scene.step(&time);
+    let sensors = views.open == Some(ViewTab::Sensors);
     for (mut o, mut xf) in &mut q {
         if o.follow {
             if let Ok(hull) = hulls.single() {
@@ -216,12 +243,23 @@ pub(crate) fn orbit_camera(
                 o.follow = false;
             }
         }
+        // The eye EASES between the player's zoom and the map's own, so the
+        // sensors manager is the same camera pulling back off the same battle
+        // rather than a second view cutting to it. On the same time constant
+        // everything else here uses, so it takes the same wall time at twenty
+        // frames a second as at a hundred and twenty.
+        let want = if sensors { SENSORS_EYE } else { o.dist };
+        let k = 1.0 - (-2.6 * dt).exp();
+        o.eye += (want - o.eye) * k;
+        if !o.eye.is_finite() {
+            o.eye = o.dist;
+        }
         let eye = o.target
             + Vec3::new(
                 o.yaw.sin() * o.pitch.cos(),
                 o.pitch.sin(),
                 o.yaw.cos() * o.pitch.cos(),
-            ) * o.dist;
+            ) * o.eye;
         *xf = Transform::from_translation(eye).looking_at(o.target, Vec3::Y);
     }
 }

@@ -132,6 +132,13 @@ pub(crate) fn reset_retreat(
     mut tide: ResMut<TideState>,
 ) {
     if !scene.retreat {
+        // A skirmish has no economy to carry, so its yard opens on a fixed
+        // budget: without one the build menu would be six categories of rows
+        // nobody could ever press, which is a panel that is a picture.
+        *bank = Bank {
+            materials: SKIRMISH_BANK,
+            ..Bank::default()
+        };
         return;
     }
     // The scene is written from the RUN on the way in, which is what makes

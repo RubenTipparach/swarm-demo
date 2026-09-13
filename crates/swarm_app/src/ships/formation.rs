@@ -230,21 +230,19 @@ pub(crate) fn apply_nav_to(mut commands: Commands, mut q: Query<(Entity, &mut Hu
     }
 }
 
-/// R calls in a wave: two more of the flagship's class, on the next free
-/// stations of the wing.
+/// R ORDERS a wave: two more of the flagship's class onto the yard's queue.
 ///
-/// Capped, because a formation is a picture and the tenth ship in it is a
-/// ship nobody can see: `WING_MAX` is what the stations are laid out for.
+/// It used to spawn them outright and for nothing, which is a second way of
+/// getting a ship beside the build menu's: two paths to one thing is this
+/// project's own divergent path defect, and the one that stays is the one a
+/// player pays for. So the key and the Call button are a shortcut to the row
+/// the panel already offers, and `order_one` is the single gate both go
+/// through.
 pub(crate) fn call_reinforcements(
     keys: Res<ButtonInput<KeyCode>>,
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    tex: Res<Textures>,
     scene: Res<SceneSpec>,
-    lead: Res<Lead>,
-    wing: Res<Wing>,
-    flagship: Query<&Hull, With<Flagship>>,
+    mut bank: ResMut<Bank>,
+    mut yards: Query<&mut Shipyard, With<Flagship>>,
     escorts: Query<(), With<Escort>>,
     button: Query<&Interaction, (Changed<Interaction>, With<CallButton>)>,
 ) {
@@ -252,33 +250,19 @@ pub(crate) fn call_reinforcements(
     if !keys.just_pressed(KeyCode::KeyR) && !clicked {
         return;
     }
-    let Ok(hull) = flagship.single() else { return };
-    let radius = hull.model.radius();
-    let out = escorts.iter().count() as u32;
-    if out >= WING_MAX {
-        info!("the wing is full at {WING_MAX}");
+    let Ok(mut yard) = yards.single_mut() else {
         return;
-    }
-    let call = WING_WAVE.min(WING_MAX - out);
-    for n in out..out + call {
-        call_one(
-            &mut commands,
-            &mut meshes,
-            &mut materials,
-            &tex,
+    };
+    let out = escorts.iter().count() as u32;
+    for _ in 0..WING_WAVE {
+        if !order_one(
+            &mut yard.0,
+            &mut bank,
             &scene.hull,
-            Wave {
-                radius,
-                lead_pos: lead.pos,
-                lead_rot: lead.rot,
-                chewers: (scene.chewers / 3) as u32,
-                n,
-                shape: wing.0,
-            },
-        );
+            Order::Hull(scene.hull.clone()),
+            out,
+        ) {
+            break;
+        }
     }
-    info!(
-        "{call} reinforcements inbound, {} in the wing (escorts, not flagships)",
-        out + call
-    );
 }

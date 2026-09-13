@@ -35,10 +35,16 @@ pub(crate) fn fly_hull(
     // it the way they come off a ship, and every system that takes hulls
     // therefore takes carriers too unless it says otherwise. This one would
     // have every carrier flying the flagship's own orders. And WITHOUT a
-    // wreck, which is a hull too and drifts on its own rule.
+    // wreck, which is a hull too and drifts on its own rule, and WITHOUT a
+    // platform, which is a gun that never moves: that is what the marker IS.
     mut hulls: Query<
         (&mut Hull, &mut Transform, Option<&Escort>),
-        (Without<Hive>, Without<Wreck>, Without<Tumble>),
+        (
+            Without<Hive>,
+            Without<Wreck>,
+            Without<Tumble>,
+            Without<Platform>,
+        ),
     >,
 ) {
     let dt = scene.step(&time);

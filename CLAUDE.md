@@ -1133,21 +1133,22 @@ struct update syntax means the listed field WINS: the resource strip asked for
 a row and got a column, silently, and so did every stat well. It sets the
 padding and nothing else now, and every panel says which way it runs.
 
-**Nothing on the deck is a control for a mechanic that does not exist.** There
-is no research row and no build queue, because a button that does nothing is
-worse than a missing one: a player spends a fight wondering what it was for.
-What the mockup draws as a factory is the REINFORCEMENT call here, which is a
-mechanic this game has: a row runs the same `call_one` that R runs, with the
-class as its argument rather than the flagship's, which is what makes the list
-a list instead of six copies of one button.
+**Nothing on the deck is a control for a mechanic that does not exist**, and
+that rule is what decided what the build menu could be: for one stage the
+panel was a REINFORCE list, because a factory drawn over a game with no
+production is a button a player spends a fight wondering about. The mechanic
+landed with `swarm_core::build`, so the panel is the yard now, and what went
+with it is the stepper arrows either side of the production ship, which step
+between the ships that carry a yard and exactly one does. They come back the
+day a module puts one on an escort.
 
-**One panel, three contents, chosen by the mode.** A skirmish gets the wave, a
-run gets the field and the two buttons that end a system, and the sandbox gets
-what the range is shooting at. The resource strip is the same rule: a run is
-materials and the fuel a jump needs, a skirmish is the carriers left and the
-wing that is flying, and the bar under it is whichever of those the fight ends
-on. The strip's bar is never one of the three damage colours, because filling a
-tank is not damage.
+**One panel, two contents, chosen by the mode.** A skirmish and a run get the
+BUILD MENU, and a sandbox gets what the range is shooting at, because a
+sandbox is a range rather than a fleet you build. The resource strip is the
+same rule: a run is materials and the fuel a jump needs, a skirmish is the
+carriers left and the wing that is flying, and the bar under it is whichever
+of those the fight ends on. The strip's bar is never one of the three damage
+colours, because filling a tank is not damage.
 
 **Every button on the command bar is a key the game already has.** The Fleet
 page opens a move order, holds the selection, focuses, calls a wave and turns
@@ -1206,6 +1207,30 @@ cell. The first cut baked the small one at the size it was displayed and the
 edge pass had nothing to draw on: a schematic came out as a silhouette with a
 rim round it, which is what a plan view looks like with the plan taken out.
 
+**The lines are the MESH's, and deriving them from the top face was wrong.**
+The rule was "a border wherever the column beside this one is a different
+material or stands at a different height", which reads as every greedy quad's
+edge arrived at from the other side and is not: a Terran's deck is a flat
+plateau twelve cells across at one height, so it drew no line inside itself
+and the hull came out as one dark shape in a bright rim. Adding the cell's
+colour and surface to that key changed nothing, measured, because the plateau
+is uniform in those too. The prototype draws `mesh.lin`, the mesher's own line
+network in three dimensions, so this walks the greedy quads and draws their
+borders. Two passes of that were wrong first, and both are the depth buffer a
+GPU bake has and a CPU one does not: every quad put the machinery's borders
+over the plating covering it, and up facing was not enough either, because the
+mesher meshes the INSIDE of the ship too. The top map this file already builds
+IS the depth test, and a quad is drawn when its own cell is the topmost solid
+one in its column. The bake went from 41 ms to 187 ms for all twenty three
+classes, once, at boot.
+
+**And the fill carries the LATTICE**, one faint line a cell. That is the paper
+a plan is drawn on: it gives the fill a scale a reader can count cells off and
+compare two ships by, and it is what the prototype's own picture averages to
+once its line network is denser than the pixels it is drawn at. Under two
+pixels a cell it is not drawn, because there every pixel is a grid line and
+that is a wash rather than a lattice.
+
 **A class is not a ship, so no ship can stand for one.** The six marks are the
 mockup's own line art, blocked out the way the lattice is, with no faction
 paint and no livery, and so are the command glyphs. They are rasterised rather
@@ -1238,9 +1263,193 @@ and no key at all, except the sandbox's, whose caption is its key AND what it
 is at.
 
 Still to come, and named here so the gap is visible rather than forgotten: the
-Mission, Sensors and Menu views the mockup carries on its middle tabs. The
-sensors manager is a camera MODE in the mockup rather than a screen, which is
-the part worth keeping when it lands.
+Mission, Sensors and Menu views the mockup carries on its middle tabs. The tabs
+themselves are on the deck and `Views.open` is what they set, which is one
+enum and not three flags, because three flags is how two views end up open at
+once; what is missing is what each one DRAWS. The sensors manager is a camera
+MODE in the mockup rather than a screen, which is the part worth keeping when
+it lands.
+
+## The HUD is authored at 1600 by 900 and SCALED
+
+Every number on the deck used to be a window pixel, and it drifted from the
+picture it was ported from the moment anything moved: the fleet rail was a
+hundred and twenty six wide against the mockup's thirty eight, the panel was
+not the mockup's four hundred and twenty eight, and the complaint was that
+"the proportions are not the same", which was exactly right.
+
+The mockup's `#hud` is 1600 by 900 with a transform on it, so the deck is
+authored against that and `scale_hud` sets `UiScale` to `window height / 900`.
+That is what makes the two comparable at all: a figure in `deck.rs` or
+`yard.rs` can be read straight off `docs/ui/rts-mockup.html` and checked.
+
+**By HEIGHT, and that is the decision worth writing down.** Scaling by width
+leaves the bottom deck short of the bottom on anything taller than 16 by 9,
+and scaling by the smaller of the two letterboxes a HUD that is meant to sit
+in the window's own corners. By height, every vertical number is exactly the
+mockup's share of the screen, and a window wider than 16 by 9 simply has more
+room between the left rail and the right panel, which is what a wider screen
+is FOR in an RTS. A headless run has no `Window`, so it reads the screenshot's
+own height instead: without that the flag for photographing the HUD would
+photograph it at a scale nothing else ever uses.
+
+## A yard is a SHIP, and what it makes costs and takes time
+
+The mockup draws a factory and for one stage this game had none, so the panel
+under it was the reinforcement call: R spawned two of the flagship's class,
+free and instantly. That is a second way of getting a ship beside a build
+menu, which is this file's own divergent path defect, and the one that stays
+is the one a player PAYS for.
+
+**The rules are the core's and the ships are the app's**, the same line
+`economy` and `tide` are on. `swarm_core::build` answers what a class can
+carry, what a job costs, how far along it has got and what a yard hands back
+when one finishes; `swarm_core::rung` answers what a class KEY gives it, which
+is its tier, its category and its slots. `ships/production.rs` is the two
+things neither can know: which entity carries a yard, and where a finished
+hull stands when it arrives.
+
+**One gate, asked once.** `order_one` is where a job is accepted, and the
+three checks live in it: the bank covers the whole price, the wing has a
+station left counting what is already queued, and a module has a bay to sit
+in. Three callers press it (the build row, the modules row and R), and a gate
+written at each of them is a gate one of them would have differently.
+
+**A hull arrives the way a reinforcement does, because it IS one.** `call_one`
+is the one implementation and a second arrival written in the yard would be
+the divergent path again. A PLATFORM is the same spawn with one marker between
+them: it is put where it will STAND rather than flown in, and `Platform` on it
+is what keeps `fly_hull` off it, which is this project's markers and filters
+rule rather than an `if` in the flight rule. And a FIGHTER is a PLACE in the
+squadron rather than an entity spawned here: `launch_fighters` already
+replaces losses up to a ceiling, so a finished fighter raises the ceiling and
+there is no second launch path to keep in step. A hangar module does the same
+thing, and the places it opens are read either side of the tick rather than
+off a finished job, because a module fits ITSELF inside the core's own tick.
+
+**The list is read off the manifest and not typed.** `build::offers` filters
+the fleet by the category a class key answers, so a class added tomorrow is on
+the panel tomorrow in the right list. Two categories have no hull of their
+own and so are not a filter: a fighter is one row whatever the fleet holds,
+and a platform is every corvette in it. The schematics are baked for all
+twenty three classes now rather than for the dropdown's picked eight, which is
+41 ms at boot, measured, because a row with no picture in it is a row a player
+cannot tell from the one under it.
+
+**A row the bank cannot cover is DIM rather than absent**, which is the yard
+between systems' own rule: what you could have had if you had mined one more
+rock is the information the panel exists to give. The count on a category
+button is the same thing said shorter, `can / holds`, because a count alone
+says a category has six rows and nothing about whether any of them can be had.
+
+**A skirmish opens with a bank**, `SKIRMISH_BANK` of three thousand, which is
+the mockup's own figure and six frigates. A run's bank is what it mined and
+carries between systems; a skirmish has no economy at all, so without a figure
+the build menu would be six categories of rows nobody could ever press.
+
+**And `--build WHAT,TICK` presses one row headless**, through `order_one` on
+`Tick::cue` like every other scripted cue, because both of those are rules
+this project has learned once each already. WHAT is a class key or `fighter`,
+and the cheap one is the point: a frigate is five hundred materials at ten a
+second, which is fifty seconds of queue, and a fighter is two and a half, so a
+fighter is what lets a headless run photograph a hull ARRIVING rather than
+only a bar filling. Measured: ordered at tick twenty, built by tick a hundred
+and seventy, and the squadron's ceiling up by one.
+
+**`build.rs` is two files, along the line its own module doc drew.** It went
+over this project's nine hundred lines when `offers` and the two order
+readouts landed, and the answer was never to raise the limit: `rung` answers
+what a class IS and `build` answers what a yard DOES with one. `build`
+re-exports every name in `rung`, so nothing outside the crate learned a new
+path, which is exactly what `damage` did when `heat` and `wound` came out of
+it.
+
+## The sensors manager is a camera MODE, not a screen
+
+The mockup's own rule and the whole reason it is worth having: it does not
+open a map OVER the field, it pulls the eye BACK off it. So the ships on it
+are the real ships at their real size, a press is the same raycast the field
+uses, and the map cannot be out of register with the world because there is
+only one of them.
+
+**The angle and the pivot are the player's; the DISTANCE is the map's.** That
+is two numbers on the orbit rather than one saved and restored: `Orbit.dist`
+is the player's own zoom and is never touched, and `Orbit.eye` is where the
+camera is actually placed, eased toward whichever the mode asks for. Coming
+back out therefore lands on exactly the zoom that went in, with nothing to
+remember and nothing to get wrong.
+
+`SENSORS_EYE` is 2600 and the horizon it frames is 900, which is the
+operational area. The mockup specifies two thousand and that is measured
+wrong here: the eye looks ACROSS the plane at a pitch rather than straight
+down at it, so at two thousand the ring is cut hard at two corners. Five
+times the field camera's own four hundred is the point either way, because
+the fleet becoming the cluster it actually IS is what the view is for, and
+the empty space round it is the part worth seeing: empty space is where the
+swarm is not yet.
+
+**The furniture paints no ground of its own**, because the ground is the
+battle. A horizon, two rings inside it and four bearings, all on the PIVOT's
+plane, which is the plane a move order is already given on: two planes would
+be two answers to "where is that ship really". Then a STALK under every
+contact, which is what makes a position in three dimensions readable at all:
+a contact on its own is a dot whose height nobody can judge, and a line down
+to the plane with a ring at its foot says both where it is and how far above
+the plane it stands. A carrier gets one too, in violet, because this view
+exists to say where everything ELSE is.
+
+It is one mesh rebuilt every frame on the nav disc's own footing, additive
+and unlit, and it DRAWS, so it sits outside the run gate with the nav disc:
+an overview with the world stopped is worth exactly as much as an order is.
+
+**And it does not steal a key.** The mockup gives it space; space here is
+already the pause. The tab is the way in, which is the control a player can
+actually find, and `--view mission|sensors|menu` is the headless flag, since
+a harness has no pointer to press a tab with.
+
+**What it SAYS is coverage, and that is the whole reason it is worth
+opening.** The operational area is washed dark blue and every ship lights the
+ground it can see, so the picture answers the one question this view exists
+for: where is the fleet blind. An enemy standing in the dark is not drawn at
+all, which is what makes moving a ship worth doing HERE rather than only on
+the field: a carrier you have not covered is a carrier you have not found.
+
+**The wash is ALPHA and the furniture is ADDITIVE, and that is two meshes
+rather than a preference.** What the ground says is that unwatched space is
+DARKER, and additive blending can only ever add light: built that way the
+blind half of the map would be the bright half. So the ground is its own
+entity with its own material, because a blend mode is a material and a
+material is a draw. It sits a little UNDER the pivot's plane, so the back to
+front sort of the transparent pass puts it behind the rings standing on it.
+The coverage patches are laid OVER the wash in the same mesh, which is why
+they need no second material to arrange: within one mesh the order is the
+submission order.
+
+**How far a ship sees is the CATEGORY's**, `Category::sensor_range` in the
+core, and the numbers are the mockup's own table (`CATS[].sr`): 150 for a
+fighter up to 400 for a capital, with a PLATFORM at 450 seeing furthest of
+anything in the fleet, which is the whole of its argument since it is a
+corvette hull denied its flight and the only thing it can be worth is
+standing somewhere and looking. Against the 900 the horizon is set at, which
+is the mockup's figure and was already this project's. The category's and not
+the class's, so a class added tomorrow sees tomorrow.
+
+**And the numbers are UI nodes, which is the one place the two halves of this
+view meet.** There is no text in a `TriangleList`, and a map with no numbers
+on it is a picture of a fleet rather than something a player can give an
+order off: eight bearings round the horizon and a range on every ring, each
+placed by projecting its own point on the plane, which is what keeps a label
+ON the ring it names at every angle the camera can be turned to. Divided by
+`UiScale`, and that is the arithmetic worth writing down: the deck is authored
+at 1600 by 900 and scaled by the window's height, so a `Val::Px` is an
+AUTHORED pixel while `world_to_viewport` hands back a window one, and a label
+placed straight from the projection lands at that fraction of the way across
+the screen. The ranges are stacked due WEST because the side panel is four
+hundred and twenty eight wide on the right: the first cut put them on the
+forty five diagonal and the two outer rings were behind the build menu.
+
+Still to come on it: a press does not yet select through the view, and the
+Mission and Menu tabs still draw nothing.
 
 ## The controls are an RTS's now
 
@@ -1357,6 +1566,111 @@ thing as changing the class of a hull that already exists, so it spawns a fresh
 one through the same code the game starts with. The wing and the squadron go
 with it, because an escort is a copy of the flagship's class and a fighter
 flies off it.
+
+## A STROKE faces the camera, a FILL faces the plane
+
+Everything drawn as vector graphics in the world (the nav disc and its rim,
+the X, the gold and orange order lines, the selection rings, the pings, the
+sensors horizon and its stalks) is one additive unlit mesh rebuilt every
+frame, and there is no line primitive in it: a line is a QUAD, so the only
+question about one is which way it is turned.
+
+**A line was turned to the eye and a ring was not, and that made every ring
+in the game vanish at nought pitch.** `add_line` took the eye and built a
+ribbon edge on to it, which is the beams' own trick; `add_ring` built a flat
+annulus in the horizontal plane, from `r - w` to `r + w`. So a camera level
+with the plane saw every ring exactly edge on, at zero width: the disc was a
+hairline, the selection ring was nothing, and the gold ring where the order
+lands was nothing. The comment over it even argued the case ("edge on from
+the side is correct, it is what tells a player the plane is a plane"), which
+is true of the PLANE and false of the stroke that marks it. A circle seen
+edge on is a line segment, and a line segment is a thing with a width.
+
+`add_strip` is the one implementation now: a continuous ribbon through a
+polyline, every quad square to the eye. A line is a strip of two points and a
+ring is a strip of its own segments, closed, so the circle stays in the plane
+and what faces the camera is the WIDTH of the line drawn round it. From
+directly above nothing moved at all, because the across vector there comes
+out radial exactly as the annulus was; at nought pitch a ring is now a bar of
+its own width; and in between the stroke is the same width all the way round
+rather than thinning on the arcs that foreshorten. Depth is untouched, since
+every vertex is still at its own place in the world.
+
+**A STRIP and not a quad per segment, because this mesh is ADDITIVE.** Two
+quads meeting at a joint overlap by however far the ribbon bends, and additive
+lays the colour down twice there: a bright pip at every one of a ring's ninety
+six joints. Sharing the joint's two vertices makes it one surface, and the
+across vector there comes off the AVERAGE of the two segments either side, so
+the ribbon does not kink.
+
+**And the fallback is square to the VIEW rather than to the stroke.** Where a
+stroke points straight at the camera the cross is nought and something has to
+stand in. Square to the stroke lays the ribbon flat and puts it out, which on
+a ring at nought pitch is a pinch to nothing at each of its two tangent
+points; square to the view is a width across the screen, which is what a line
+going into the screen actually looks like.
+
+**The disc's FILL is the one thing not turned**, on purpose: it is a fill
+rather than a stroke, so it IS the plane. A disc that always faced the camera
+would be a bubble round the selection washing over every ship inside it from
+every angle, and what a player reads the order off at nought pitch is the rim,
+the X and the lines, which all have width now.
+
+Measured, the order scene at nought pitch: 2.90% of the picture changed
+against the same scene before, nearly all of it the rim and the rings arriving.
+At the default pitch it is 0.87% and the sensors view 1.35%, which is the even
+stroke width and nothing else.
+
+## A selected ship is OUTLINED, and the shell has to be closed
+
+A cyan ring on the plane under a ship says where it stands rather than which
+it is, so the ship itself is outlined too: one inverted hull per ship, the
+same geometry pushed out along its own normals and drawn FRONT face culled,
+so the ship's own faces cover the middle of it and what survives is a rim.
+
+**Per SHIP and not per brick, which is the whole reason it is affordable.** A
+hull on the field is dozens of brick meshes over seven surfaces and every one
+of them is re-meshed the moment a bite lands, so a shell per brick would be
+dozens of extra draws all rebuilt on damage. This is one mesh, built once at
+spawn, and it never changes, which is also right for what it is FOR: an
+outline is the ship's identity rather than its wounds, so a chewed frigate is
+still outlined as a frigate. It is hidden while nothing is picked, and it is
+hung only on a hull with a class that is not inert, which is exactly the set
+`select_input` will look at: a carrier or a rock given one would carry a mesh
+nothing could ever show.
+
+**Two things made the first cut a WIREFRAME of the ship's insides rather than
+an outline of its outside, and both are the same mistake from two sides: a
+shell that is not closed.**
+
+- **The mesher meshes the INSIDE.** A face goes wherever a solid cell meets
+  one that is not, the faces nothing outside can see included, which is what
+  makes a hole read as a hull with a hole in it and is exactly wrong for a
+  shell: an interior face's normal points INTO its void, so pushing it drives
+  it further in and out through the plating on the far side. Cyan came up
+  across the middle of the deck and down every frame member. The shell is
+  taken off a SEALED copy now, `depth_from_outside` being the answer to which
+  empty cells the outside can actually reach and everything else filled in,
+  so what is meshed is the skin and nothing behind it.
+- **A voxel mesh is hard edged, so pushing along a face normal takes the
+  corners APART.** Three faces meeting at a corner push three ways and leave
+  a gap for the front culled draw to show the far side through, which is a
+  cyan line along every step of the silhouette and every edge on the ship.
+  The normals are averaged BY POSITION before the push, so a convex corner
+  goes out along its own diagonal and the shell stays closed. Keyed on the
+  position's own bits rather than on a rounding, because the mesher writes a
+  lattice corner as the same arithmetic every time and two faces there agree
+  exactly; a tolerance would be a number to get wrong for no gain.
+
+Along the NORMAL and never by scaling the transform, which expands about the
+lattice origin and would stand a long way off the bow of a frigate and hardly
+at all amidships: that is a halo, not an outline.
+
+Measured, on a Terran frigate: 1050 shell quads against the hull's own 2059
+and 7 ms to build, inside a ship spawn that already costs about 25. It is the
+outer skin only, which is why it is half the hull's geometry. The spawn line
+reports it, because a count of quads is the one thing that says whether the
+seal worked: a shell that is meshing the insides is a much bigger number.
 
 ## A turret is its own object, and it turns
 
@@ -2506,8 +2820,8 @@ is this one that answers "how much plating would a shot have to get through".
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 88, the core
-cargo test -p swarm_app                                    # 9, the run's own economy
+cargo test -p swarm_core                                   # 118, the core
+cargo test -p swarm_app                                    # 10, the run and the marks
 python3 tools/shape.py --check                             # no file over 900 lines, no function over 100
 cargo fmt --all -- --check                                 # the format
 cargo clippy -p swarm_core -- -D warnings                  # the core's lints
@@ -2543,6 +2857,21 @@ cargo build --release -p swarm_app
     --aim 40,14,-30 --frames 30 --zoom 30 --out order.png              # a move order being given
 ./target/release/swarm_app --headless --fixed-dt --motes 3000 --hives 3 --rocks 14 \
     --chewers 0 --frames 150 --zoom 5 --out battle.png     # the whole thing
+# The build menu, with a job on the queue. A FIGHTER rather than a frigate,
+# because a frigate is fifty seconds of queue and a fighter is two and a half:
+# this is the one that photographs a hull arriving rather than a bar filling.
+./target/release/swarm_app --headless --fixed-dt --motes 800 --hives 2 --rocks 2 \
+    --chewers 0 --hud --build fighter,20 --frames 200 --zoom 4 --out yard.png
+# The sensors manager, which is the camera pulling back rather than a screen:
+# `--view` is the tab, since a headless run has no pointer to press one with.
+# What to check is the dark wash, the patch the fleet lights on it, and the
+# bearings and ranges reading round the horizon.
+./target/release/swarm_app --headless --fixed-dt --motes 900 --hives 5 --rocks 4 \
+    --chewers 0 --hud --view sensors --reinforce 2 --frames 60 --zoom 4 --out sensors.png
+# A selected ship's outline, which is the flagship out of the box: the rim is
+# the check, and so is the escort beside it having none.
+./target/release/swarm_app --headless --fixed-dt --motes 800 --reinforce 2 --hives 2 \
+    --rocks 2 --chewers 0 --frames 60 --zoom 6 --out outline.png
 # The screens, and the range: a scripted slug lands at tick thirty.
 ./target/release/swarm_app --headless --fixed-dt --motes 200 --frames 12 --screen menu --out menu.png
 ./target/release/swarm_app --headless --fixed-dt --motes 200 --frames 12 --screen setup --out setup.png
