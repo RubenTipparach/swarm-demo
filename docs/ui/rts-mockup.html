@@ -764,15 +764,27 @@ body {
         a goal that tracks something and a goal that is simply ticked are the same kind of thing. Under them
         is the swarm tide, three phases with a marker where the run actually is, because when to leave is the
         decision the whole mode turns on.</p>
-        <p>The SENSORS manager is the whole battlefield and not a minimap, which is why it has no box and no
-        scrim: it fills the screen above the command bar and draws the field itself. Three things make it
-        that rather than a diagram. It is TILTED, the plane laid over so a circle on it comes out as an
-        ellipse, and every range ring, coverage bubble and the horizon are that same circle under the same
-        squash, so nothing is authored twice. It is COVERAGE: every ship lays a soft bubble at its own
-        class's sensor range and the bubbles ADD where they overlap, so the bright ground is the space the
-        fleet holds and the dark is where something could be standing. And a contact rides a STALK up from
-        its own place on the plane, which is the move order's triangle read the other way round: a flat
-        picture of a battle in three dimensions is a lie about where anything is. Pressing a blip selects
+        <p>The SENSORS manager is a 3D map of the real field and not a minimap, which is why it has no box
+        and no scrim: it fills the screen above the command bar and draws the field itself. <b>The shot is
+        the GAME's own camera pulled back</b>: the same pivot, the same yaw and pitch, so the map is already
+        oriented the way you were looking when you opened it, and dragging in it turns the same orbit, so the
+        map and the world behind it turn together. There is no second projection anywhere in it: the rings,
+        the coverage, the specks and the stalks all go through the scene's camera, which is the only way a
+        map and the world it is a map OF can be guaranteed to line up.</p>
+        <p>The DISTANCE is the map's own, though, and that is the one thing it does not inherit: a sensors
+        view that took the zoom as well would show a tenth of the horizon whenever you happened to be in
+        close. It is solved rather than tuned, in angles, because that is what a perspective camera frames
+        with: the horizon is 2R across on screen at every angle and 2R sin(pitch) tall, and the distance is
+        whichever of those needs the most room. Looking down the height binds, edge on the width does, and
+        the sphere fills the frame either way instead of shrinking to a coin the flatter the camera gets.
+        With a floor of two and a bit radii, because a disc framed to the pixel sits with its near rim
+        against the lens and its near arc comes out four times its far one.</p>
+        <p>What it adds over the field is COVERAGE: every ship lays a soft bubble at its own class's sensor
+        range and the bubbles ADD where they overlap, so the bright ground is the space the fleet holds and
+        the dark is where something could be standing. The range is a field on the class beside its cap,
+        because coverage is a property of the ship. And a contact rides a STALK to the pivot's own plane,
+        which is the move order's triangle read the other way round: a picture of a battle in three
+        dimensions with no drop lines cannot say how high anything is. A press that did not drag selects
         that ship, because picking one out of the whole field is why you opened this.</p>
         <p>The MENU is the way out, and Escape reaches it LAST: escape closes a view, then the panel, then
         the bottom, and only with nothing left open does it open the menu. A menu a stray key drops you into
@@ -1827,6 +1839,17 @@ body {
   var scene = new THREE.Scene();
   var camera = new THREE.PerspectiveCamera(46, 16 / 9, 1, 8000);
   var orbit = { yaw: 0.62, pitch: 0.28, dist: 300, focus: new THREE.Vector3() };
+  // Where an orbit's eye stands, written ONCE. The field's camera and the
+  // sensors map are the same orbit at two distances, and two copies of this
+  // expression is two cameras that can disagree about which way the player is
+  // looking, which is the one thing a map must never do.
+  function orbitEye(out, d) {
+    return out.set(
+      orbit.focus.x + Math.sin(orbit.yaw) * Math.cos(orbit.pitch) * d,
+      orbit.focus.y + Math.sin(orbit.pitch) * d,
+      orbit.focus.z + Math.cos(orbit.yaw) * Math.cos(orbit.pitch) * d
+    );
+  }
 
   scene.add(new THREE.AmbientLight(0x2b3d4e, 1.0));
   var sun = new THREE.DirectionalLight(0xffe6c4, 1.3); sun.position.set(0.5, 0.7, 0.35); scene.add(sun);
@@ -2018,12 +2041,17 @@ body {
   }
 
   // ---- camera and picking ----
+  //
+  // ONE drag, on one orbit, and the two surfaces that carry it differ only in
+  // what a press that did NOT drag means: a hull on the field, a blip on the
+  // sensors map. Turning the map therefore turns the world behind it, because
+  // there was never a second camera to turn.
   var drag = null;
-  cv.addEventListener("pointerdown", function (e) {
+  function orbitDown(e) {
     drag = { x: e.clientX, y: e.clientY, moved: 0 };
-    cv.setPointerCapture(e.pointerId);
-  });
-  cv.addEventListener("pointermove", function (e) {
+    this.setPointerCapture(e.pointerId);
+  }
+  function orbitMove(e) {
     if (!drag) { return; }
     var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     drag.moved += Math.abs(dx) + Math.abs(dy);
@@ -2032,11 +2060,16 @@ body {
     // throws a camera across the map.
     orbit.yaw -= Math.max(-60, Math.min(60, dx)) * 0.006;
     orbit.pitch = Math.max(-1.3, Math.min(1.3, orbit.pitch + Math.max(-60, Math.min(60, dy)) * 0.005));
-  });
-  cv.addEventListener("pointerup", function (e) {
-    if (drag && drag.moved < 6) { pick(e); }
-    drag = null;
-  });
+  }
+  function orbitEnd(pickFn) {
+    return function (e) {
+      if (drag && drag.moved < 6) { pickFn(e); }
+      drag = null;
+    };
+  }
+  cv.addEventListener("pointerdown", orbitDown);
+  cv.addEventListener("pointermove", orbitMove);
+  cv.addEventListener("pointerup", orbitEnd(function (e) { pick(e); }));
   cv.addEventListener("pointercancel", function () { drag = null; });
   stage.addEventListener("wheel", function (e) {
     e.preventDefault();
@@ -2578,11 +2611,7 @@ body {
     });
 
     if (sel) { orbit.focus.lerp(sel.mesh.position, 0.05); }
-    camera.position.set(
-      orbit.focus.x + Math.sin(orbit.yaw) * Math.cos(orbit.pitch) * orbit.dist,
-      orbit.focus.y + Math.sin(orbit.pitch) * orbit.dist,
-      orbit.focus.z + Math.cos(orbit.yaw) * Math.cos(orbit.pitch) * orbit.dist
-    );
+    orbitEye(camera.position, orbit.dist);
     camera.lookAt(orbit.focus);
     poseOutline();
     // The frame clears itself rather than the renderer doing it, because the
@@ -2689,144 +2718,207 @@ body {
 
   // ---- the sensors manager ----
   //
-  // Homeworld's own screen: the whole battlefield, not a minimap. Three things
-  // make it that rather than a diagram.
+  // It is a 3D map of the real field, and the shot is the GAME's camera pulled
+  // back: the same pivot, the same yaw and pitch, the same zoom scaled up. So
+  // the sphere is already oriented the way the player was looking when they
+  // opened it, turning the view turns the map, and the two never disagree
+  // about which way is which. There is no second projection anywhere here.
+  // Everything, the rings, the coverage, the specks and the stalks, goes
+  // through the scene's own camera, which is the only way a map and the world
+  // it is a map OF can be guaranteed to line up.
   //
-  // It is TILTED. The plane is drawn at an oblique angle (the z axis squashed
-  // to `TILT`), so a circle on it comes out as an ellipse and the picture reads
-  // as a volume seen from above and to one side rather than as a chart. Every
-  // range ring, every coverage bubble and the sensor horizon itself are the
-  // same circle under the same squash, so nothing has to be authored twice.
+  // What it adds over the field is COVERAGE. Every ship lays a soft bubble at
+  // its own class's sensor range and the bubbles ADD where they overlap, so
+  // the bright ground is the space the fleet holds and the dark is where
+  // something could be standing.
   //
-  // It is COVERAGE. What a sensors manager is actually for is what you can SEE,
-  // so every ship lays a soft bubble at its class's own range and the bubbles
-  // ADD where they overlap: the bright ground is the space the fleet holds and
-  // the dark is where something could be standing.
-  //
-  // And a contact rides a STALK. A flat picture of a battle in three dimensions
-  // is a lie about where anything is, so the blip sits at its own height over
-  // the plane with the drop drawn back down to it, which is the move order's
-  // triangle read the other way round.
-  var SENSOR_R = 300;       // world units from the middle to the sensor horizon
-  var TILT = 0.52;          // how far the plane is laid over, 1 being flat on
+  // And a contact rides a STALK to the pivot's own plane, which is the move
+  // order's triangle read the other way round: a picture of a battle in three
+  // dimensions with no drop lines is a picture that cannot say how high
+  // anything is.
+  var SENSOR_R = 300;        // world units to the sensor horizon
+  var SENSOR_FILL = 0.88;    // what share of the frame the horizon takes up
+  var SENSOR_NEAR = 2.2;     // and never closer than this many radii
+  var sensorCam = new THREE.PerspectiveCamera(50, 16 / 9, 1, 12000);
   var ink = {};
   function sensorInk() {
     var cs = getComputedStyle(document.getElementById("hud"));
     ["edge", "edge-hot", "edge-lit", "ink-hot", "ink", "gold", "dim", "faint",
-     "teal", "cyan", "green", "red", "ore", "g-deep"].forEach(function (k) {
+     "teal", "cyan", "green", "red", "ore"].forEach(function (k) {
       ink[k] = cs.getPropertyValue("--" + k).trim();
     });
   }
 
-  // One projection, so the rings, the bubbles, the rock and the ships cannot
-  // disagree about where a point is.
-  function sproj(o, cx, cy, k) {
-    return [cx + o.x * k, cy + o.z * k * TILT - o.y * k];
+  var sv = new THREE.Vector3();
+  var ROCK = { x: -160, y: -40, z: -120, r: 50 };
+
+  // The ANGLE and the PIVOT are the player's; the DISTANCE is the map's own,
+  // because a sensors manager exists to show the whole horizon and a view that
+  // inherited the zoom as well would show a tenth of it whenever the player
+  // happened to be in close. So it is solved rather than tuned: the horizon is
+  // 2R wide on screen at every angle and 2R*sin(pitch) tall, and the distance
+  // is whichever of those two needs the most room. Looking down, the height
+  // binds; edge on, the width does, and the sphere fills the frame either way
+  // instead of shrinking to a coin the flatter the camera gets.
+  function aimSensor(w, h) {
+    var asp = w / h, t = Math.tan(sensorCam.fov * Math.PI / 360);
+    // Solved in ANGLES, not in units, because that is what a perspective
+    // camera actually frames with: the horizon is 2R across on screen at every
+    // angle and 2R*sin(pitch) tall, so it is whichever of those two needs the
+    // most room, at SENSOR_FILL of the frame. Looking down the height binds,
+    // edge on the width does.
+    var fit = Math.max(
+      SENSOR_R / Math.tan(Math.atan(t * asp) * SENSOR_FILL),
+      SENSOR_R * Math.abs(Math.sin(orbit.pitch)) / Math.tan(Math.atan(t) * SENSOR_FILL)
+    );
+    // And no nearer than SENSOR_NEAR radii whatever that says. A disc framed
+    // to the pixel sits with its near rim almost against the lens, and the
+    // near arc then comes out four times the far one: honest perspective, and
+    // a horizon nobody can read a bearing off.
+    sensorCam.aspect = asp;
+    orbitEye(sensorCam.position, Math.max(fit, SENSOR_R * SENSOR_NEAR));
+    sensorCam.lookAt(orbit.focus);
+    sensorCam.updateMatrixWorld(true);
+    sensorCam.updateProjectionMatrix();
   }
-  // A circle laid FLAT on the plane, which under the squash is an ellipse.
-  function flatArc(g, cx, cy, r) {
-    g.save(); g.translate(cx, cy); g.scale(1, TILT);
-    g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2);
-    g.restore();
+  // Screen pixels from a world point, and NULL for anything behind the eye:
+  // a point past the near plane projects to a mirrored position, which draws
+  // a ring inside out rather than not at all.
+  function sp(x, y, z, w, h) {
+    sv.set(x, y, z).project(sensorCam);
+    if (sv.z > 1) { return null; }
+    return [(sv.x * 0.5 + 0.5) * w, (-sv.y * 0.5 + 0.5) * h];
+  }
+  // A circle lying flat on the pivot's plane, sampled rather than drawn as an
+  // ellipse, because under a perspective camera it is not one: the near arc is
+  // wider than the far one and that is the part that reads as depth.
+  function planeRing(g, r, w, h, steps) {
+    var n = steps || 96, i, a, p, started = false;
+    g.beginPath();
+    for (i = 0; i <= n; i++) {
+      a = i / n * Math.PI * 2;
+      p = sp(orbit.focus.x + Math.sin(a) * r, orbit.focus.y, orbit.focus.z - Math.cos(a) * r, w, h);
+      if (!p) { started = false; continue; }
+      if (started) { g.lineTo(p[0], p[1]); } else { g.moveTo(p[0], p[1]); started = true; }
+    }
   }
 
-  function sensorGrid(g, cx, cy, k) {
-    var r, a, p;
+  function sensorGrid(g, w, h) {
+    var r, a, p, q;
     g.lineWidth = 1;
     for (r = 75; r <= SENSOR_R; r += 75) {
       g.strokeStyle = r === SENSOR_R ? ink["edge-lit"] : ink.edge;
-      flatArc(g, cx, cy, r * k); g.stroke();
+      planeRing(g, r, w, h); g.stroke();
     }
     // Bearings round the horizon, because a contact at nine o'clock is only
-    // useful if the screen agrees with the order somebody is about to give.
-    g.font = '11px ' + "monospace";
+    // useful if the screen agrees with the order about to be given.
+    g.font = '11px monospace';
     for (a = 0; a < 360; a += 15) {
-      var t = a * Math.PI / 180;
-      var x = Math.sin(t) * SENSOR_R * k, y = -Math.cos(t) * SENSOR_R * k * TILT;
-      var big = a % 90 === 0;
+      var t = a * Math.PI / 180, big = a % 90 === 0;
+      var ox = Math.sin(t), oz = -Math.cos(t);
+      p = sp(orbit.focus.x + ox * SENSOR_R, orbit.focus.y, orbit.focus.z + oz * SENSOR_R, w, h);
+      q = sp(orbit.focus.x + ox * SENSOR_R * (big ? 0.94 : 0.97), orbit.focus.y,
+             orbit.focus.z + oz * SENSOR_R * (big ? 0.94 : 0.97), w, h);
+      if (!p || !q) { continue; }
       g.strokeStyle = big ? ink["edge-lit"] : ink.edge;
-      g.beginPath();
-      g.moveTo(cx + x, cy + y);
-      g.lineTo(cx + x * (big ? 0.955 : 0.978), cy + y * (big ? 0.955 : 0.978));
-      g.stroke();
+      g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke();
       if (big) {
         g.fillStyle = ink.dim;
-        g.fillText(String(a).padStart(3, "0"), cx + x * 1.035 - 11, cy + y * 1.035 + 4);
+        g.fillText(String(a).padStart(3, "0"), p[0] - 11, p[1] + 4);
       }
     }
-    g.strokeStyle = ink.edge;
-    g.beginPath();
-    g.moveTo(cx - SENSOR_R * k, cy); g.lineTo(cx + SENSOR_R * k, cy);
-    g.moveTo(cx, cy - SENSOR_R * k * TILT); g.lineTo(cx, cy + SENSOR_R * k * TILT);
-    g.stroke();
+    // The pivot itself, because the whole map is drawn about it and a map
+    // whose own centre is invisible cannot say where it is looking.
+    p = sp(orbit.focus.x, orbit.focus.y, orbit.focus.z, w, h);
+    if (p) {
+      g.strokeStyle = ink.gold;
+      g.beginPath();
+      g.moveTo(p[0] - 9, p[1]); g.lineTo(p[0] + 9, p[1]);
+      g.moveTo(p[0], p[1] - 9); g.lineTo(p[0], p[1] + 9);
+      g.stroke();
+    }
+  }
+
+  // A disc laid on the plane, drawn as an affine circle: the two basis vectors
+  // are the projections of the plane's own axes, so the gradient goes round
+  // with the camera for nothing.
+  function planeDisc(g, x, z, r, w, h, paint) {
+    var c = sp(x, orbit.focus.y, z, w, h);
+    var ex = sp(x + r, orbit.focus.y, z, w, h);
+    var ez = sp(x, orbit.focus.y, z + r, w, h);
+    if (!c || !ex || !ez) { return; }
+    g.save();
+    g.setTransform(ex[0] - c[0], ex[1] - c[1], ez[0] - c[0], ez[1] - c[1], c[0], c[1]);
+    paint(g);
+    g.restore();
   }
 
   // The rock is a FIELD rather than a dot: a soft body with its own specks,
-  // seeded so it is the same field every frame and every time the view opens.
-  var ROCK = { x: -160, y: -40, z: -120, r: 50 };
-  function sensorField(g, cx, cy, k) {
-    var p = sproj(ROCK, cx, cy, k), i, a, d;
-    g.save(); g.translate(p[0], p[1]); g.scale(1, TILT);
-    var gr = g.createRadialGradient(0, 0, 0, 0, 0, ROCK.r * k * 1.6);
-    gr.addColorStop(0, "rgba(150,120,70,.30)");
-    gr.addColorStop(1, "rgba(150,120,70,0)");
-    g.fillStyle = gr;
-    g.beginPath(); g.arc(0, 0, ROCK.r * k * 1.6, 0, Math.PI * 2); g.fill();
-    g.restore();
+  // seeded off the golden angle so it is the same field every frame.
+  function sensorField(g, w, h) {
+    planeDisc(g, ROCK.x, ROCK.z, ROCK.r * 1.7, w, h, function (c) {
+      var gr = c.createRadialGradient(0, 0, 0, 0, 0, 1);
+      gr.addColorStop(0, "rgba(150,120,70,.34)");
+      gr.addColorStop(1, "rgba(150,120,70,0)");
+      c.fillStyle = gr;
+      c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill();
+    });
     g.fillStyle = ink.ore;
-    for (i = 0; i < 90; i++) {
-      a = i * 2.39996;                                  // the golden angle, so nothing clumps
-      d = Math.sqrt((i + 0.5) / 90) * ROCK.r * 1.5;
-      var o = { x: ROCK.x + Math.cos(a) * d, y: ROCK.y + Math.sin(a * 1.7) * 12, z: ROCK.z + Math.sin(a) * d };
-      var q = sproj(o, cx, cy, k);
-      g.fillRect(q[0], q[1], 1.6, 1.6);
+    for (var i = 0; i < 90; i++) {
+      var a = i * 2.39996, d = Math.sqrt((i + 0.5) / 90) * ROCK.r * 1.5;
+      var p = sp(ROCK.x + Math.cos(a) * d, ROCK.y + Math.sin(a * 1.7) * 12,
+                 ROCK.z + Math.sin(a) * d, w, h);
+      if (p) { g.fillRect(p[0], p[1], 1.8, 1.8); }
     }
-    g.fillStyle = ink.dim; g.font = '11px ' + "monospace";
-    g.fillText("ORE FIELD", p[0] - 28, p[1] + 4);
+    var q = sp(ROCK.x, ROCK.y, ROCK.z, w, h);
+    if (q) { g.fillStyle = ink.dim; g.font = '11px monospace'; g.fillText("ORE FIELD", q[0] - 28, q[1] + 4); }
+  }
+
+  function srOf(hh) {
+    var c = CATS.filter(function (k) { return k.id === hh.spec.cat; })[0];
+    return c ? c.sr : 60;
   }
 
   var blips = [];
   function drawSensors() {
-    var cv = document.getElementById("sensorcv");
-    var g = cv.getContext("2d"), w = cv.width, h = cv.height;
-    var cx = w / 2, cy = h / 2 + 30, k = Math.min(w / 2 / SENSOR_R, h / 2 / (SENSOR_R * TILT)) * 0.92;
+    var cvs = document.getElementById("sensorcv");
+    var g = cvs.getContext("2d"), w = cvs.width, h = cvs.height;
+    g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, w, h);
-    g.fillStyle = "rgba(3,9,16,.90)"; g.fillRect(0, 0, w, h);
+    g.fillStyle = "rgba(3,9,16,.965)"; g.fillRect(0, 0, w, h);
+    aimSensor(w, h);
 
     // Coverage first and ADDITIVE, so two ships watching the same volume are
-    // visibly brighter there than one. That is the whole information the
-    // screen carries and everything else is drawn on top of it.
+    // visibly brighter there than one. That is the information this screen
+    // carries; everything else is drawn on top of it.
     g.globalCompositeOperation = "lighter";
     hulls.forEach(function (hh) {
-      var cat = CATS.filter(function (c) { return c.id === hh.spec.cat; })[0];
-      var r = (cat ? cat.sr : 60) * k;
-      // The bubble lies FLAT on the plane at the ship's own foot, not at the
-      // ship: coverage is a volume about a position and the plane is where
-      // this picture measures everything from.
-      var f = sproj({ x: hh.mesh.position.x, y: 0, z: hh.mesh.position.z }, cx, cy, k);
-      g.save(); g.translate(f[0], f[1]); g.scale(1, TILT);
-      var gr = g.createRadialGradient(0, 0, 0, 0, 0, r);
-      gr.addColorStop(0, "rgba(64,150,220,.30)");
-      gr.addColorStop(0.62, "rgba(52,120,200,.16)");
-      gr.addColorStop(1, "rgba(40,90,170,0)");
-      g.fillStyle = gr;
-      g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fill();
-      g.restore();
+      planeDisc(g, hh.mesh.position.x, hh.mesh.position.z, srOf(hh), w, h, function (c) {
+        var gr = c.createRadialGradient(0, 0, 0, 0, 0, 1);
+        gr.addColorStop(0, "rgba(64,150,220,.30)");
+        gr.addColorStop(0.62, "rgba(52,120,200,.16)");
+        gr.addColorStop(1, "rgba(40,90,170,0)");
+        c.fillStyle = gr;
+        c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill();
+      });
     });
     g.globalCompositeOperation = "source-over";
 
-    sensorGrid(g, cx, cy, k);
-    sensorField(g, cx, cy, k);
+    sensorGrid(g, w, h);
+    sensorField(g, w, h);
 
     blips = [];
     hulls.forEach(function (hh) {
       var o = hh.mesh.position;
-      var foot = sproj({ x: o.x, y: 0, z: o.z }, cx, cy, k);
-      var q = sproj(o, cx, cy, k);
-      g.strokeStyle = ink.edge; g.lineWidth = 1;
-      g.beginPath(); g.moveTo(foot[0], foot[1]); g.lineTo(q[0], q[1]); g.stroke();
-      g.fillStyle = ink.edge;
-      g.fillRect(foot[0] - 2.5, foot[1] - 1, 5, 2);
+      var foot = sp(o.x, orbit.focus.y, o.z, w, h);
+      var q = sp(o.x, o.y, o.z, w, h);
+      if (!q) { return; }
+      if (foot) {
+        g.strokeStyle = ink.edge; g.lineWidth = 1;
+        g.beginPath(); g.moveTo(foot[0], foot[1]); g.lineTo(q[0], q[1]); g.stroke();
+        g.fillStyle = ink.edge;
+        g.fillRect(foot[0] - 2.5, foot[1] - 1, 5, 2);
+      }
       var big = hh.spec.cat === "capital" ? 7 : hh.spec.cat === "frigate" ? 6 : 5;
       g.fillStyle = hh === sel ? ink.gold : ink["ink-hot"];
       g.fillRect(q[0] - big / 2, q[1] - big / 2, big, big);
@@ -2844,35 +2936,41 @@ body {
     document.getElementById("scount").innerHTML =
       hulls.length + " contacts &#183; 1 field &#183; horizon " + SENSOR_R + "u";
     document.getElementById("scap").innerHTML =
-      "Ashfall Reach &#183; fleet coverage " + Math.round(coverage()) + "% of the sphere";
+      "Ashfall Reach &#183; pivot " + Math.round(orbit.focus.x) + ", " + Math.round(orbit.focus.y) +
+      ", " + Math.round(orbit.focus.z) + " &#183; coverage " + Math.round(coverage()) + "%";
   }
 
-  // What share of the horizon the fleet can actually see into, which is the one
-  // NUMBER this screen is worth putting on the field: it is what moving a ship
-  // changes, and it goes down the moment one dies.
+  // What share of the horizon the fleet can see into, which is the one NUMBER
+  // worth putting on the field: it is what moving a ship changes, and it goes
+  // down the moment one dies.
   function coverage() {
     var tot = 0;
-    hulls.forEach(function (hh) {
-      var cat = CATS.filter(function (c) { return c.id === hh.spec.cat; })[0];
-      tot += Math.pow((cat ? cat.sr : 60) / SENSOR_R, 2);
-    });
+    hulls.forEach(function (hh) { tot += Math.pow(srOf(hh) / SENSOR_R, 2); });
     return Math.min(100, tot * 100);
   }
 
-  // A blip is a SHIP, so pressing one selects it, and the view stays open
-  // because picking a ship out of the whole field is the reason somebody
-  // opened this rather than squinting at the map.
-  document.getElementById("sensorcv").addEventListener("click", function (e) {
-    var b = e.target.getBoundingClientRect();
-    var x = (e.clientX - b.left) / b.width * e.target.width;
-    var y = (e.clientY - b.top) / b.height * e.target.height;
+  // A blip is a SHIP, so a press that did not drag selects it. The DRAG is the
+  // same camera drag the field has, on the same state: turning the map turns
+  // the world behind it, which is the whole claim this view makes.
+  (function () {
+    var scv = document.getElementById("sensorcv");
+    scv.addEventListener("pointerdown", orbitDown);
+    scv.addEventListener("pointermove", orbitMove);
+    scv.addEventListener("pointerup", orbitEnd(function (e) { pickBlip(e); }));
+    scv.addEventListener("pointercancel", function () { drag = null; });
+  })();
+
+  function pickBlip(e) {
+    var b = document.getElementById("sensorcv").getBoundingClientRect();
+    var x = (e.clientX - b.left) / b.width * 1600;
+    var y = (e.clientY - b.top) / b.height * 724;
     var best = null, bd = 20 * 20;
     blips.forEach(function (p) {
       var d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
       if (d < bd) { bd = d; best = p; }
     });
     if (best) { select(best.h); say(best.h.spec.name + " selected"); }
-  });
+  }
 
   function setView(id) {
     view = id;
