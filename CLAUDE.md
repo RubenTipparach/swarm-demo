@@ -1398,8 +1398,13 @@ like every other hull.
 rule the same envelope at that cell is eight times the mass and eight times the
 hull, and nothing about the size is written down: it MEASURES 25.38 units long
 against the Terran frigate's 6.34 and the cruiser's 12.69, which is 4.00x and
-2.00x exactly. Here it is 11936 cells, 2068 quads over 128 bricks, 296 windows,
-six guns, nine engines and a radius of 13.63, all of it read off the export.
+2.00x exactly. Here it is 11583 cells, 2210 quads over 128 bricks, 322 windows,
+six guns and a radius of 13.63, all of it read off the export.
+
+One honest number moved when the mouth was cut: it measures 24.94 units rather
+than 25.38, so 3.93x the frigate rather than 4.00x. The envelope is still
+exactly twice the cruiser's and the carve is what took the last cell of the
+nose.
 
 **Six guns and not ten, which is what makes it a carrier.** The volume goes on
 holds, berths, airlocks and clamps instead, and `Tier::Carrier` is what that
@@ -1408,11 +1413,37 @@ and four, and two sensor slots against one. A base building mode whose base was
 a frigate is a mode where the thing you build from is the thing you are trying
 to keep alive, and those are two different jobs.
 
-**Its silhouette cue is two launch bays a side**, and redux-tribes' own ban is
-what picked them: an island is a big block on top of a Terran, which the owner
-banned there, and a groove down the deck is out because that project's decor
-pass adds cells and can never take one away. So they are cut into the flanks,
-which is where a Homeworld carrier launches from anyway.
+**It has a BERTH and LAUNCH TUBES, and they are the first HOLES anything in
+redux-tribes ever cut.** Every hull in that fleet is a shell grown on a profile
+with fittings laid inside it, and its decor pass can only ever add a cell. The
+two things that say carrier are both openings, so `voidsFor` is new over there:
+a class's own carve, a function of the frame exactly as its decor is.
+
+The berth is a SLIPWAY, cut down through the deck from amidships and out
+through the bow, eight cells wide, with a lit rail down each edge. Cut into the
+deck alone it is an open hold with the yard's own modules sitting in it and a
+hull built in one has nowhere to go; open at an end as well, a ship is
+assembled in the slot and leaves through the opening.
+
+**The bow and not the transom, and that was the one real decision.** The stern
+is where eight drive bells are, and a bell standing in the middle of a bay is a
+bay nothing can fly out of. Moving them outboard to clear it put four of them
+proud of the skin with a pylon welded under each, which is the slop that pass
+exists to catch rather than a thing to aim for. The nose carried one gun ring
+and nothing else, so the bow cost a ring's station and no geometry: the ring
+moved aft and is still the ship's forward most centreline deck mount, so
+`bowRing` still trains it down the keel.
+
+And `FULLNESS` went to 0.40 for the tier, which the MOUTH set rather than
+taste. At the heavy cruiser's 0.72 the nose tapers to nine cells and an eight
+cell mouth ate the whole of it, which reads as a hull with a bite out of it
+rather than as a ship with a door. Blunt, the same cut lands in a face. It
+cannot touch the ladder, because one raised to any power is one.
+
+The tubes are three a side, bored clean through the flank amidships, two cells
+square with a light over and under each mouth. Small on purpose: what leaves
+through one is a fighter, and a tube a capital ship fits through is a second
+berth.
 
 **And the wing is not made of carriers.** `scene.hull` is the flagship's class
 AND what a reinforcement arrives as, so a base that simply set it to the carrier
