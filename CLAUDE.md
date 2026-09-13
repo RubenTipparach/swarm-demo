@@ -1840,6 +1840,41 @@ is what its class table says it carries. Nothing about a gun is authored
 beside the hull, so a class with no weapons has none rather than having some
 invented for it.
 
+**With ONE exception per hull, and it is a rule about the SHIP rather than
+about a region of one: the BOW GUN.** Of the mounts standing on the deck over
+the centreline and forward of amidships, the foremost is the bow gun and it
+looks down the bow; a hull with no such mount has none, and every other gun on
+every hull keeps looking outboard. Radially a foredeck battery looked half up
+and half out, which puts a ship's foremost mount at the sky, and what a gun
+bolted over the nose is FOR is firing over it.
+
+The three thresholds are measured across the fleet rather than guessed, and
+each one is the middle of an empty band. Every gun within 0.05 of the
+centreline is either a bow gun or a belly turret and the next one out is a
+Benefactor cruiser's starboard sponson at 0.48, so `BOW_BEAM` is a quarter.
+The first cut had it at half and let that sponson through: with "farthest
+forward" doing the picking, a hull whose foremost deck mount is out on a flank
+gets its starboard battery pointing down the bow and its port twin still
+looking outboard, which is a ship nobody drew. `BOW_DECK` is loose at 0.15
+because it is there to say TOP and nothing more, and it was 0.35 for one
+commit, which missed the Terran cruiser and destroyer by a hundredth: their
+foredecks sit a third of the way up rather than half, and a threshold set from
+the FRIGATE is a threshold that is wrong on the rung nobody looked at.
+
+Six hulls carry one: the Terran and Karisen frigate, destroyer and cruiser.
+The muzzle moves with the facing, to the cluster's own forward face, or the
+barrel would be drawn coming out of the side of its own turret.
+
+**And the registry DRAWS it, which is the only way it could be approved.** A
+count cannot carry a facing: "three guns" is true of a hull whose foredeck
+battery points at the sky and of one whose points down the bow, and those are
+different ships. The exporter writes each mount's muzzle and facing and the
+page puts an arrow on each, gold for the bow gun and cyan for every other, off
+a Guns toggle because a hull with eight arrows on it is a hull whose plating
+cannot be seen. A cylinder and a cone rather than a line, because WebGL
+ignores `linewidth` and a one pixel line is a facing nobody can see well
+enough to judge.
+
 **Sparks are one buffer with TWO writers.** The lower half of the ring is the
 app's, written with `write_buffer` at a cursor `swarm.rs` keeps; the upper
 half is the swarm shader's, claimed with one `atomicAdd` per burst so a

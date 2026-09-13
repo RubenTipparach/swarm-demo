@@ -28,7 +28,7 @@
 
 use swarm_core::alien::{self, Archetype};
 use swarm_core::damage::hp_for;
-use swarm_core::fx::{engines_of, guns_of, reactor_of};
+use swarm_core::fx::{bow_gun, engines_of, gun_clusters, guns_of, reactor_of};
 use swarm_core::mesh::{greedy_mesh, MeshData};
 use swarm_core::voxel::{depth_from_outside, mat, purpose};
 use swarm_core::VoxelModel;
@@ -194,6 +194,33 @@ fn stats(key: &str, m: &VoxelModel, skin: &MeshData, quads: usize) -> String {
     )
 }
 
+/// Where every gun on this hull sits and which way it looks, so the registry
+/// can DRAW the answer rather than print a count of it.
+///
+/// A facing is a claim about a ship that a number cannot carry: "three guns"
+/// is true of a hull whose foredeck battery points at the sky and of one whose
+/// points down the bow, and those are different ships.
+fn mounts(m: &VoxelModel) -> String {
+    let guns = gun_clusters(m);
+    let bow = bow_gun(m, &guns);
+    guns.iter()
+        .enumerate()
+        .map(|(n, (g, _, _))| {
+            format!(
+                r#"{{"at":[{:.4},{:.4},{:.4}],"out":[{:.4},{:.4},{:.4}],"bow":{}}}"#,
+                g.at[0],
+                g.at[1],
+                g.at[2],
+                g.out[0],
+                g.out[1],
+                g.out[2],
+                bow == Some(n)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 /// Mesh a ship, write its geometry, and answer its row of the index.
 fn ship(key: &str, m: &VoxelModel, out: &str) -> String {
     let s = greedy_mesh(m, None);
@@ -210,7 +237,11 @@ fn ship(key: &str, m: &VoxelModel, out: &str) -> String {
     }
     let bytes = encode(&layers);
     let quads: usize = layers.iter().map(|l| l.mesh.quads()).sum();
-    let json = format!("{{\"quads\":{quads},\"b64\":\"{}\"}}\n", base64(&bytes));
+    let json = format!(
+        "{{\"quads\":{quads},\"mounts\":[{}],\"b64\":\"{}\"}}\n",
+        mounts(m),
+        base64(&bytes)
+    );
     std::fs::write(format!("{out}/{key}.json"), &json).expect("a ship file can be written");
     println!("{key}: {quads} quads, {} bytes packed", bytes.len());
     stats(key, m, &skin, quads)

@@ -390,6 +390,7 @@
         <div class="tools">
           <button id="mode-ship" aria-pressed="true">Ship</button>
           <button id="mode-fleet" aria-pressed="false">Whole fleet</button>
+          <button id="guns" aria-pressed="true">Guns</button>
           <button id="spin" aria-pressed="true">Spin</button>
           <button id="reset">Reset view</button>
         </div>
@@ -619,6 +620,10 @@
   var mode = "ship";
   var spinning = true;
 
+  // Whether the gun needles are drawn. They are an ANSWER rather than part
+  // of the ship, so they come off.
+  var mountsOn = true;
+
   // ---- the scene -------------------------------------------------------
   var renderer, scene, camera, root;
   var orbit = { yaw: 0.7, pitch: 0.32, dist: 3.2, base: 3.2 };
@@ -674,7 +679,7 @@
   // A pane is unlit on purpose: emission is the only part of a window that
   // survives with no light on it, and that is what makes a hull read as
   // crewed rather than as painted.
-  function build(buf) {
+  function build(buf, mounts) {
     var dv = new DataView(buf);
     if (String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) !== "SHIP") {
       throw new Error("not a ship file");
@@ -722,9 +727,54 @@
       geo.computeBoundingSphere();
       group.add(new THREE.Mesh(geo, mats[m]));
     }
+    // And every gun, as an ARROW out of its own muzzle along its own facing:
+    // gold for the hull's one BOW GUN, which looks down the bow, and cyan for
+    // every other, which looks outboard.
+    //
+    // A COUNT cannot carry this: "three guns" is true of a hull whose foredeck
+    // battery points at the sky and of one whose points down the bow, and
+    // those are different ships. A cylinder and a cone rather than a line,
+    // because WebGL ignores `linewidth` and a one pixel line is a facing
+    // nobody can see well enough to approve.
+    if (mounts && mounts.length) {
+      var reach = Math.max(0.6, new THREE.Box3().setFromObject(group)
+        .getSize(new THREE.Vector3()).length() * 0.13);
+      var shaft = new THREE.CylinderGeometry(reach * 0.035, reach * 0.035, reach * 0.72, 8);
+      var head = new THREE.ConeGeometry(reach * 0.10, reach * 0.28, 10);
+      var inks = {
+        side: new THREE.MeshBasicMaterial({ color: 0x6ff0ff }),
+        bow: new THREE.MeshBasicMaterial({ color: 0xf5c542 })
+      };
+      var Y = new THREE.Vector3(0, 1, 0);
+      mounts.forEach(function (g) {
+        var at = new THREE.Vector3(g.at[0], g.at[1], g.at[2]);
+        var out = new THREE.Vector3(g.out[0], g.out[1], g.out[2]).normalize();
+        // A cylinder is built up the Y axis, so one quaternion turns the whole
+        // arrow onto the facing and both pieces ride it.
+        var turn = new THREE.Quaternion().setFromUnitVectors(Y, out);
+        var ink = inks[g.bow ? "bow" : "side"];
+        var arrow = new THREE.Group();
+        var rod = new THREE.Mesh(shaft, ink);
+        rod.position.set(0, reach * 0.36, 0);
+        var tip = new THREE.Mesh(head, ink);
+        tip.position.set(0, reach * 0.86, 0);
+        arrow.add(rod, tip);
+        arrow.position.copy(at);
+        arrow.quaternion.copy(turn);
+        arrow.userData.mount = true;
+        arrow.traverse(function (o) { o.userData.mount = true; });
+        group.add(arrow);
+      });
+    }
+
     // Centred on its own middle, so orbiting a ship turns it about itself
     // rather than swinging it round the lattice origin.
-    var box = new THREE.Box3().setFromObject(group);
+    // Framed on the HULL rather than on the hull plus its needles, or a ship
+    // would shrink in the stage by however far its guns point.
+    var box = new THREE.Box3();
+    group.children.forEach(function (c) {
+      if (!c.userData.mount) { box.expandByObject(c); }
+    });
     var mid = box.getCenter(new THREE.Vector3());
     group.children.forEach(function (c) { c.position.sub(mid); });
     group.userData.size = box.getSize(new THREE.Vector3());
@@ -743,7 +793,7 @@
       var raw = atob(j.b64);
       var bytes = new Uint8Array(raw.length);
       for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-      cache[key] = build(bytes.buffer);
+      cache[key] = build(bytes.buffer, j.mounts);
       return cache[key];
     });
   }
@@ -1072,6 +1122,12 @@
     document.getElementById("spin").addEventListener("click", function () {
       spinning = !spinning; syncSpin();
     });
+    // The needles are an ANSWER rather than part of the ship, so they can be
+    // taken off: a facing is what this control exists to show and a hull with
+    // eight of them on is a hull you cannot see the plating of.
+    document.getElementById("guns").addEventListener("click", function () {
+      mountsOn = !mountsOn; syncSpin();
+    });
     document.getElementById("reset").addEventListener("click", function () {
       orbit.yaw = 0.7;
       orbit.yaw = mode === "fleet" ? 0 : 0.7;
@@ -1083,6 +1139,10 @@
 
   function syncSpin() {
     document.getElementById("spin").setAttribute("aria-pressed", String(spinning));
+    document.getElementById("guns").setAttribute("aria-pressed", String(mountsOn));
+    root.traverse(function (o) {
+      if (o.userData.mount) { o.visible = mountsOn; }
+    });
   }
 
   function frame() {
