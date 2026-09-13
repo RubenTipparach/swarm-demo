@@ -66,6 +66,7 @@ use swarm_core::voxel::{mat, SURF_DRIVE};
 use swarm_core::{
     alien::{generate, Archetype},
     body::Body,
+    build::Tier,
     damage::{chunk_for, Breach, Chunk, DamageGrid, Vent},
     economy::{yield_of, Cube, Cut, Pack, Yield, DATA_CUBE, ORE_CUBE},
     fx::{

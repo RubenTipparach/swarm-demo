@@ -17,13 +17,14 @@ use crate::*;
 /// trade is frigate sized and is priced there.
 pub(crate) const DRIVE_COST: u32 = 250;
 
+/// What one hull of a class costs to carry out.
+///
+/// The ladder itself lives in `swarm_core::build::Tier` now, because it is a
+/// rule about a CLASS and the core is the crate rules live in: the field yard
+/// prices a build off the same ladder, and two implementations of one ladder
+/// is exactly the divergent path this project's rules warn about.
 pub(crate) fn rung_cost(class: &str) -> u32 {
-    match class.rsplit_once('_').map(|(_, rung)| rung) {
-        Some("corvette") => 25,
-        Some("destroyer") => 100,
-        Some("cruiser") => 200,
-        _ => 50,
-    }
+    Tier::of(class).jump_cost()
 }
 
 /// What it costs to take what is actually in the field out of it.

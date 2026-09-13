@@ -32,6 +32,7 @@
 
 pub mod alien;
 pub mod body;
+pub mod build;
 pub mod damage;
 pub mod economy;
 pub mod fx;
