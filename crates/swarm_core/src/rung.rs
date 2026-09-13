@@ -131,6 +131,36 @@ impl Category {
         }
     }
 
+    /// How far a ship of this category SEES, in world units.
+    ///
+    /// The mockup's own table (`CATS[].sr`), because the sensors manager is
+    /// its screen and these are the numbers its coverage was drawn against.
+    /// They are read against `SENSORS_R`, the operational horizon, which is
+    /// 900 there and 900 here: a capital covers a fifth of the area a fleet
+    /// is asked to hold and a corvette a twentieth, so what a player is
+    /// actually buying with a heavy hull is the ability to WATCH ground as
+    /// much as to hold it.
+    ///
+    /// A PLATFORM sees furthest of anything in the fleet and cannot move,
+    /// which is the whole of its argument: it is a corvette hull denied its
+    /// flight, so the only thing it can be worth is standing somewhere and
+    /// looking. A fighter sees least and is the only thing that can be
+    /// everywhere.
+    ///
+    /// It is the CATEGORY's and not the class's, so a class added tomorrow
+    /// has a sensor range tomorrow, which is the rule the whole build menu
+    /// is already read off.
+    pub fn sensor_range(self) -> f32 {
+        match self {
+            Category::Fighter => 150.0,
+            Category::Corvette => 190.0,
+            Category::Frigate => 260.0,
+            Category::Capital => 400.0,
+            Category::Utility => 175.0,
+            Category::Platform => 450.0,
+        }
+    }
+
     /// Every category, in the order the panel lays them out.
     pub const ALL: [Category; 6] = [
         Category::Fighter,
@@ -287,5 +317,33 @@ mod tests {
             Slots::of("civil_miner").module,
             Slots::of("terran_frigate").module
         );
+    }
+
+    #[test]
+    fn a_heavier_hull_sees_further_and_a_platform_sees_furthest() {
+        // The ladder, because that is what the number is FOR: a fleet covers
+        // more ground by being heavier, and the one thing that beats a
+        // cruiser at watching is the mount that cannot move at all.
+        assert!(
+            Category::Fighter.sensor_range() < Category::Corvette.sensor_range(),
+            "a fighter sees least"
+        );
+        assert!(Category::Corvette.sensor_range() < Category::Frigate.sensor_range());
+        assert!(Category::Frigate.sensor_range() < Category::Capital.sensor_range());
+        assert!(
+            Category::Platform.sensor_range() > Category::Capital.sensor_range(),
+            "a platform is bought to look, so it out sees the heaviest hull"
+        );
+        // And every one of them is a real share of the horizon rather than a
+        // token: a range nothing could see with is a screen with no patches
+        // on it, which is the one outcome this number must not have.
+        for c in Category::ALL {
+            let share = c.sensor_range() / 900.0;
+            assert!(
+                (0.1..0.6).contains(&share),
+                "{} covers {share:.2} of the horizon",
+                c.label()
+            );
+        }
     }
 }

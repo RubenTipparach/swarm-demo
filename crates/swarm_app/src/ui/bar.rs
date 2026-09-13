@@ -335,11 +335,7 @@ fn unit_plan(row: &mut ChildSpawnerCommands, skin: &Skin) {
     ))
     .with_children(|w| {
         w.spawn((
-            Node {
-                width: Val::Px(150.0),
-                height: Val::Px(46.0),
-                ..default()
-            },
+            fit_node(SCHEM, 150.0, 46.0),
             ImageNode::default(),
             Pickable::IGNORE,
             UnitShot,

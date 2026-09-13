@@ -286,15 +286,17 @@ pub(crate) fn mark(glyphs: &Glyphs, g: Glyph, size: f32, ink: Ink) -> impl Bundl
     )
 }
 
-/// A ship's own schematic, at whatever box the caller has room for.
-pub(crate) fn schematic(image: Handle<Image>, w: f32, h: f32) -> impl Bundle {
-    (
-        Node {
-            width: Val::Px(w),
-            height: Val::Px(h),
-            ..default()
-        },
-        ImageNode { image, ..default() },
-        Pickable::IGNORE,
-    )
+/// The largest box of `bake`'s shape that fits inside `w` by `h`.
+pub(crate) fn fit_node(bake: (u32, u32), w: f32, h: f32) -> Node {
+    let a = aspect(bake);
+    let (fw, fh) = if w / h.max(0.001) > a {
+        (h * a, h)
+    } else {
+        (w, w / a.max(0.001))
+    };
+    Node {
+        width: Val::Px(fw),
+        height: Val::Px(fh),
+        ..default()
+    }
 }

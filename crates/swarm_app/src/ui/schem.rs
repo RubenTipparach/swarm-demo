@@ -21,8 +21,27 @@ use crate::*;
 /// panel for the large. Both are baked ABOVE the box they are shown in, at
 /// better than a pixel a cell, or the edge pass has nothing to draw on and a
 /// schematic comes out as a silhouette with a rim round it.
+///
+/// **They are different SHAPES on purpose, and the mockup says why in its own
+/// comment: the thumb is baked three by two rather than long, so a plan view
+/// fills its frame with no band above and below to waste.** A rail row is
+/// nearly square and a panel is a wide strip, and a plan letterboxed into the
+/// wrong one of those is a ship drawn at a third of the room it has. The port
+/// baked both at the panel's shape, which is what put a 3 by 1 picture in the
+/// rail's 1.2 by 1 box.
 pub(crate) const SCHEM: (u32, u32) = (256, 84);
-pub(crate) const THUMB: (u32, u32) = (176, 58);
+pub(crate) const THUMB: (u32, u32) = (144, 96);
+
+/// What shape a bake comes out, so a box drawn for one cannot squash it.
+///
+/// The rail drew a 3 by 1 picture in a 1.2 by 1 box and Bevy's `ImageNode`
+/// stretches to fill, so every ship on it came out short and fat. The mockup
+/// answers this with `object-fit: contain` and there is no such thing here,
+/// so the NODE is fitted to the picture instead and this is the one place
+/// either can be read off.
+pub(crate) fn aspect(bake: (u32, u32)) -> f32 {
+    bake.0 as f32 / bake.1.max(1) as f32
+}
 
 /// The top face of one column, as the greedy mesher would see it.
 ///

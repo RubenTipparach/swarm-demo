@@ -421,11 +421,9 @@ fn rail(p: &mut ChildSpawnerCommands, skin: &Skin, fleet: &Schematics) {
                 Node {
                     display: Display::None,
                     width: Val::Px(38.0),
-                    height: Val::Px(26.0),
-                    padding: UiRect::axes(Val::Px(2.0), Val::Px(1.0)),
-                    justify_content: JustifyContent::SpaceBetween,
-                    align_items: AlignItems::Center,
-                    column_gap: Val::Px(1.0),
+                    height: Val::Px(27.0),
+                    justify_content: JustifyContent::End,
+                    align_items: AlignItems::End,
                     ..default()
                 },
                 BackgroundColor(tok.row.col()),
@@ -433,10 +431,43 @@ fn rail(p: &mut ChildSpawnerCommands, skin: &Skin, fleet: &Schematics) {
                 RosterRow(n),
             ))
             .with_children(|row| {
+                // The picture takes the WHOLE row and the count sits over it,
+                // which is the mockup's own layout (`.rrow img` absolute,
+                // `.rrow .c` bottom right over it). The port put them side by
+                // side instead, which at 38 wide leaves 24 px for a plan view
+                // and squashed the ship to fit: a row is a schematic and a
+                // count, and only one of those can be asked to shrink.
                 if let Some((_, small)) = fleet.of(class) {
-                    row.spawn(schematic(small, 24.0, 20.0));
+                    row.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(1.0),
+                            top: Val::Px(0.0),
+                            ..fit_node(THUMB, 36.0, 24.0)
+                        },
+                        ImageNode::new(small),
+                        Pickable::IGNORE,
+                    ));
                 }
-                readout(row, "", 9.0, tok.cyan, RosterCount(n));
+                // On its OWN GROUND, which is the mockup's `.rrow .c`: the
+                // count sits over the picture, and a bare cyan glyph over a
+                // cyan schematic is a number nobody can read. Green, because
+                // that is the colour the mockup gives a count and it is the
+                // one ink on the deck the plan view never uses.
+                readout(
+                    row,
+                    "",
+                    10.5,
+                    tok.green,
+                    (
+                        RosterCount(n),
+                        Node {
+                            padding: UiRect::horizontal(Val::Px(2.0)),
+                            ..default()
+                        },
+                        BackgroundColor(tok.row.col()),
+                    ),
+                );
             });
         }
     });

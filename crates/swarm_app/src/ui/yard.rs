@@ -296,11 +296,7 @@ fn yard_stage(p: &mut ChildSpawnerCommands, skin: &Skin) {
         ))
         .with_children(|w| {
             w.spawn((
-                Node {
-                    width: Val::Px(300.0),
-                    height: Val::Px(100.0),
-                    ..default()
-                },
+                fit_node(SCHEM, 300.0, 100.0),
                 ImageNode::default(),
                 Pickable::IGNORE,
                 YardShot,
@@ -454,11 +450,7 @@ fn build_list(p: &mut ChildSpawnerCommands, skin: &Skin) {
                 // offers moves with the category: a schematic baked into the
                 // row would be the same ship under every button.
                 r.spawn((
-                    Node {
-                        width: Val::Px(46.0),
-                        height: Val::Px(16.0),
-                        ..default()
-                    },
+                    fit_node(THUMB, 46.0, 26.0),
                     ImageNode::default(),
                     Pickable::IGNORE,
                     BuildShot(n),
