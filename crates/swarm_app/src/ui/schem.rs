@@ -24,14 +24,36 @@ use crate::*;
 pub(crate) const SCHEM: (u32, u32) = (256, 84);
 pub(crate) const THUMB: (u32, u32) = (176, 58);
 
+/// The top face of one column, as the greedy mesher would see it.
+///
+/// Everything that makes the mesher START A NEW QUAD, and nothing else: its
+/// height, its colour and which surface it draws in. That is what turns the
+/// edge pass into the mockup's own line network, which draws every greedy
+/// quad's border: a boundary here is a boundary there, arrived at from the
+/// other side.
+///
+/// The first cut carried the HEIGHT alone, so the only lines it could draw
+/// were where the hull stepped. A Terran's deck is a flat plateau twelve cells
+/// across and its livery paints four roles over it, so the mesher splits it
+/// into four quads and the plan drew none of them: the hull came out as one
+/// dark shape inside a bright rim, which is a silhouette rather than a plan.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Face {
+    y: u16,
+    /// The livery's own answer for this cell. A role boundary is a quad
+    /// boundary, which is where most of a hull's panel detail comes from.
+    colour: u32,
+    surf: u8,
+}
+
 /// What a column of the lattice is made of, seen from above.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Top {
     Empty,
     /// Plating or frame: the body of the ship.
-    Hull(u16),
+    Hull(Face),
     /// A part: what the plan picks out in the machinery's own colour.
-    Subs(u16),
+    Subs(Face),
 }
 
 impl Top {
@@ -78,14 +100,15 @@ fn plan_of(model: &VoxelModel) -> (Vec<Top>, usize, usize, usize, usize) {
                 if model.grid[n] == mat::EMPTY {
                     continue;
                 }
-                // The HEIGHT rides in the cell, because that is what gives a
-                // schematic its panel lines: a flat plate is one height over
-                // its whole run and draws no line inside itself, and greebled
-                // work steps at every cell and is full of them.
+                let face = Face {
+                    y: y as u16,
+                    colour: model.colour[n],
+                    surf: model.surf.get(n).copied().unwrap_or(0),
+                };
                 top[iz * h + ix] = if machinery(model.purp[n]) {
-                    Top::Subs(y as u16)
+                    Top::Subs(face)
                 } else {
-                    Top::Hull(y as u16)
+                    Top::Hull(face)
                 };
                 break;
             }
@@ -127,7 +150,7 @@ fn rim(px: &mut [u8], w: usize, h: usize, ink: Ink, rings: usize) {
 
 /// Bake one hull's plan at `w` by `h`.
 pub(crate) fn bake_plan(model: &VoxelModel, plan: Plan, w: u32, h: u32) -> Image {
-    let (top, cw, ch, _, _) = plan_of(model);
+    let (top, cw, ch, lo_z, lo_x) = plan_of(model);
     let (iw, ih) = (w as usize, h as usize);
     let mut px = vec![0u8; iw * ih * 4];
     if cw == 0 {
@@ -157,25 +180,120 @@ pub(crate) fn bake_plan(model: &VoxelModel, plan: Plan, w: u32, h: u32) -> Image
             if !me.filled() {
                 continue;
             }
-            let subs = matches!(me, Top::Subs(_));
-            // A border wherever the column beside this one is a different
-            // material or stands at a different height, which is every greedy
-            // quad's own edge arrived at from the other side.
-            let edge = scale >= 1.5
-                && [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                    .iter()
-                    .any(|(dz, dx)| cell(iz + dz, ix + dx) != me);
-            let ink = match (subs, edge) {
-                (true, true) => plan.lsub,
-                (true, false) => plan.subs,
-                (false, true) => plan.line,
-                (false, false) => plan.hull,
+            // The FILL only. The lines are the mesh's own, drawn after this.
+            let ink = if matches!(me, Top::Subs(_)) {
+                plan.subs
+            } else {
+                plan.hull
             };
             over(&mut px, (y * iw + x) * 4, ink);
         }
     }
+    quad_lines(
+        &mut px,
+        iw,
+        ih,
+        model,
+        plan,
+        (ox, oy, scale),
+        (&top, cw, ch, lo_z, lo_x),
+    );
     rim(&mut px, iw, ih, plan.rim, 2);
     finish(px, w, h)
+}
+
+/// The greedy mesh's own line network, seen from above.
+///
+/// This is where a plan gets its panel detail, and deriving it from the top
+/// face was the wrong source: a Terran's deck is one colour at one height over
+/// its whole run, so a rule that drew a line where the column beside it
+/// differed drew almost nothing, and the hull came out as a flat shape inside
+/// a bright rim. The prototype draws `mesh.lin`, which is every greedy quad's
+/// border in three dimensions, and projects it with the mesh; this is that,
+/// arrived at from the quads themselves.
+///
+/// EVERY quad, not only the ones facing up: a side face is edge on from
+/// straight above and projects to a line, which is exactly the step between
+/// two courses of plating that a plan is supposed to show.
+#[allow(clippy::too_many_arguments)]
+fn quad_lines(
+    px: &mut [u8],
+    iw: usize,
+    ih: usize,
+    model: &VoxelModel,
+    plan: Plan,
+    fit: (f32, f32, f32),
+    plan_map: (&[Top], usize, usize, usize, usize),
+) {
+    let (ox, oy, scale) = fit;
+    let (top, _cw, ch, lo_z, lo_x) = plan_map;
+    // Under a pixel a cell the network is denser than the picture can carry
+    // and every line lands on its neighbour, which is a grey wash rather than
+    // a plan. The thumb is baked above that, so this is a guard and not a
+    // switch anything reaches in practice.
+    if scale < 1.5 {
+        return;
+    }
+    let surf = greedy_mesh(model, None);
+    let half = |n: usize| n as f32 * 0.5;
+    // `world` in the mesher is `(cell - half) * size`, so this undoes it and
+    // lands back on the lattice the fill was drawn in.
+    let to_px = |p: [f32; 3]| -> (f32, f32) {
+        let lz = p[2] / model.cell + half(model.nz) - lo_z as f32;
+        let lx = p[0] / model.cell + half(model.nx) - lo_x as f32;
+        (ox + lz * scale, oy + lx * scale)
+    };
+    for md in &surf.skin {
+        for q in 0..md.quads() {
+            // UP facing only, which is the depth test doing its work in the
+            // prototype: a camera straight overhead sees the faces whose
+            // normal points at it and nothing buried under them. Drawing
+            // every quad instead put the machinery's own borders over the
+            // plating that covers it, so a frigate came out as an orange
+            // wireframe of its own insides.
+            if md.normals[q * 4][1] < 0.5 {
+                continue;
+            }
+            let cell_of = md.quad_cell[q] as usize;
+            // And it has to be the face a camera would actually REACH. The
+            // mesher meshes the inside of the ship too, which is what makes a
+            // hole read as a hull with a hole in it, so an up facing quad on
+            // the floor of an internal cavity is a quad under the plating. The
+            // top map IS the depth test: a quad is visible when its own cell
+            // is the topmost solid one in its column.
+            let (qx, qy, qz) = model.at(cell_of);
+            let seen = match top.get((qz - lo_z) * ch + (qx - lo_x)) {
+                Some(Top::Hull(f)) | Some(Top::Subs(f)) => f.y as usize == qy,
+                _ => false,
+            };
+            if !seen {
+                continue;
+            }
+            let ink = if machinery(model.purp[cell_of]) {
+                plan.lsub
+            } else {
+                plan.line
+            };
+            let c: Vec<(f32, f32)> = (0..4).map(|n| to_px(md.positions[q * 4 + n])).collect();
+            for n in 0..4 {
+                segment(px, iw, ih, c[n], c[(n + 1) % 4], ink);
+            }
+        }
+    }
+}
+
+/// One line into the bake, as the shortest walk between two pixels.
+fn segment(px: &mut [u8], iw: usize, ih: usize, a: (f32, f32), b: (f32, f32), ink: Ink) {
+    let steps = ((b.0 - a.0).abs().max((b.1 - a.1).abs()).round() as usize).max(1);
+    for n in 0..=steps {
+        let t = n as f32 / steps as f32;
+        let x = (a.0 + (b.0 - a.0) * t).round();
+        let y = (a.1 + (b.1 - a.1) * t).round();
+        if x < 0.0 || y < 0.0 || x >= iw as f32 || y >= ih as f32 {
+            continue;
+        }
+        over(px, (y as usize * iw + x as usize) * 4, ink);
+    }
 }
 
 fn finish(px: Vec<u8>, w: u32, h: u32) -> Image {
