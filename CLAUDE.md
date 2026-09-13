@@ -1002,6 +1002,57 @@ frames is an animation that is a different length on every machine.
 REACTOR, which is the only thing that kills a ship and therefore the only
 honest thing to put on a bar.
 
+**Every picture of a ship is GENERATED, and every class is DRAWN.** The
+mockup's two halves, ported. A schematic is a PLAN: straight down, with the
+ship's length across the frame, because a ship seen from above is its layout
+and that is the one view every hull in a fleet can be compared in. The mockup
+renders the greedy mesh under an orthographic camera and reads the pixels
+back; there is no camera to spare here and none is needed, because a plan of
+an axis aligned lattice is a projection the CPU can write down: the topmost
+live cell of every column, filled as hull or as machinery off the export's own
+purpose byte, an edge wherever the column beside it is a different material or
+stands at a different height, and two rings of rim grown outward from the
+alpha. The edge is where the panel detail comes from and it is the greedy
+quad's own border arrived at from the other side: a flat plate is one height
+over its whole run and draws no line inside itself, and greebled work steps at
+every cell and is full of them.
+
+Both sizes are baked ABOVE the box they are shown in, at better than a pixel a
+cell. The first cut baked the small one at the size it was displayed and the
+edge pass had nothing to draw on: a schematic came out as a silhouette with a
+rim round it, which is what a plan view looks like with the plan taken out.
+
+**A class is not a ship, so no ship can stand for one.** The six marks are the
+mockup's own line art, blocked out the way the lattice is, with no faction
+paint and no livery, and so are the command glyphs. They are rasterised rather
+than drawn as vectors, because Bevy's UI has no vector layer: one small
+supersampled rasteriser and a table of fills and strokes, so a mark is DATA
+here exactly as it is markup there. Each is baked once in WHITE and tinted by
+the node, which is exactly what `currentColor` does in the markup and is why a
+mark on an armed button is gold without a second bake existing.
+
+**The debug panel is not the campaign's UI, and the owner is right.** A run is
+played off the strip, the rail and the deck: how long this system has, which is
+on the strip beside the fuel, and the one button that leaves, which is bottom
+right and green where the mockup puts its green control. Eighteen numbers in a
+list was a readout for whoever was building the mode, and it went with the
+seventeen `RetreatStat` rows, the crew lines and the hold shares that only fed
+it. The run's own numbers were always actually read in the headless report,
+which is where they stay.
+
+**The rail is the group display.** No number row: a row of the rail IS a group,
+and pressing it takes every live ship of that class, with shift adding. That is
+what a control group is, arrived at from the fleet you actually have rather
+than from a number somebody had to assign, and it needs no key at all, which
+matters because the range already owns one to five. A row carries no words:
+it is a schematic and a count, and a class the fleet has none of is not on it.
+
+**And no command steals a camera key.** Stop had `S` under it for one commit,
+which is a pan key: WASD drives the focus, so a command that took S would take
+it away the moment a player reached for it. The cells carry a mark and a name
+and no key at all, except the sandbox's, whose caption is its key AND what it
+is at.
+
 Still to come, and named here so the gap is visible rather than forgotten: the
 Mission, Sensors and Menu views the mockup carries on its middle tabs. The
 sensors manager is a camera MODE in the mockup rather than a screen, which is

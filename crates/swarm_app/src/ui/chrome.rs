@@ -225,3 +225,37 @@ pub(crate) fn kv(
         readout(r, value, 13.0, tok.ink, marker);
     });
 }
+
+/// One mark, tinted by the node rather than by the bake.
+///
+/// `currentColor` in the markup is the button's own state colour, and an
+/// `ImageNode` multiplies its texture by its own colour, so every mark is
+/// baked once in white and wears whatever the caller asks for.
+pub(crate) fn mark(glyphs: &Glyphs, g: Glyph, size: f32, ink: Ink) -> impl Bundle {
+    (
+        Node {
+            width: Val::Px(size),
+            height: Val::Px(size),
+            ..default()
+        },
+        ImageNode {
+            image: glyphs.of(g),
+            color: ink.col(),
+            ..default()
+        },
+        Pickable::IGNORE,
+    )
+}
+
+/// A ship's own schematic, at whatever box the caller has room for.
+pub(crate) fn schematic(image: Handle<Image>, w: f32, h: f32) -> impl Bundle {
+    (
+        Node {
+            width: Val::Px(w),
+            height: Val::Px(h),
+            ..default()
+        },
+        ImageNode { image, ..default() },
+        Pickable::IGNORE,
+    )
+}

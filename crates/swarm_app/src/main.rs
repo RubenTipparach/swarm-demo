@@ -600,6 +600,8 @@ fn main() {
                     deck_readouts,
                     deck_bars,
                     deck_roster,
+                    show_unit_shot,
+                    pick_group,
                     deck_state.run_if(|s: Res<SceneSpec>| s.sandbox),
                 )
                     .run_if(in_state(AppState::Playing)),

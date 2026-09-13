@@ -154,14 +154,6 @@ impl Hold {
     pub(crate) fn full(&self) -> bool {
         self.carrying >= self.cap
     }
-
-    pub(crate) fn share(&self) -> f32 {
-        if self.cap == 0 {
-            0.0
-        } else {
-            self.carrying as f32 / self.cap as f32
-        }
-    }
 }
 
 /// What a support ship has been told to do.

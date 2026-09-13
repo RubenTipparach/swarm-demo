@@ -104,6 +104,21 @@ pub(crate) struct Tokens {
     pub(crate) sky_ink: Ink,
 }
 
+/// The ink a SCHEMATIC is baked in.
+///
+/// A schematic is drawn in the HUD's own colours rather than the ship's,
+/// because a cyan readout on a parchment panel is a picture somebody pasted
+/// on rather than a page. Two materials and two lines: the hull and the
+/// machinery the plan picks out inside it.
+#[derive(Clone, Copy)]
+pub(crate) struct Plan {
+    pub(crate) hull: Ink,
+    pub(crate) subs: Ink,
+    pub(crate) line: Ink,
+    pub(crate) lsub: Ink,
+    pub(crate) rim: Ink,
+}
+
 /// The four frames a skin bakes, and the palette they are drawn beside.
 pub(crate) struct SkinRow {
     pub(crate) id: &'static str,
@@ -113,6 +128,7 @@ pub(crate) struct SkinRow {
     pub(crate) well: Slice,
     pub(crate) btn: Slice,
     pub(crate) hot: Slice,
+    pub(crate) plan: Plan,
 }
 
 /// Fleet Command: the sci fi frame, a hairline box with an L at each corner,
@@ -165,6 +181,13 @@ pub(crate) const COMMAND: SkinRow = SkinRow {
         inner: None,
         corner: Ink::hex(0xffd964),
     },
+    plan: Plan {
+        hull: Ink::hex(0x0d3a52),
+        subs: Ink::hex(0x8e3d05),
+        line: Ink::hex(0x3fc8e8),
+        lsub: Ink::hex(0xff9a3c),
+        rim: Ink::hex(0x7eeaff),
+    },
 };
 
 /// The skins on offer. One row each, and the deck reads whichever is current.
@@ -207,7 +230,7 @@ impl Skin {
 /// The mockup composites on a canvas, which works in sRGB bytes, so this does
 /// too: blending these in linear space would give a different picture from the
 /// one that was approved.
-fn over(dst: &mut [u8], at: usize, c: Ink) {
+pub(crate) fn over(dst: &mut [u8], at: usize, c: Ink) {
     let a = c.3.clamp(0.0, 1.0);
     let da = dst[at + 3] as f32 / 255.0;
     let out = a + da * (1.0 - a);
@@ -313,8 +336,15 @@ pub(crate) fn bake_skin(images: &mut Assets<Image>, which: usize) -> Skin {
     }
 }
 
-/// Put the baked frames in the world before anything asks for one.
+/// Put the baked pictures in the world before anything asks for one: the
+/// frames, the fleet's schematics and the marks.
+///
+/// All three at once, because they are one answer to "what is the deck made
+/// of" and a deck built before any of them would be a deck with holes in it.
 pub(crate) fn load_skin(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let skin = bake_skin(&mut images, 0);
+    let fleet = bake_fleet(&mut images, skin.row().plan);
+    commands.insert_resource(bake_glyphs(&mut images));
+    commands.insert_resource(fleet);
     commands.insert_resource(skin);
 }

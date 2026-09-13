@@ -29,6 +29,9 @@ type PickedShip<'w, 's> = Query<
 
 /// Anything on the deck that lights: the frame it wears, or the ground behind
 /// it, and whether it is a tab that stays lit while its page is up.
+/// Every hull that is still flying, which is what a group picks from.
+type LiveHulls<'w, 's> = Query<'w, 's, (Entity, &'static Hull), (Without<Hive>, Without<Wreck>)>;
+
 type LitControls<'w, 's> = Query<
     'w,
     's,
@@ -491,6 +494,66 @@ pub(crate) fn deck_state(
         };
         if colour.0 != ink.col() {
             colour.0 = ink.col();
+        }
+    }
+}
+
+/// The picture of whatever is selected.
+///
+/// Its own system rather than a branch of the one below, because putting the
+/// selection on screen and CHANGING the selection are two jobs and a function
+/// that did both needed eight arguments to say so.
+pub(crate) fn show_unit_shot(
+    fleet: Res<Schematics>,
+    sel: Query<&Hull, With<Selected>>,
+    mut shot: Query<&mut ImageNode, With<UnitShot>>,
+) {
+    let Ok(mut node) = shot.single_mut() else {
+        return;
+    };
+    let want = sel
+        .iter()
+        .next()
+        .and_then(|h| h.class.as_deref())
+        .and_then(|c| fleet.of(c))
+        .map(|(big, _)| big)
+        .unwrap_or_default();
+    if node.image != want {
+        node.image = want;
+    }
+}
+
+/// A rail row picks a whole class.
+///
+/// A row of the rail IS the group display: pressing one takes every live ship
+/// of that class, which is what an RTS control group is, arrived at from the
+/// fleet you actually have rather than from a number somebody had to assign.
+/// Shift adds, which is the one convention every RTS shares and the same rule
+/// the band box already keeps. No digit is bound to it, because the range
+/// already owns one to five and a key that means two things in two modes is a
+/// key nobody can learn.
+pub(crate) fn pick_group(
+    mut commands: Commands,
+    keys: Res<ButtonInput<KeyCode>>,
+    rows: Query<(&Interaction, &RosterRow), Changed<Interaction>>,
+    fleet: LiveHulls,
+    picked: Query<Entity, With<Selected>>,
+) {
+    let Some((_, row)) = rows.iter().find(|(i, _)| **i == Interaction::Pressed) else {
+        return;
+    };
+    let Some(&class) = PICKABLE.get(row.0) else {
+        return;
+    };
+    let add = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    if !add {
+        for e in &picked {
+            commands.entity(e).remove::<Selected>();
+        }
+    }
+    for (e, h) in &fleet {
+        if !h.dead_hull && h.class.as_deref() == Some(class) {
+            commands.entity(e).insert(Selected);
         }
     }
 }
