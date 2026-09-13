@@ -1526,6 +1526,57 @@ one through the same code the game starts with. The wing and the squadron go
 with it, because an escort is a copy of the flagship's class and a fighter
 flies off it.
 
+## A selected ship is OUTLINED, and the shell has to be closed
+
+A cyan ring on the plane under a ship says where it stands rather than which
+it is, so the ship itself is outlined too: one inverted hull per ship, the
+same geometry pushed out along its own normals and drawn FRONT face culled,
+so the ship's own faces cover the middle of it and what survives is a rim.
+
+**Per SHIP and not per brick, which is the whole reason it is affordable.** A
+hull on the field is dozens of brick meshes over seven surfaces and every one
+of them is re-meshed the moment a bite lands, so a shell per brick would be
+dozens of extra draws all rebuilt on damage. This is one mesh, built once at
+spawn, and it never changes, which is also right for what it is FOR: an
+outline is the ship's identity rather than its wounds, so a chewed frigate is
+still outlined as a frigate. It is hidden while nothing is picked, and it is
+hung only on a hull with a class that is not inert, which is exactly the set
+`select_input` will look at: a carrier or a rock given one would carry a mesh
+nothing could ever show.
+
+**Two things made the first cut a WIREFRAME of the ship's insides rather than
+an outline of its outside, and both are the same mistake from two sides: a
+shell that is not closed.**
+
+- **The mesher meshes the INSIDE.** A face goes wherever a solid cell meets
+  one that is not, the faces nothing outside can see included, which is what
+  makes a hole read as a hull with a hole in it and is exactly wrong for a
+  shell: an interior face's normal points INTO its void, so pushing it drives
+  it further in and out through the plating on the far side. Cyan came up
+  across the middle of the deck and down every frame member. The shell is
+  taken off a SEALED copy now, `depth_from_outside` being the answer to which
+  empty cells the outside can actually reach and everything else filled in,
+  so what is meshed is the skin and nothing behind it.
+- **A voxel mesh is hard edged, so pushing along a face normal takes the
+  corners APART.** Three faces meeting at a corner push three ways and leave
+  a gap for the front culled draw to show the far side through, which is a
+  cyan line along every step of the silhouette and every edge on the ship.
+  The normals are averaged BY POSITION before the push, so a convex corner
+  goes out along its own diagonal and the shell stays closed. Keyed on the
+  position's own bits rather than on a rounding, because the mesher writes a
+  lattice corner as the same arithmetic every time and two faces there agree
+  exactly; a tolerance would be a number to get wrong for no gain.
+
+Along the NORMAL and never by scaling the transform, which expands about the
+lattice origin and would stand a long way off the bow of a frigate and hardly
+at all amidships: that is a halo, not an outline.
+
+Measured, on a Terran frigate: 1050 shell quads against the hull's own 2059
+and 7 ms to build, inside a ship spawn that already costs about 25. It is the
+outer skin only, which is why it is half the hull's geometry. The spawn line
+reports it, because a count of quads is the one thing that says whether the
+seal worked: a shell that is meshing the insides is a much bigger number.
+
 ## A turret is its own object, and it turns
 
 A gun that swivels cannot be part of the mesh it is bolted to, so its cells are
@@ -2720,6 +2771,10 @@ cargo build --release -p swarm_app
 # `--view` is the tab, since a headless run has no pointer to press one with.
 ./target/release/swarm_app --headless --fixed-dt --motes 900 --hives 5 --rocks 4 \
     --chewers 0 --hud --view sensors --frames 60 --zoom 4 --out sensors.png
+# A selected ship's outline, which is the flagship out of the box: the rim is
+# the check, and so is the escort beside it having none.
+./target/release/swarm_app --headless --fixed-dt --motes 800 --reinforce 2 --hives 2 \
+    --rocks 2 --chewers 0 --frames 60 --zoom 6 --out outline.png
 # The screens, and the range: a scripted slug lands at tick thirty.
 ./target/release/swarm_app --headless --fixed-dt --motes 200 --frames 12 --screen menu --out menu.png
 ./target/release/swarm_app --headless --fixed-dt --motes 200 --frames 12 --screen setup --out setup.png

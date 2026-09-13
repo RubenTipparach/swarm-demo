@@ -841,6 +841,10 @@ fn main() {
                     glow_engines,
                     aim_turrets,
                     hold_guard,
+                    // An outline is what is SELECTED, which is a fact about
+                    // the picture rather than about the world, so it keeps
+                    // running with the paused frame like everything else here.
+                    light_outline,
                 ),
                 remesh_dirty,
                 (orbit_camera, ride_the_eye),

@@ -147,6 +147,15 @@ pub(crate) fn spawn_ship(
     // its colour written over white does not: a ship at full burn lit the black
     // behind it exactly as much as one drifting.
     add_plume_light(commands, hull_entity, radius);
+    // And it wears a shell that says it is PICKED, on the ships a press can
+    // actually take: a class and not inert is exactly what `select_input`
+    // will look at, since it passes over the carriers and every dead hull.
+    // A carrier given one would carry a mesh nothing could ever show.
+    let shell = if log.is_some() && !inert {
+        add_outline(commands, meshes, materials, hull_entity, &model)
+    } else {
+        0
+    };
     match station {
         Some(station) => {
             commands.entity(hull_entity).insert(Escort { station });
@@ -317,9 +326,9 @@ pub(crate) fn spawn_ship(
             })
             .collect();
         info!(
-            "hull {}: {} cells, {} quads over {} bricks, {} window faces of {} kinds, {} guns, {} engines, surfaces [{}], radius {:.2}",
+            "hull {}: {} cells, {} quads over {} bricks, {} window faces of {} kinds, {} guns, {} engines, {} shell quads, surfaces [{}], radius {:.2}",
             which, hull.cells, quads, hull.damage.brick_count(), windows, hull.model.window_kinds.len(),
-            hull.guns.len(), hull.engines.len(), used.join(" "), radius
+            hull.guns.len(), hull.engines.len(), shell, used.join(" "), radius
         );
     }
     commands.entity(hull_entity).insert(hull);
