@@ -2258,6 +2258,19 @@ redux-tribes' answer and the facing is derived from them: a hull the two
 disagree about is a barrel drawn one way and a beam leaving it another, and
 `bow_check` is what measures that they do not.
 
+**And only the MOUNT turns: the barbette stays with the ship.** The whole
+cluster used to be lifted out of the hull and given to the child, so a gun
+tracking a target screwed its own seating round with it, which is the one part
+of a turret a player knows does not move. `turret_split` answers which cells
+are the seating by asking which of them have a face against hull that is not
+the gun: a cluster cell seated on the ship is the base and everything standing
+on those is the mount. It is a fact about the GEOMETRY rather than a direction
+anybody has to choose, which matters because the mounts are not all alike: a
+sponson is bolted outboard and a bow gun lies down the nose, so any rule
+written along one axis is a rule that is wrong on the other. A cluster that is
+all contact layer has nothing to split and the whole of it turns, because a gun
+one cell deep is a barrel with no barbette under it.
+
 **A turret turns by an ARC from where it was authored, never to an absolute
 pose.** `aim_turrets` used to say `looking_to(-want_local)`, which puts local
 plus Z on the target and is therefore only right if every turret's cells were

@@ -619,9 +619,94 @@ pub fn gun_clusters(m: &VoxelModel) -> Vec<(Gun, [f32; 3], Vec<usize>)> {
     guns
 }
 
+/// Which cells of a gun cluster TURN, and which are the base it turns on.
+///
+/// A turret is a mount standing on a barbette, and only the mount comes round:
+/// the ring it is seated in is part of the ship. Lifting the whole cluster out
+/// and turning all of it swings the base too, so a gun tracking a target
+/// screws its own seating round with it, which is the one part of a turret a
+/// player knows does not move.
+///
+/// **The base is where it MEETS THE SHIP**, which is a fact about the geometry
+/// rather than a direction anybody has to choose: a cluster cell with a face
+/// against solid hull that is not itself part of the cluster is seated on the
+/// ship, and everything else is standing on those. That is right whatever pose
+/// the mount was authored in, which matters because they are not all alike: a
+/// sponson is bolted outboard and a bow gun lies down the nose, so any rule
+/// written along one axis is a rule that is wrong on the other.
+///
+/// A cluster that is ALL contact layer has nothing to split, and the whole of
+/// it turns: a gun one cell deep is a barrel with no barbette under it, and
+/// leaving it behind would be a mount that never moves at all.
+pub fn turret_split(m: &VoxelModel, cells: &[usize]) -> (Vec<usize>, Vec<usize>) {
+    let mine: std::collections::BTreeSet<usize> = cells.iter().copied().collect();
+    let mut base = Vec::new();
+    let mut mount = Vec::new();
+    for &c in cells {
+        let (x, y, z) = m.at(c);
+        let seated = [
+            (1i32, 0i32, 0i32),
+            (-1, 0, 0),
+            (0, 1, 0),
+            (0, -1, 0),
+            (0, 0, 1),
+            (0, 0, -1),
+        ]
+        .iter()
+        .any(|(dx, dy, dz)| {
+            let (nx, ny, nz) = (x as i32 + dx, y as i32 + dy, z as i32 + dz);
+            if nx < 0 || ny < 0 || nz < 0 {
+                return false;
+            }
+            let (nx, ny, nz) = (nx as usize, ny as usize, nz as usize);
+            if nx >= m.nx || ny >= m.ny || nz >= m.nz {
+                return false;
+            }
+            let n = m.index(nx, ny, nz);
+            m.grid[n] != mat::EMPTY && !mine.contains(&n)
+        });
+        if seated {
+            base.push(c);
+        } else {
+            mount.push(c);
+        }
+    }
+    if mount.is_empty() {
+        (Vec::new(), base)
+    } else {
+        (base, mount)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_turret_turns_on_a_base_that_stays_with_the_ship() {
+        // A slab of hull with a two cell tall mount standing on it: the lower
+        // layer touches the deck and the upper one touches only the mount.
+        let mut m = VoxelModel::new(8, 8, 8, 0.1);
+        for x in 0..8 {
+            for z in 0..8 {
+                let n = m.index(x, 2, z);
+                m.grid[n] = mat::PLATE;
+            }
+        }
+        let seat = m.index(4, 3, 4);
+        let top = m.index(4, 4, 4);
+        m.grid[seat] = mat::PLATE;
+        m.grid[top] = mat::PLATE;
+        let (base, mount) = turret_split(&m, &[seat, top]);
+        assert_eq!(base, vec![seat], "the cell on the deck is the barbette");
+        assert_eq!(mount, vec![top], "what stands on it is what turns");
+
+        // And a mount one cell deep is all barrel: it has no base to leave
+        // behind, so the whole of it comes round.
+        let (base, mount) = turret_split(&m, &[seat]);
+        assert!(base.is_empty());
+        assert_eq!(mount, vec![seat]);
+    }
 
     #[test]
     fn a_beam_is_a_capsule_and_not_a_line() {

@@ -133,7 +133,19 @@ pub(crate) fn spawn_ship(
     // cells are taken off the model the hull is built from and drawn as their
     // own child. The clusters are read BEFORE the cells are removed, or there
     // would be nothing left to find.
-    let turrets: Vec<(Gun, [f32; 3], Vec<usize>)> = gun_clusters(&model);
+    // ONLY THE MOUNT COMES OUT. A turret is a mount standing on a barbette and
+    // only the mount turns: the ring it is seated in belongs to the ship. The
+    // whole cluster used to be lifted and turned, so a gun tracking a target
+    // screwed its own seating round with it, which is the one part of a turret
+    // a player knows does not move. `turret_split` answers which cells are the
+    // seating by asking which have a face against hull that is not the gun.
+    let turrets: Vec<(Gun, [f32; 3], Vec<usize>)> = gun_clusters(&model)
+        .into_iter()
+        .map(|(gun, mid, cells)| {
+            let (_, mount) = turret_split(&model, &cells);
+            (gun, mid, mount)
+        })
+        .collect();
     let mut model = model;
     for (_, _, cells) in &turrets {
         for &c in cells {

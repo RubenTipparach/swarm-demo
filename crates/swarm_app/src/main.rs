@@ -72,7 +72,7 @@ use swarm_core::{
     formation::{self, Shape},
     fx::{
         blast_sparks, breach_sparks, engine_clusters, engines_of, gun_clusters, guns_of,
-        muzzle_sparks, reactor_of, shatter, Beam, Blast, Gun, Spark, SparkKind,
+        muzzle_sparks, reactor_of, shatter, turret_split, Beam, Blast, Gun, Spark, SparkKind,
     },
     map::{self, Map, Node as MapNode, Tag},
     mesh::{greedy_mesh, mesh_region, srgb_to_linear, MeshData, Surfaces},
