@@ -193,6 +193,93 @@ body {
 #hud[data-bottom="0"] .rtabs,
 #hud[data-bottom="0"] .btog { transform: translateY(92px); }
 
+/* A VIEW is a thing the middle tabs open OVER the field: the mission, the
+   sensors manager, the menu. One at a time, and `data-view` on the HUD says
+   which, exactly as `data-panel` says whether the build menu is out. A layer
+   that is not the current one is transparent AND unpickable, or a closed view
+   goes on swallowing every click on the map. */
+/* `#hud .vlayer` rather than `.vlayer`, and that is not a style: `#hud > *`
+   sets pointer-events AUTO on every direct child, and an id beats a class, so
+   a plain class rule here left all three closed views swallowing every click
+   over the whole stage while being invisible. It is the hidden Resume button
+   this project was caught by once already, arrived at through the cascade
+   instead of through a display property. */
+#hud .vlayer { position: absolute; inset: 0; opacity: 0; pointer-events: none;
+          transform: translateY(-10px);
+          transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease); }
+#hud[data-view="mission"] .vlayer[data-layer="mission"],
+#hud[data-view="sensors"] .vlayer[data-layer="sensors"],
+#hud[data-view="menu"] .vlayer[data-layer="menu"] {
+  opacity: 1; pointer-events: auto; transform: none;
+}
+/* The scrim dims the field rather than hiding it, because a sensors view with
+   nothing behind it is a diagram and the point is that it is the same battle.
+   The three layers sit EARLIER in the markup than the command bar, so every
+   tab, group and toggle paints over the scrim and stays lit and pickable: the
+   bar that opens a view is the bar that switches between them, and a scrim
+   that covered it would make Mission a room with the door painted out. */
+.scrim { position: absolute; inset: 0; background: rgba(2,6,11,.62); }
+.vpanel { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+          display: flex; flex-direction: column; gap: 8px; }
+.vpanel .phead { margin: -8px -8px 3px; }
+
+.mission { width: 620px; }
+.mission .brief { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--ink); }
+.obj { display: flex; flex-direction: column; gap: 4px; }
+.orow { display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 9px;
+        background: var(--row); border: 1px solid var(--edge); }
+.orow .tick { width: 15px; height: 15px; flex: none; border: 1px solid var(--edge-hot);
+              display: flex; align-items: center; justify-content: center; font-size: 10px;
+              color: var(--ink-hot); }
+.orow[data-done="1"] .tick { border-color: var(--go-edge); color: var(--go-ink); }
+.orow[data-done="1"] .n { color: var(--go-ink); }
+.orow[data-lock="1"] { opacity: .45; }
+.orow .n { font-size: 13.5px; color: var(--ink-hot); }
+.orow .pb { margin-left: auto; width: 148px; height: 6px; background: var(--g-deep); border: 1px solid var(--edge); }
+.orow .pb i { display: block; height: 100%; background: var(--gold); transition: width var(--dur) var(--ease); }
+.orow[data-done="1"] .pb i { background: var(--go-edge); }
+.orow .q { font-family: var(--hud-mono); font-size: 12px; color: var(--dim); min-width: 74px; text-align: right; }
+
+.tide { margin-top: 2px; }
+.tide .th { display: flex; align-items: baseline; justify-content: space-between; font-size: 12px;
+            letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+.tide .th b { color: var(--gold); }
+.tbar { position: relative; height: 9px; margin: 5px 0 3px; background: var(--g-deep); border: 1px solid var(--edge); }
+.tbar i { position: absolute; top: 0; bottom: 0; border-right: 1px solid var(--edge); }
+.tbar i:nth-child(1) { background: rgba(99,209,43,.22); }
+.tbar i:nth-child(2) { background: rgba(245,197,66,.22); }
+.tbar i:nth-child(3) { background: rgba(232,86,60,.26); border-right: 0; }
+.tbar span { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--gold);
+             transition: left var(--dur) linear; }
+.tl { display: flex; justify-content: space-between; font-family: var(--hud-mono);
+      font-size: 10.5px; color: var(--faint); }
+
+/* The sensors manager is the WHOLE battlefield, so it IS the screen: it has no
+   scrim and no box, it fills everything above the command bar and draws the
+   field itself. A box on the map would be a minimap, and a minimap is the one
+   thing this is not. */
+.sensors { position: absolute; left: 0; right: 0; top: 0; height: 724px; }
+.sensors canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.shead { position: absolute; left: 14px; right: 14px; top: 12px; display: flex;
+         align-items: baseline; gap: 12px; height: 22px; }
+.shead .t { font-weight: 700; font-size: 15px; letter-spacing: 0.1em; color: var(--gold); text-transform: uppercase; }
+.shead .sub { font-family: var(--hud-mono); font-size: 12px; color: var(--dim); }
+.shead .x { margin-left: auto; width: 20px; height: 18px; background: var(--gold-b);
+            border: 1px solid var(--gold-dim); color: var(--gold); font-size: 12px; line-height: 1;
+            align-self: center; }
+.scap { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center;
+        font-size: 13px; letter-spacing: 0.06em; color: var(--ink); text-shadow: 0 0 8px #000; }
+
+.menu { width: 300px; }
+.mitems { display: flex; flex-direction: column; gap: 4px; }
+.mitems button { height: 32px; padding: 0 11px; text-align: left;
+                 background: linear-gradient(180deg,var(--btn-a),var(--btn-b));
+                 border: 1px solid var(--edge-hot); color: var(--ink-hot);
+                 font-size: 13.5px; letter-spacing: 0.06em; }
+.mitems button:hover { border-color: var(--edge-lit); }
+.mitems button.warn { color: var(--red); }
+.mitems .sep { height: 1px; background: var(--edge); margin: 3px 0; }
+
 /* The toggle sits in the empty column above the left tabs, which is the one
    place on the bottom edge nothing else wants. */
 .btog { position: absolute; left: 6px; top: 752px; width: 142px; height: 22px;
@@ -504,7 +591,8 @@ body {
     <div class="hint">
       <b>drag</b> orbit &nbsp;&nbsp;<b>wheel</b> zoom &nbsp;&nbsp;<b>click a hull</b> select<br>
       <b>build row</b> queue it &nbsp;&nbsp;<b>1..0</b> control group &nbsp;&nbsp;<b>tabs</b> build, research, launch<br>
-      <b>X or B</b> close the panel &nbsp;&nbsp;<b>PANEL or C</b> drop the bottom &nbsp;&nbsp;<b>esc</b> close what is open
+      <b>X or B</b> close the panel &nbsp;&nbsp;<b>PANEL or C</b> drop the bottom &nbsp;&nbsp;<b>M</b> mission
+      &nbsp;&nbsp;<b>S</b> sensors &nbsp;&nbsp;<b>esc</b> close what is open, then the menu
     </div>
   </header>
 
@@ -556,6 +644,37 @@ body {
         <span class="ca">&#9660;</span><span>Panel</span>
       </button>
 
+      <div class="vlayer" data-layer="mission">
+        <div class="scrim" data-act="close-view"></div>
+        <div class="vpanel nine mission">
+          <div class="phead"><span class="t">Mission &#183; Ashfall Reach</span><button class="x" type="button" data-act="close-view" title="Close">X</button></div>
+          <p class="brief">The tide is four minutes out. Cut what the drive needs, screen the harvesters
+          while they work, and be inside the field when it fires. What you leave here is gone.</p>
+          <div class="obj" id="obj"></div>
+          <div class="tide">
+            <div class="th"><span>Swarm tide</span><b id="tidephase">Probes</b></div>
+            <div class="tbar"><i style="left:0;width:33%"></i><i style="left:33%;width:34%"></i><i style="left:67%;width:33%"></i><span id="tidenow"></span></div>
+            <div class="tl"><span>Probes</span><span>Swarm</span><span>Fleet</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="vlayer" data-layer="sensors">
+        <div class="sensors">
+          <canvas id="sensorcv" width="1600" height="724"></canvas>
+          <div class="shead"><span class="t">Sensors Manager</span><span class="sub" id="scount"></span><button class="x" type="button" data-act="close-view" title="Close">X</button></div>
+          <div class="scap" id="scap"></div>
+        </div>
+      </div>
+
+      <div class="vlayer" data-layer="menu">
+        <div class="scrim" data-act="close-view"></div>
+        <div class="vpanel nine menu">
+          <div class="phead"><span class="t">Menu</span><button class="x" type="button" data-act="close-view" title="Close">X</button></div>
+          <div class="mitems" id="mitems"></div>
+        </div>
+      </div>
+
       <div class="ticker" id="ticker"></div>
       <div class="groups" id="groups"></div>
 
@@ -565,9 +684,9 @@ body {
         <button type="button" aria-pressed="false">Tactics</button>
       </div>
       <div class="tabs mtabs" id="mtabs">
-        <button type="button" aria-pressed="false">Events</button>
-        <button type="button" aria-pressed="false">Sensors</button>
-        <button type="button" aria-pressed="false">Menu</button>
+        <button type="button" data-view="mission" aria-pressed="false">Mission</button>
+        <button type="button" data-view="sensors" aria-pressed="false">Sensors</button>
+        <button type="button" data-view="menu" aria-pressed="false">Menu</button>
       </div>
       <div class="tabs rtabs" id="rtabs">
         <button type="button" data-tab="build" aria-pressed="true">Build</button>
@@ -636,6 +755,37 @@ body {
   <section class="sect">
     <h2>What each decision is</h2>
     <div class="grid2">
+      <div>
+        <h3>The middle tabs are VIEWS: mission, sensors, menu</h3>
+        <p>Events was a word for nothing, so it is MISSION: what this fight is for, as a brief and five
+        objectives that READ live state rather than being ticked off by a script. The fuel one is the jump
+        bar, the wing one counts the fighters actually in the fleet, the carrier one is its own integrity,
+        and Jump out is dim until the tank is full. An objective is a row and what it reads is a function, so
+        a goal that tracks something and a goal that is simply ticked are the same kind of thing. Under them
+        is the swarm tide, three phases with a marker where the run actually is, because when to leave is the
+        decision the whole mode turns on.</p>
+        <p>The SENSORS manager is the whole battlefield and not a minimap, which is why it has no box and no
+        scrim: it fills the screen above the command bar and draws the field itself. Three things make it
+        that rather than a diagram. It is TILTED, the plane laid over so a circle on it comes out as an
+        ellipse, and every range ring, coverage bubble and the horizon are that same circle under the same
+        squash, so nothing is authored twice. It is COVERAGE: every ship lays a soft bubble at its own
+        class's sensor range and the bubbles ADD where they overlap, so the bright ground is the space the
+        fleet holds and the dark is where something could be standing. And a contact rides a STALK up from
+        its own place on the plane, which is the move order's triangle read the other way round: a flat
+        picture of a battle in three dimensions is a lie about where anything is. Pressing a blip selects
+        that ship, because picking one out of the whole field is why you opened this.</p>
+        <p>The MENU is the way out, and Escape reaches it LAST: escape closes a view, then the panel, then
+        the bottom, and only with nothing left open does it open the menu. A menu a stray key drops you into
+        is a menu that interrupts the fight it was meant to leave.</p>
+        <p>Two defects, both found by driving the thing rather than by reading it. Every closed view was
+        swallowing clicks over the entire stage: <code>#hud &gt; *</code> sets pointer-events to auto on
+        every direct child, an id beats a class, and the <code>.vlayer</code> rule that turned them off never
+        applied. That is the invisible Resume button this project was caught by once already, arrived at
+        through the cascade instead of through a display property. And the middle tabs had TWO writers for
+        their pressed state, the new one and a leftover placeholder that also echoed the label onto the
+        ticker: one attribute, one owner, or the light lands on what was clicked rather than on what is
+        open.</p>
+      </div>
       <div>
         <h3>Both panels COLLAPSE, and the motion is the whole point</h3>
         <p>The X on the build menu closes it and a tab brings it back, so the control that put it away is
@@ -1229,13 +1379,17 @@ body {
   // a carrier's is the fleet saying what it is. The mark is a silhouette of
   // that class's largest hull, baked by the same baker as everything else and
   // worn as a CSS mask so the button tints it with its own state.
+  // `sr` is how far a class SEES, in world units. It belongs on the class for
+  // the reason every other number here does: the sensors manager draws
+  // coverage, coverage is a property of the ship, and a picture that invented
+  // it would be a picture nothing in the game agrees with.
   var CATS = [
-    { id: "fighter", name: "Fighter", icon: "cl-fighter", key: "F", cap: 18 },
-    { id: "corvette", name: "Corvette", icon: "cl-corvette", key: "C", cap: 12 },
-    { id: "frigate", name: "Frigate", icon: "cl-frigate", key: "R", cap: 21 },
-    { id: "capital", name: "Capital", icon: "cl-capital", key: "P", cap: 15 },
-    { id: "utility", name: "Utility", icon: "cl-utility", key: "T", cap: 50 },
-    { id: "platform", name: "Platform", icon: "cl-platform", key: "L", cap: 20 }
+    { id: "fighter", name: "Fighter", icon: "cl-fighter", key: "F", cap: 18, sr: 52 },
+    { id: "corvette", name: "Corvette", icon: "cl-corvette", key: "C", cap: 12, sr: 64 },
+    { id: "frigate", name: "Frigate", icon: "cl-frigate", key: "R", cap: 21, sr: 86 },
+    { id: "capital", name: "Capital", icon: "cl-capital", key: "P", cap: 15, sr: 132 },
+    { id: "utility", name: "Utility", icon: "cl-utility", key: "T", cap: 50, sr: 58 },
+    { id: "platform", name: "Platform", icon: "cl-platform", key: "L", cap: 20, sr: 150 }
   ];
   var byKey = {};
   SHIPS.forEach(function (s) { byKey[s.key] = s; });
@@ -1653,6 +1807,7 @@ body {
     bakeFleet();
     drawRoster(); drawCats(); drawList(); drawProducer(); drawQueue();
     drawBank(); drawMods(); drawSlices(); drawUnitShot(); drawBench();
+    drawObjectives(); drawMenu(); sensorInk();
     // The selection ring belongs to the HUD rather than to the world, so it
     // wears the skin too. Everything else in the field is the GAME and is the
     // same picture whatever the panels are made of.
@@ -2232,6 +2387,7 @@ body {
   // transitions are declared in the stylesheet, so opening a panel is setting
   // an attribute and the motion is not this code's business at all.
   var open = { panel: true, bottom: true };
+  var view = "none";
   function setPanel(on) {
     open.panel = on;
     hud.dataset.panel = on ? "1" : "0";
@@ -2247,17 +2403,29 @@ body {
     document.querySelectorAll("#rtabs button").forEach(function (b) {
       b.setAttribute("aria-pressed", String(b.dataset.tab === tab));
     });
+    document.querySelectorAll("#mtabs button").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.view === view));
+    });
     document.getElementById("ptitle").textContent =
       tab === "build" ? "Build Menu" : tab === "research" ? "Research Menu" : "Launch Manager";
   }
 
   // One click handler, and what the target carries decides what it meant.
   hud.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-act],[data-cat],[data-buy],[data-res],[data-tab],[data-cmd],[data-mod],[data-grp],[data-prod],[data-launch],[data-pick],#showall");
+    var t = e.target.closest("[data-act],[data-view],[data-cat],[data-buy],[data-res],[data-tab],[data-cmd],[data-mod],[data-grp],[data-prod],[data-launch],[data-pick],#showall");
     if (!t) { return; }
 
     if (t.dataset.act === "panel") { setPanel(!open.panel); return; }
     if (t.dataset.act === "bottom") { setBottom(!open.bottom); return; }
+    if (t.dataset.act === "close-view") { setView("none"); return; }
+    if (t.dataset.act && t.dataset.act.indexOf("view-") === 0) {
+      setView(t.dataset.act.slice(5));
+      return;
+    }
+    // A tab that is already showing its view CLOSES it, which is the one
+    // convention a tab bar over a map has to keep: the way out of a view is
+    // the control that opened it.
+    if (t.dataset.view) { setView(view === t.dataset.view ? "none" : t.dataset.view); return; }
 
     if (t.dataset.pick) {
       var own = hulls.filter(function (h) { return h.spec.key === t.dataset.pick; });
@@ -2328,14 +2496,18 @@ body {
     }
   });
 
-  ["ltabs", "mtabs"].forEach(function (id) {
-    document.getElementById(id).addEventListener("click", function (e) {
-      var b = e.target.closest("button");
-      if (!b) { return; }
-      this.querySelectorAll("button").forEach(function (o) { o.setAttribute("aria-pressed", "false"); });
-      b.setAttribute("aria-pressed", "true");
-      say(b.textContent);
-    });
+  // The LEFT tabs are still a placeholder, so a press is a light and a line on
+  // the ticker. The middle ones are not: they own the views, and this handler
+  // used to cover both. Two writers for one `aria-pressed` is the divergent
+  // path rule in miniature, and the symptom was the view's own name echoing
+  // across the ticker every time a tab was pressed, with the pressed light
+  // landing on whatever was clicked rather than on what is actually open.
+  document.getElementById("ltabs").addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) { return; }
+    this.querySelectorAll("button").forEach(function (o) { o.setAttribute("aria-pressed", "false"); });
+    b.setAttribute("aria-pressed", "true");
+    say(b.textContent);
   });
 
   window.addEventListener("keydown", function (e) {
@@ -2350,8 +2522,14 @@ body {
     // game's own pause key keeps.
     if (e.key === "b" || e.key === "B") { setPanel(!open.panel); }
     if (e.key === "c" || e.key === "C") { setBottom(!open.bottom); }
+    if (e.key === "m" || e.key === "M") { setView(view === "mission" ? "none" : "mission"); }
+    if (e.key === "s" || e.key === "S") { setView(view === "sensors" ? "none" : "sensors"); }
+    // A view is over everything, so it is what escape reaches first.
     if (e.key === "Escape") {
-      if (open.panel) { setPanel(false); } else if (open.bottom) { setBottom(false); }
+      if (view !== "none") { setView("none"); }
+      else if (open.panel) { setPanel(false); }
+      else if (open.bottom) { setBottom(false); }
+      else { setView("menu"); }
     }
   });
 
@@ -2420,7 +2598,289 @@ body {
     var s = Math.floor((now - t0) / 1000);
     document.getElementById("gt").textContent = "Game Time: " + Math.floor(s / 3600) + ": " +
       Math.floor((s % 3600) / 60) + ":" + String(s % 60).padStart(2, "0");
+    // A view costs nothing while it is shut, which is what lets the sensors
+    // redraw every frame while it is open: the ships are moving, and a plan
+    // view of where they WERE is a picture of a battle that is not happening.
+    if (view === "sensors") { drawSensors(); }
+    if (view === "mission") { drawObjectives(); drawTide(s); }
     requestAnimationFrame(loop);
+  }
+
+
+  // ===================================================================
+  // 10. The three middle tabs, which are VIEWS over the field.
+  //
+  //     Mission is what this fight is FOR, sensors is the same battle seen
+  //     from above, and the menu is the way out. One at a time, so `data-view`
+  //     on the HUD decides which, and the stylesheet does the rest.
+  // ===================================================================
+
+  // An objective is a ROW, and what it READS is a function, so a goal that
+  // tracks live state and one that is simply ticked off are the same kind of
+  // thing. `want` of nought is a goal with no count: it is done or it is not.
+  var OBJECTIVES = [
+    { n: "Hold the harvest line", want: 0,
+      read: function () { return { have: 0, done: false }; } },
+    { n: "Refine fuel for the jump", want: 1,
+      read: function () {
+        var need = jumpNeed();
+        return { have: fuel / need, done: fuel >= need, q: Math.floor(fuel) + " / " + need };
+      } },
+    { n: "Field a strike wing", want: 3,
+      read: function () {
+        var n = countOf({ cat: "fighter" });
+        return { have: n / 3, done: n >= 3, q: n + " / 3" };
+      } },
+    { n: "Keep the carrier flying", want: 1,
+      read: function () {
+        var c = hulls.filter(function (h) { return h.spec.key === "carrier"; })[0];
+        var f = c ? c.hp : 0;
+        return { have: f, done: f > 0.25, q: Math.round(f * 100) + "%" };
+      } },
+    { n: "Jump out", want: 0, lock: function () { return fuel < jumpNeed(); },
+      read: function () { return { have: 0, done: false }; } }
+  ];
+
+  function drawObjectives() {
+    document.getElementById("obj").innerHTML = OBJECTIVES.map(function (o) {
+      var r = o.read();
+      var lock = o.lock ? o.lock() : false;
+      return '<div class="orow" data-done="' + (r.done ? 1 : 0) + '" data-lock="' + (lock ? 1 : 0) +
+        '"><span class="tick">' + (r.done ? "&#10003;" : "") + '</span><span class="n">' + o.n + "</span>" +
+        (o.want ? '<span class="q">' + (r.q || "") + '</span><span class="pb"><i style="width:' +
+          Math.round(Math.max(0, Math.min(1, r.have)) * 100) + '%"></i></span>' : "") + "</div>";
+    }).join("");
+  }
+
+  // The tide is the mission's clock rather than a second one: probes, then the
+  // swarm, then the fleet, and the marker is where the run actually is. Two
+  // minutes a phase here, compressed from the game's own six, because a mockup
+  // nobody waits six minutes in cannot show a phase change at all.
+  var TIDE = [["Probes", 120], ["Swarm", 120], ["Fleet", 120]];
+  function drawTide(secs) {
+    var span = TIDE.reduce(function (a, t) { return a + t[1]; }, 0);
+    var at = Math.min(1, secs / span), run = 0, name = TIDE[TIDE.length - 1][0];
+    for (var i = 0; i < TIDE.length; i++) {
+      run += TIDE[i][1];
+      if (secs < run) { name = TIDE[i][0]; break; }
+    }
+    document.getElementById("tidephase").textContent = name;
+    document.getElementById("tidenow").style.left = (at * 100) + "%";
+  }
+
+  // The menu is what a player reaches for when they want OUT of the fight, so
+  // the one thing it must never be is a place a stray click lands them in.
+  var MENU_ITEMS = [
+    { n: "Resume", act: "close-view" },
+    { n: "Objectives", act: "view-mission" },
+    { n: "Sensors manager", act: "view-sensors" },
+    { sep: true },
+    { n: "Save game" }, { n: "Load game" }, { n: "Options" },
+    { sep: true },
+    { n: "Abandon system", warn: true }
+  ];
+  function drawMenu() {
+    document.getElementById("mitems").innerHTML = MENU_ITEMS.map(function (m) {
+      return m.sep ? '<div class="sep"></div>'
+        : '<button type="button"' + (m.act ? ' data-act="' + m.act + '"' : "") +
+          (m.warn ? ' class="warn"' : "") + ">" + m.n + "</button>";
+    }).join("");
+  }
+
+  // ---- the sensors manager ----
+  //
+  // Homeworld's own screen: the whole battlefield, not a minimap. Three things
+  // make it that rather than a diagram.
+  //
+  // It is TILTED. The plane is drawn at an oblique angle (the z axis squashed
+  // to `TILT`), so a circle on it comes out as an ellipse and the picture reads
+  // as a volume seen from above and to one side rather than as a chart. Every
+  // range ring, every coverage bubble and the sensor horizon itself are the
+  // same circle under the same squash, so nothing has to be authored twice.
+  //
+  // It is COVERAGE. What a sensors manager is actually for is what you can SEE,
+  // so every ship lays a soft bubble at its class's own range and the bubbles
+  // ADD where they overlap: the bright ground is the space the fleet holds and
+  // the dark is where something could be standing.
+  //
+  // And a contact rides a STALK. A flat picture of a battle in three dimensions
+  // is a lie about where anything is, so the blip sits at its own height over
+  // the plane with the drop drawn back down to it, which is the move order's
+  // triangle read the other way round.
+  var SENSOR_R = 300;       // world units from the middle to the sensor horizon
+  var TILT = 0.52;          // how far the plane is laid over, 1 being flat on
+  var ink = {};
+  function sensorInk() {
+    var cs = getComputedStyle(document.getElementById("hud"));
+    ["edge", "edge-hot", "edge-lit", "ink-hot", "ink", "gold", "dim", "faint",
+     "teal", "cyan", "green", "red", "ore", "g-deep"].forEach(function (k) {
+      ink[k] = cs.getPropertyValue("--" + k).trim();
+    });
+  }
+
+  // One projection, so the rings, the bubbles, the rock and the ships cannot
+  // disagree about where a point is.
+  function sproj(o, cx, cy, k) {
+    return [cx + o.x * k, cy + o.z * k * TILT - o.y * k];
+  }
+  // A circle laid FLAT on the plane, which under the squash is an ellipse.
+  function flatArc(g, cx, cy, r) {
+    g.save(); g.translate(cx, cy); g.scale(1, TILT);
+    g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2);
+    g.restore();
+  }
+
+  function sensorGrid(g, cx, cy, k) {
+    var r, a, p;
+    g.lineWidth = 1;
+    for (r = 75; r <= SENSOR_R; r += 75) {
+      g.strokeStyle = r === SENSOR_R ? ink["edge-lit"] : ink.edge;
+      flatArc(g, cx, cy, r * k); g.stroke();
+    }
+    // Bearings round the horizon, because a contact at nine o'clock is only
+    // useful if the screen agrees with the order somebody is about to give.
+    g.font = '11px ' + "monospace";
+    for (a = 0; a < 360; a += 15) {
+      var t = a * Math.PI / 180;
+      var x = Math.sin(t) * SENSOR_R * k, y = -Math.cos(t) * SENSOR_R * k * TILT;
+      var big = a % 90 === 0;
+      g.strokeStyle = big ? ink["edge-lit"] : ink.edge;
+      g.beginPath();
+      g.moveTo(cx + x, cy + y);
+      g.lineTo(cx + x * (big ? 0.955 : 0.978), cy + y * (big ? 0.955 : 0.978));
+      g.stroke();
+      if (big) {
+        g.fillStyle = ink.dim;
+        g.fillText(String(a).padStart(3, "0"), cx + x * 1.035 - 11, cy + y * 1.035 + 4);
+      }
+    }
+    g.strokeStyle = ink.edge;
+    g.beginPath();
+    g.moveTo(cx - SENSOR_R * k, cy); g.lineTo(cx + SENSOR_R * k, cy);
+    g.moveTo(cx, cy - SENSOR_R * k * TILT); g.lineTo(cx, cy + SENSOR_R * k * TILT);
+    g.stroke();
+  }
+
+  // The rock is a FIELD rather than a dot: a soft body with its own specks,
+  // seeded so it is the same field every frame and every time the view opens.
+  var ROCK = { x: -160, y: -40, z: -120, r: 50 };
+  function sensorField(g, cx, cy, k) {
+    var p = sproj(ROCK, cx, cy, k), i, a, d;
+    g.save(); g.translate(p[0], p[1]); g.scale(1, TILT);
+    var gr = g.createRadialGradient(0, 0, 0, 0, 0, ROCK.r * k * 1.6);
+    gr.addColorStop(0, "rgba(150,120,70,.30)");
+    gr.addColorStop(1, "rgba(150,120,70,0)");
+    g.fillStyle = gr;
+    g.beginPath(); g.arc(0, 0, ROCK.r * k * 1.6, 0, Math.PI * 2); g.fill();
+    g.restore();
+    g.fillStyle = ink.ore;
+    for (i = 0; i < 90; i++) {
+      a = i * 2.39996;                                  // the golden angle, so nothing clumps
+      d = Math.sqrt((i + 0.5) / 90) * ROCK.r * 1.5;
+      var o = { x: ROCK.x + Math.cos(a) * d, y: ROCK.y + Math.sin(a * 1.7) * 12, z: ROCK.z + Math.sin(a) * d };
+      var q = sproj(o, cx, cy, k);
+      g.fillRect(q[0], q[1], 1.6, 1.6);
+    }
+    g.fillStyle = ink.dim; g.font = '11px ' + "monospace";
+    g.fillText("ORE FIELD", p[0] - 28, p[1] + 4);
+  }
+
+  var blips = [];
+  function drawSensors() {
+    var cv = document.getElementById("sensorcv");
+    var g = cv.getContext("2d"), w = cv.width, h = cv.height;
+    var cx = w / 2, cy = h / 2 + 30, k = Math.min(w / 2 / SENSOR_R, h / 2 / (SENSOR_R * TILT)) * 0.92;
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = "rgba(3,9,16,.90)"; g.fillRect(0, 0, w, h);
+
+    // Coverage first and ADDITIVE, so two ships watching the same volume are
+    // visibly brighter there than one. That is the whole information the
+    // screen carries and everything else is drawn on top of it.
+    g.globalCompositeOperation = "lighter";
+    hulls.forEach(function (hh) {
+      var cat = CATS.filter(function (c) { return c.id === hh.spec.cat; })[0];
+      var r = (cat ? cat.sr : 60) * k;
+      // The bubble lies FLAT on the plane at the ship's own foot, not at the
+      // ship: coverage is a volume about a position and the plane is where
+      // this picture measures everything from.
+      var f = sproj({ x: hh.mesh.position.x, y: 0, z: hh.mesh.position.z }, cx, cy, k);
+      g.save(); g.translate(f[0], f[1]); g.scale(1, TILT);
+      var gr = g.createRadialGradient(0, 0, 0, 0, 0, r);
+      gr.addColorStop(0, "rgba(64,150,220,.30)");
+      gr.addColorStop(0.62, "rgba(52,120,200,.16)");
+      gr.addColorStop(1, "rgba(40,90,170,0)");
+      g.fillStyle = gr;
+      g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.fill();
+      g.restore();
+    });
+    g.globalCompositeOperation = "source-over";
+
+    sensorGrid(g, cx, cy, k);
+    sensorField(g, cx, cy, k);
+
+    blips = [];
+    hulls.forEach(function (hh) {
+      var o = hh.mesh.position;
+      var foot = sproj({ x: o.x, y: 0, z: o.z }, cx, cy, k);
+      var q = sproj(o, cx, cy, k);
+      g.strokeStyle = ink.edge; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(foot[0], foot[1]); g.lineTo(q[0], q[1]); g.stroke();
+      g.fillStyle = ink.edge;
+      g.fillRect(foot[0] - 2.5, foot[1] - 1, 5, 2);
+      var big = hh.spec.cat === "capital" ? 7 : hh.spec.cat === "frigate" ? 6 : 5;
+      g.fillStyle = hh === sel ? ink.gold : ink["ink-hot"];
+      g.fillRect(q[0] - big / 2, q[1] - big / 2, big, big);
+      if (hh === sel) {
+        g.strokeStyle = ink.gold;
+        g.beginPath(); g.arc(q[0], q[1], big + 6, 0, Math.PI * 2); g.stroke();
+      }
+      // Integrity as a colour under the blip: a bar on every contact would be
+      // a wall of bars on a screen whose whole job is where things are.
+      g.fillStyle = hh.hp > 0.6 ? ink.green : hh.hp > 0.3 ? ink.gold : ink.red;
+      g.fillRect(q[0] - big / 2, q[1] + big / 2 + 2, big, 2);
+      blips.push({ h: hh, x: q[0], y: q[1] });
+    });
+
+    document.getElementById("scount").innerHTML =
+      hulls.length + " contacts &#183; 1 field &#183; horizon " + SENSOR_R + "u";
+    document.getElementById("scap").innerHTML =
+      "Ashfall Reach &#183; fleet coverage " + Math.round(coverage()) + "% of the sphere";
+  }
+
+  // What share of the horizon the fleet can actually see into, which is the one
+  // NUMBER this screen is worth putting on the field: it is what moving a ship
+  // changes, and it goes down the moment one dies.
+  function coverage() {
+    var tot = 0;
+    hulls.forEach(function (hh) {
+      var cat = CATS.filter(function (c) { return c.id === hh.spec.cat; })[0];
+      tot += Math.pow((cat ? cat.sr : 60) / SENSOR_R, 2);
+    });
+    return Math.min(100, tot * 100);
+  }
+
+  // A blip is a SHIP, so pressing one selects it, and the view stays open
+  // because picking a ship out of the whole field is the reason somebody
+  // opened this rather than squinting at the map.
+  document.getElementById("sensorcv").addEventListener("click", function (e) {
+    var b = e.target.getBoundingClientRect();
+    var x = (e.clientX - b.left) / b.width * e.target.width;
+    var y = (e.clientY - b.top) / b.height * e.target.height;
+    var best = null, bd = 20 * 20;
+    blips.forEach(function (p) {
+      var d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
+      if (d < bd) { bd = d; best = p; }
+    });
+    if (best) { select(best.h); say(best.h.spec.name + " selected"); }
+  });
+
+  function setView(id) {
+    view = id;
+    hud.dataset.view = id;
+    if (id === "sensors") { sensorInk(); }
+    if (id === "mission") { drawObjectives(); }
+    if (id === "menu") { drawMenu(); }
+    syncTabs();
   }
 
   // ===================================================================
@@ -2464,7 +2924,7 @@ body {
 
   // ---- go ----
   applySkin(SKINS[0].id);
-  hud.dataset.panel = "1"; hud.dataset.bottom = "1";
+  hud.dataset.panel = "1"; hud.dataset.bottom = "1"; hud.dataset.view = "none";
   drawBars(); syncTabs(); select(hulls[0]); fit();
   requestAnimationFrame(loop);
 })();
