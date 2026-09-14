@@ -1,0 +1,822 @@
+<title>Collector Craft</title>
+<!-- Published as an artifact for approval before anything is built:
+     https://claude.ai/code/artifact/4cdcba12-9c4b-4607-bb63-1d99c76f1c36
+     A mockup before a large feature is this project's rule, and a
+     collector craft is a new hull AND a new mechanic. -->
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --void: #070a0f;
+    --hull: #111722;
+    --deck: #18202d;
+    --rim: #26303f;
+    --ink: #e6ecf5;
+    --dim: #8b98ac;
+    --faint: #5d6a7d;
+    --gold: #e0a94b;
+    --cyan: #4fd8e8;
+    --ore: #c8a24a;
+    --crys: #86e8ff;
+    --warn: #e0654b;
+    --disp: "Chakra Petch", "Helvetica Neue", sans-serif;
+    --body: "IBM Plex Sans", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--void);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 0 72px; }
+  a { color: var(--cyan); }
+
+  .eyebrow {
+    font-family: var(--disp); font-weight: 600; font-size: 11px;
+    letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold);
+    margin: 0 0 10px;
+  }
+  h1 {
+    font-family: var(--disp); font-weight: 700;
+    font-size: clamp(29px, 6vw, 44px); line-height: 1.05;
+    margin: 0 0 14px; text-wrap: balance;
+  }
+  h2 {
+    font-family: var(--disp); font-weight: 600; font-size: 13px;
+    letter-spacing: 0.18em; text-transform: uppercase; color: var(--gold);
+    margin: 0 0 4px;
+  }
+  h3 { font-family: var(--disp); font-weight: 600; font-size: 18px; margin: 0 0 6px; }
+  p { margin: 0 0 14px; max-width: 66ch; }
+  .lede { color: var(--dim); font-size: 16px; max-width: 62ch; }
+  .note { color: var(--faint); font-size: 13px; }
+  code {
+    font-family: var(--mono); font-size: 0.9em; color: var(--cyan);
+    overflow-wrap: anywhere;
+  }
+
+  header.top { border-bottom: 1px solid var(--rim); padding-block: 44px 30px; margin-bottom: 28px; }
+  .ask {
+    border-left: 2px solid var(--gold); background: #14161a;
+    padding: 14px 18px; border-radius: 0 3px 3px 0; margin-top: 20px;
+  }
+  .ask p { margin: 0; color: var(--ink); }
+  .ask p + p { margin-top: 8px; color: var(--dim); font-size: 14px; }
+
+  section { margin-block: 44px; }
+  .shead { margin-bottom: 18px; }
+
+  .stage {
+    position: relative;
+    background: radial-gradient(120% 90% at 50% 14%, #131d2b 0%, #080c12 62%, #05070b 100%);
+    border: 1px solid var(--rim); border-radius: 3px;
+    aspect-ratio: 16 / 9; max-width: 100%; overflow: hidden;
+  }
+  .stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .stamp {
+    position: absolute; left: 14px; top: 12px;
+    font-family: var(--disp); font-weight: 600; font-size: 12px;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold);
+    pointer-events: none; text-shadow: 0 1px 8px #000;
+  }
+  .stamp span { display: block; color: var(--faint); letter-spacing: 0.1em; margin-top: 2px; text-transform: none; }
+  .tools { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .hint {
+    position: absolute; right: 14px; top: 12px;
+    font-family: var(--mono); font-size: 11px; color: var(--faint);
+    text-align: right; pointer-events: none; text-shadow: 0 1px 8px #000;
+  }
+  button {
+    font-family: var(--disp); font-weight: 600; font-size: 11px;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim);
+    background: #0e141dcc; border: 1px solid var(--rim); border-radius: 2px;
+    padding: 7px 11px; cursor: pointer; min-height: 32px;
+  }
+  button:hover { color: var(--ink); border-color: #3a4759; }
+  button[aria-pressed="true"] { color: var(--void); background: var(--gold); border-color: var(--gold); }
+  button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) 292px; gap: 18px; align-items: start; }
+  .spec { border: 1px solid var(--rim); border-radius: 3px; background: var(--hull); padding: 16px 16px 6px; }
+  .spec dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 0 12px; }
+  .spec dt { font-size: 12.5px; color: var(--dim); padding: 5px 0; border-top: 1px solid #1e2733; }
+  .spec dd {
+    margin: 0; padding: 5px 0; border-top: 1px solid #1e2733;
+    font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right;
+  }
+  .spec dt:first-of-type, .spec dd:first-of-type { border-top: 0; }
+  .spec .role { font-size: 12.5px; color: var(--gold); margin: 2px 0 12px; }
+
+  /* the loop, drawn as a figure */
+  figure { margin: 0; }
+  figcaption { color: var(--faint); font-size: 13px; margin-top: 10px; }
+  .flow { width: 100%; height: auto; max-width: 100%; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(248px, 1fr)); gap: 14px; }
+  .card { border: 1px solid var(--rim); border-radius: 3px; background: var(--hull); padding: 16px 16px 14px; }
+  .card p { font-size: 14px; color: var(--dim); margin: 0; }
+  .card p + p { margin-top: 10px; }
+  .card h3 { color: var(--ink); }
+
+  .scroll { overflow-x: auto; border: 1px solid var(--rim); border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; background: var(--hull); }
+  caption {
+    text-align: left; font-family: var(--disp); font-weight: 600; font-size: 12px;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold);
+    padding: 12px 14px 10px; background: var(--deck); border-bottom: 1px solid var(--rim);
+  }
+  th, td { padding: 8px 12px; text-align: right; border-top: 1px solid #1b2430; }
+  th {
+    font-family: var(--disp); font-weight: 600; font-size: 10.5px;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); white-space: nowrap;
+  }
+  td { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--dim); }
+  th:first-child, td:first-child { text-align: left; }
+  td.name { font-family: var(--body); font-size: 13.5px; color: var(--ink); white-space: nowrap; }
+  td.up { color: var(--cyan); }
+
+  .open { border-left: 2px solid var(--warn); background: #17131a; padding: 16px 18px; border-radius: 0 3px 3px 0; }
+  .open p:last-child { margin-bottom: 0; }
+  .open strong { color: var(--warn); font-weight: 600; }
+
+  footer { border-top: 1px solid var(--rim); margin-top: 52px; padding-top: 22px; color: var(--faint); font-size: 13px; }
+
+  @media (max-width: 860px) {
+    .cols { grid-template-columns: minmax(0, 1fr); }
+    .stage { aspect-ratio: 4 / 3; }
+  }
+  @media (max-width: 560px) {
+    .hint { display: none; }
+    .stage { aspect-ratio: 1 / 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">swarm-demo / mockup, not built</p>
+    <h1>The collector craft</h1>
+    <p class="lede">
+      A cutter cuts and a COLLECTOR carries. Today one civil hull does both:
+      it flies to a rock, bores a shaft, and tows its cubes home in a line
+      behind it. This is the other shape, with the hauling split off onto
+      small craft that pick a cube up in two arms and bring it back.
+    </p>
+    <div class="ask">
+      <p>This is a mockup, and nothing here is in the game yet.</p>
+      <p>
+        The rule this project keeps is that a new hull or a new mechanic is
+        rendered, linked and approved before it is built, because the move
+        order shipped four defects the first time it was written straight
+        into the game.
+      </p>
+    </div>
+  </header>
+
+  <section>
+    <div class="cols">
+      <div class="stage" id="stage">
+        <canvas id="gl"></canvas>
+        <div class="stamp" id="stamp">loading<span>one moment</span></div>
+        <div class="tools">
+          <button id="m-craft" aria-pressed="true">The craft</button>
+          <button id="m-grab" aria-pressed="false">The grab</button>
+          <button id="m-loop" aria-pressed="false">The loop</button>
+          <button id="m-scale" aria-pressed="false">True scale</button>
+          <button id="spin" aria-pressed="true">Spin</button>
+        </div>
+        <div class="hint">drag to orbit<br>scroll to zoom</div>
+      </div>
+      <aside class="spec" id="spec"></aside>
+    </div>
+  </section>
+
+  <section>
+    <div class="shead">
+      <h2>What it is</h2>
+      <h3>A hull too small to be on the ladder</h3>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <h3>Fighter sized, and that is the point</h3>
+        <p>
+          The smallest thing on the fleet's ladder is a corvette at half a
+          frigate, and a corvette is still a warship. A collector is the size
+          of a fighter: a cab, a tank, a drive and two arms, with no gun, no
+          reactor worth the name and no business anywhere a shot is going.
+        </p>
+        <p>
+          So it is not a rung and it is not on the ladder. It is a CRAFT, the
+          way a fighter is: built in a hangar slot rather than a berth, and
+          replaced rather than repaired.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Two arms, and they are the whole silhouette</h3>
+        <p>
+          Three segments a side, folded back along the hull when empty and
+          reaching forward to close on a cube. A cube is <code>0.36</code> of
+          a cutter's radius, so the arms have to span roughly the craft's own
+          width: what you are looking at when one is loaded is mostly cargo.
+        </p>
+        <p>
+          Folded and reaching are two poses of one rig, eased between, so a
+          collector on its way out and a collector on its way home are
+          different shapes at a glance.
+        </p>
+      </div>
+      <div class="card">
+        <h3>One cube at a time</h3>
+        <p>
+          No hold, no capacity number, no stacking. A collector carries the
+          one thing in its arms and that is the entire cargo model, which is
+          what keeps it readable from across the field: count the craft with
+          something in them and you have counted the cargo in flight.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="shead">
+      <h2>What changes</h2>
+      <h3>The cutter stops going home</h3>
+    </div>
+    <figure>
+      <svg class="flow" viewBox="0 0 900 260" role="img"
+           aria-label="Today a cutter bores a shaft, tows its cubes and flies home, then flies back out. Proposed, the cutter stays at the rock and leaves cubes in a pile, and collectors shuttle each cube to the ship.">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g fill="none" stroke="currentColor" stroke-width="1.5" color="#5d6a7d">
+          <!-- today -->
+          <text x="0" y="16" fill="#e0a94b" font-family="Chakra Petch, sans-serif" font-size="12" letter-spacing="2" stroke="none">TODAY</text>
+          <rect x="0" y="36" width="120" height="44" rx="2" stroke="#26303f"/>
+          <rect x="250" y="36" width="120" height="44" rx="2" stroke="#26303f"/>
+          <rect x="520" y="36" width="120" height="44" rx="2" stroke="#26303f"/>
+          <line x1="122" y1="58" x2="246" y2="58" marker-end="url(#ar)"/>
+          <line x1="372" y1="58" x2="516" y2="58" marker-end="url(#ar)"/>
+          <path d="M 640 80 C 700 130 120 130 60 84" marker-end="url(#ar)" stroke-dasharray="5 4"/>
+          <!-- proposed -->
+          <text x="0" y="150" fill="#4fd8e8" font-family="Chakra Petch, sans-serif" font-size="12" letter-spacing="2" stroke="none">PROPOSED</text>
+          <rect x="0" y="170" width="120" height="44" rx="2" stroke="#26303f"/>
+          <rect x="250" y="170" width="120" height="44" rx="2" stroke="#26303f"/>
+          <rect x="520" y="170" width="120" height="44" rx="2" stroke="#26303f"/>
+          <rect x="760" y="170" width="130" height="44" rx="2" stroke="#26303f"/>
+          <line x1="122" y1="192" x2="246" y2="192" marker-end="url(#ar)"/>
+          <line x1="372" y1="192" x2="516" y2="192" marker-end="url(#ar)" stroke="#4fd8e8" color="#4fd8e8"/>
+          <line x1="642" y1="192" x2="756" y2="192" marker-end="url(#ar)" stroke="#4fd8e8" color="#4fd8e8"/>
+          <path d="M 55 170 C 55 130 55 126 55 118" marker-end="url(#ar)" stroke-dasharray="4 4"/>
+        </g>
+        <g font-family="IBM Plex Sans, sans-serif" font-size="12.5" fill="#e6ecf5">
+          <text x="12" y="56">cutter bores</text><text x="12" y="72" fill="#8b98ac">a shaft in the rock</text>
+          <text x="262" y="56">cubes tow</text><text x="262" y="72" fill="#8b98ac">in a line behind it</text>
+          <text x="532" y="56">cutter flies home</text><text x="532" y="72" fill="#8b98ac">and lands the load</text>
+          <text x="12" y="190">cutter bores</text><text x="12" y="206" fill="#8b98ac">and never leaves</text>
+          <text x="262" y="190">cubes PILE</text><text x="262" y="206" fill="#8b98ac">at the shaft mouth</text>
+          <text x="532" y="190">a collector grabs one</text><text x="532" y="206" fill="#8b98ac">in its two arms</text>
+          <text x="772" y="190">and lands it</text><text x="772" y="206" fill="#8b98ac">at the ship</text>
+        </g>
+        <text x="70" y="112" font-family="IBM Plex Sans, sans-serif" font-size="11.5" fill="#5d6a7d">and flies all the way back out</text>
+      </svg>
+      <figcaption>
+        The dashed return leg is the cost being removed. A cutter that has to
+        carry spends most of a system in transit; a cutter that stays on the
+        rock cuts continuously and the transit is paid by craft small enough
+        to be cheap to lose.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="shead">
+      <h2>What it is worth</h2>
+      <h3>Measured off the loop that runs today</h3>
+    </div>
+    <p class="note">
+      One miner on a field of six rocks, headless, under <code>--fixed-dt</code>
+      so a frame is a tick. The right hand column is what the same cut rate
+      gives once the transit is somebody else's job; it is an ESTIMATE and the
+      honest reason to build the thing is to find out.
+    </p>
+    <div class="scroll">
+      <table>
+        <caption>One miner, 2600 ticks</caption>
+        <thead>
+          <tr><th>&nbsp;</th><th>today, measured</th><th>with collectors, estimated</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="name">first cubes landed at</td><td>tick 1700</td><td class="up">tick 600</td></tr>
+          <tr><td class="name">landings in 2600 ticks</td><td>4</td><td class="up">9 to 11</td></tr>
+          <tr><td class="name">share of the time cutting</td><td>about a third</td><td class="up">nearly all of it</td></tr>
+          <tr><td class="name">cubes in flight at once</td><td>0 to 2</td><td class="up">1 per collector</td></tr>
+          <tr><td class="name">what a lost cutter costs</td><td>the ship and its load</td><td class="up">the ship only</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="shead">
+      <h2>What it costs</h2>
+      <h3>Three things this adds, named so they can be argued with</h3>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <h3>A pile is a new thing on the field</h3>
+        <p>
+          A cube that waits at the rock is a cube nothing owns. It has to sit
+          still, it has to be visible from the range a player picks targets
+          at, and something has to decide which collector goes for which one.
+          Nearest free cube to the nearest idle collector is the whole rule,
+          and it is the rule to check first.
+        </p>
+      </div>
+      <div class="card">
+        <h3>A craft is not a hull</h3>
+        <p>
+          Fighters already exist as entities with no voxel model and no damage
+          grid, and a collector is the same kind of thing. That keeps it cheap
+          and it means a collector cannot be chewed, wounded or wrecked: it is
+          alive or it is gone, exactly as a fighter is.
+        </p>
+      </div>
+      <div class="card">
+        <h3>The arms are the only new geometry</h3>
+        <p>
+          Everything else on the craft is a box. The arms are two rigs of
+          three segments, posed from one number between nought and one, and
+          that number is the only thing the sim has to publish about them.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="open">
+      <h2 style="color:var(--warn)">Four decisions that are not mine</h2>
+      <p><strong>1. Does the cutter still carry at all?</strong> The simplest
+        rule is no: it cuts, it piles, it never goes home. That makes a system
+        with no collectors in it produce nothing, which may be the right
+        pressure or may be a trap.</p>
+      <p><strong>2. Where do collectors come from?</strong> A hangar slot on
+        the ship, like fighters, launched whole and replaced on a timer. Or a
+        yard row you pay for one at a time.</p>
+      <p><strong>3. How many?</strong> Two per cutter roughly keeps up with
+        one shaft at the cut rate above. A ceiling is what stops the answer
+        being "all of them".</p>
+      <p><strong>4. Do they get shot?</strong> A collector in the open with a
+        cube in its arms is the most attackable thing in the fleet, which is
+        either the point or a chore.</p>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Mockup only. Nothing on this page is in the game: the craft is drawn
+      here from boxes to be looked at, and the numbers in the left column of
+      the table are the only measured ones.
+    </p>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var COL = {
+    plate: 0xb9c2cc, dark: 0x5d6773, cab: 0x2b3946,
+    arm: 0x8d97a3, joint: 0x3d4854, hazard: 0xe0a94b,
+    drive: 0xff7a18, lamp: 0x4fd8e8,
+    ore: 0xc8a24a, crys: 0x86e8ff, rock: 0x6a6258,
+    ship: 0x124e89, shipDeck: 0x0b2e52
+  };
+
+  var els = {
+    stage: document.getElementById("stage"),
+    canvas: document.getElementById("gl"),
+    stamp: document.getElementById("stamp"),
+    spec: document.getElementById("spec")
+  };
+
+  var renderer, scene, camera, root;
+  var orbit = { yaw: 0.8, pitch: 0.3, dist: 9, base: 9 };
+  var mode = "craft", spinning = true, clock = 0;
+  var rig = null;
+
+  function fail(why) { els.stamp.innerHTML = "no picture<span>" + why + "</span>"; }
+
+  function boot() {
+    if (!window.THREE) { fail("the 3D library did not load"); return false; }
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas: els.canvas, antialias: true });
+    } catch (e) { fail("this browser refused a WebGL context"); return false; }
+    renderer.setClearColor(0x000000, 0);
+    if ("outputEncoding" in renderer) renderer.outputEncoding = THREE.sRGBEncoding;
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(38, 16 / 9, 0.05, 500);
+    root = new THREE.Group();
+    scene.add(root);
+    var key = new THREE.DirectionalLight(0xfff1dc, 2.4);
+    key.position.set(0.55, 0.75, 0.42); scene.add(key);
+    var fill = new THREE.DirectionalLight(0x6f9fd8, 0.7);
+    fill.position.set(-0.7, -0.15, -0.35); scene.add(fill);
+    var rim = new THREE.DirectionalLight(0xbfd4ff, 0.5);
+    rim.position.set(-0.25, -0.5, -0.9); scene.add(rim);
+    scene.add(new THREE.AmbientLight(0x2a3646, 0.9));
+    return true;
+  }
+
+  function resize() {
+    var w = els.stage.clientWidth, h = els.stage.clientHeight;
+    if (!w || !h) return;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+
+  // ---- the craft, built from boxes -------------------------------------
+  //
+  // A cell is 0.16 units, so the numbers below read as CELLS and the craft
+  // measures 0.96 long: a fighter rather than a ship, and about three times
+  // the 0.36 a cargo cube is drawn at in the game today. That ratio is the
+  // one thing on this page worth arguing with before anything is built, so
+  // it is drawn to the real figure rather than to whatever flattered the
+  // craft: a collector carries something a third of its own length, which
+  // reads as a tug with a container rather than as a ship with a parcel.
+  var C = 0.16;
+  /** The cube, at the size `cargo.rs` actually draws one. */
+  var CUBE = 0.36;
+  /** How far the claws reach ahead of the hull's own middle, in units: the
+   *  shoulder at 1.6 cells plus an upper of 2.6 and a fore of 2.2. */
+  var REACH = (1.6 + 2.6 + 2.2) * C;
+  function box(w, h, d, colour, unlit) {
+    var geo = new THREE.BoxGeometry(w * C, h * C, d * C);
+    var mat = unlit
+      ? new THREE.MeshBasicMaterial({ color: colour })
+      : new THREE.MeshStandardMaterial({ color: colour, roughness: 0.62, metalness: 0.22 });
+    return new THREE.Mesh(geo, mat);
+  }
+  function at(m, x, y, z) { m.position.set(x * C, y * C, z * C); return m; }
+
+  /** One arm: shoulder, upper, fore, and a two pincer claw, as a chain of
+   *  groups so one number poses the whole thing. */
+  function arm(side) {
+    var g = new THREE.Group();
+    var shoulder = new THREE.Group();
+    shoulder.position.set(side * 1.6 * C, -0.2 * C, 1.6 * C);
+    g.add(shoulder);
+    shoulder.add(at(box(1.0, 1.0, 1.0, COL.joint), 0, 0, 0));
+    var upper = new THREE.Group();
+    shoulder.add(upper);
+    upper.add(at(box(0.7, 0.7, 2.6, COL.arm), 0, 0, 1.3));
+    var elbow = new THREE.Group();
+    elbow.position.set(0, 0, 2.6 * C);
+    upper.add(elbow);
+    elbow.add(at(box(0.9, 0.9, 0.9, COL.joint), 0, 0, 0));
+    var fore = new THREE.Group();
+    elbow.add(fore);
+    fore.add(at(box(0.6, 0.6, 2.2, COL.arm), 0, 0, 1.1));
+    var wrist = new THREE.Group();
+    wrist.position.set(0, 0, 2.2 * C);
+    fore.add(wrist);
+    var pincers = [];
+    for (var s = -1; s <= 1; s += 2) {
+      var p = new THREE.Group();
+      p.position.set(0, s * 0.35 * C, 0);
+      p.add(at(box(0.5, 0.4, 1.4, COL.arm), 0, 0, 0.7));
+      wrist.add(p); pincers.push(p);
+    }
+    // A working light on the wrist, which is what says the arm is the end
+    // a player should be watching.
+    wrist.add(at(box(0.3, 0.3, 0.3, COL.lamp, true), 0, 0, 0.25));
+    return { group: g, shoulder: shoulder, upper: upper, elbow: elbow, pincers: pincers, side: side };
+  }
+
+  function craft() {
+    var g = new THREE.Group();
+    // hull: a flat body with a cab forward and a tank aft
+    g.add(at(box(3.0, 1.6, 6.0, COL.plate), 0, 0, 0));
+    g.add(at(box(2.0, 1.2, 1.8, COL.cab), 0, 1.3, 1.6));
+    g.add(at(box(2.4, 2.0, 2.2, COL.dark), 0, 0.2, -2.0));
+    // a hazard band, because it is a civil craft working where shots are
+    g.add(at(box(3.06, 0.5, 0.9, COL.hazard), 0, 0.2, 0.4));
+    // drives: two bells aft, in the game's own propulsion orange
+    for (var s = -1; s <= 1; s += 2) {
+      g.add(at(box(0.9, 0.9, 0.5, COL.drive, true), s * 0.8, 0.2, -3.2));
+    }
+    // running lights, in the dock light's own blue
+    g.add(at(box(0.3, 0.3, 0.3, COL.lamp, true), 0, 1.95, 1.6));
+    var arms = [arm(-1), arm(1)];
+    arms.forEach(function (a) { g.add(a.group); });
+    return { group: g, arms: arms };
+  }
+
+  /** Pose both arms from one number: 0 folded back, 1 closed on a cube. */
+  function pose(r, t) {
+    var open = Math.min(1, t * 1.6);          // reach out first
+    var shut = Math.max(0, (t - 0.62) / 0.38); // then close
+    r.arms.forEach(function (a) {
+      a.shoulder.rotation.y = a.side * (1.0 - open * 1.25);
+      a.upper.rotation.x = -0.5 + open * 0.42;
+      a.elbow.rotation.x = 1.15 - open * 1.0;
+      a.pincers.forEach(function (p, i) {
+        p.rotation.x = (i === 0 ? 1 : -1) * (0.55 - shut * 0.42);
+      });
+    });
+  }
+
+  function cube(kind) {
+    var c = new THREE.Mesh(
+      new THREE.BoxGeometry(CUBE, CUBE, CUBE),
+      new THREE.MeshStandardMaterial({
+        color: kind === "crys" ? COL.crys : COL.ore,
+        roughness: kind === "crys" ? 0.2 : 0.7,
+        metalness: 0.1,
+        emissive: kind === "crys" ? 0x123a4a : 0x000000
+      }));
+    return c;
+  }
+
+  function lump(seed, r) {
+    var g = new THREE.Group();
+    var n = 5;
+    for (var i = 0; i < 26; i++) {
+      var h = Math.sin(seed + i * 12.9898) * 43758.5453;
+      h = h - Math.floor(h);
+      var s = r * (0.30 + h * 0.42);
+      var m = new THREE.Mesh(new THREE.BoxGeometry(s, s, s),
+        new THREE.MeshStandardMaterial({ color: COL.rock, roughness: 0.95, metalness: 0.0 }));
+      var a = h * 6.283, b = (i / 26) * 3.14159;
+      var rr = r * (0.35 + h * 0.5);
+      m.position.set(Math.cos(a) * Math.sin(b) * rr, Math.cos(b) * rr * 0.8, Math.sin(a) * Math.sin(b) * rr);
+      g.add(m);
+    }
+    return g;
+  }
+
+  function shipBlock() {
+    var g = new THREE.Group();
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.7, 4.2),
+      new THREE.MeshStandardMaterial({ color: COL.ship, roughness: 0.6, metalness: 0.25 })));
+    var deck = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.1, 2.6),
+      new THREE.MeshStandardMaterial({ color: COL.shipDeck, roughness: 0.6, metalness: 0.25 }));
+    deck.position.set(0, 0.4, 0.2); g.add(deck);
+    return g;
+  }
+
+  // ---- the four views --------------------------------------------------
+  var scene4 = {};
+  function clear() { while (root.children.length) root.remove(root.children[0]); }
+
+  function build(which) {
+    clear();
+    scene4 = {};
+    if (which === "craft" || which === "grab") {
+      rig = craft();
+      root.add(rig.group);
+      orbit.base = which === "grab" ? 3.2 : 2.4;
+      if (which === "grab") {
+        var c = cube("ore");
+        c.position.set(0, -0.02, REACH + CUBE * 0.42);
+        root.add(c);
+        scene4.cube = c;
+      }
+    } else if (which === "loop") {
+      var rock = lump(7.1, 2.2);
+      rock.position.set(-6.5, 0, 0);
+      root.add(rock);
+      var ship = shipBlock();
+      ship.position.set(6.5, 0, 0);
+      root.add(ship);
+      scene4.pile = [];
+      for (var i = 0; i < 3; i++) {
+        var p = cube(i === 1 ? "crys" : "ore");
+        p.position.set(-4.4 + (i % 2) * 0.42, -0.5 + Math.floor(i / 2) * 0.4, 0.5 - i * 0.45);
+        root.add(p); scene4.pile.push(p);
+      }
+      scene4.flyers = [];
+      for (var k = 0; k < 3; k++) {
+        var f = craft();
+        root.add(f.group);
+        scene4.flyers.push({ rig: f, phase: k / 3 });
+      }
+      orbit.base = 17;
+    } else if (which === "scale") {
+      // No per item scale anywhere in here: each thing is built at its own
+      // length in the same units, which is the only way a picture can answer
+      // "is it actually tiny". Framing each to fill the view is what makes a
+      // corvette and a cruiser look the same size, which is the lesson the
+      // fleet registry already records.
+      //
+      // And it is a RULER: one baseline, ordered by length, every hull turned
+      // so its own length runs along the row. The first cut laid them out
+      // along x with their noses pointing at the camera, so the miner, which
+      // is the whole comparison, was foreshortened into a block while the
+      // three small things clustered at one end. A length seen end on is the
+      // one view that cannot answer the question the picture exists for.
+      var GAP = 0.55;
+      var f1 = craft(); pose(f1, 0);
+      // A fighter: the same craft's body with no arms, a shade longer.
+      var f2 = craft(); pose(f2, 0);
+      f2.arms.forEach(function (a) { a.group.visible = false; });
+      f2.group.scale.setScalar(1.15);
+      // A miner at 6.3 units, which is the frigate's own length.
+      var mn = shipBlock();
+      mn.scale.setScalar(6.3 / 4.2);
+      var row = [
+        { obj: cube("ore"), len: CUBE },
+        { obj: f1.group, len: 6 * C },
+        { obj: f2.group, len: 6 * C * 1.15 },
+        { obj: mn, len: 6.3 }
+      ];
+      var span = GAP * (row.length - 1);
+      row.forEach(function (it) { span += it.len; });
+      var x = -span / 2;
+      row.forEach(function (it) {
+        it.obj.rotation.y = Math.PI / 2;
+        it.obj.position.set(x + it.len / 2, 0, 0);
+        root.add(it.obj);
+        x += it.len + GAP;
+      });
+      orbit.base = 13;
+      orbit.yaw = 0.22;
+      orbit.pitch = 0.26;
+    }
+    orbit.dist = orbit.base;
+    paintSpec(which);
+  }
+
+  var SPEC = {
+    craft: {
+      role: "Collector: carries, never cuts",
+      rows: [["length", "0.96 u"], ["against a frigate", "0.15x"],
+             ["arms", "2, three segments"], ["carries", "one cube"],
+             ["guns", "none"], ["built in", "a hangar slot"],
+             ["drawn as", "boxes, no voxel model"]]
+    },
+    grab: {
+      role: "The grab, in one number",
+      rows: [["pose", "0 folded, 1 closed"], ["reach out", "0.00 to 0.62"],
+             ["close", "0.62 to 1.00"], ["cube", "0.36 u, a third of the craft"],
+             ["published by the sim", "one float"], ["everything else", "geometry"]]
+    },
+    loop: {
+      role: "Cutter piles, collectors ferry",
+      rows: [["cutter", "stays on the rock"], ["cubes", "wait at the shaft"],
+             ["collectors", "2 per cutter"], ["each carries", "one cube"],
+             ["picks", "nearest free cube"], ["lost cutter costs", "the ship only"]]
+    },
+    scale: {
+      role: "True relative scale",
+      rows: [["a cargo cube", "0.36 u"], ["collector", "0.96 u"],
+             ["fighter", "1.10 u"], ["miner", "6.30 u"],
+             ["frigate", "6.34 u"], ["carrier", "24.94 u"]]
+    }
+  };
+
+  function paintSpec(which) {
+    var s = SPEC[which];
+    if (!s) { els.spec.innerHTML = ""; return; }
+    var html = "<h3>" + which.replace(/^./, function (c) { return c.toUpperCase(); }) +
+      '</h3><p class="role">' + s.role + "</p><dl>";
+    s.rows.forEach(function (r) { html += "<dt>" + r[0] + "</dt><dd>" + r[1] + "</dd>"; });
+    els.spec.innerHTML = html + "</dl>";
+  }
+
+  var STAMP = {
+    craft: ["the collector", "a cab, a tank, a drive and two arms"],
+    grab: ["the grab", "one number poses both arms"],
+    loop: ["the loop", "the cutter never leaves the rock"],
+    scale: ["true scale", "collector, fighter, miner"]
+  };
+
+  function show(which) {
+    mode = which;
+    ["craft", "grab", "loop", "scale"].forEach(function (m) {
+      document.getElementById("m-" + m).setAttribute("aria-pressed", String(m === which));
+    });
+    els.stamp.innerHTML = STAMP[which][0] + "<span>" + STAMP[which][1] + "</span>";
+    build(which);
+  }
+
+  // ---- input -----------------------------------------------------------
+  function bind() {
+    var drag = null, pts = {}, pinch = 0;
+    els.canvas.addEventListener("pointerdown", function (e) {
+      els.canvas.setPointerCapture(e.pointerId);
+      pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+      if (Object.keys(pts).length === 1) { drag = { x: e.clientX, y: e.clientY }; }
+    });
+    els.canvas.addEventListener("pointermove", function (e) {
+      if (!pts[e.pointerId]) return;
+      pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+      var ids = Object.keys(pts);
+      if (ids.length >= 2) {
+        var a = pts[ids[0]], b = pts[ids[1]];
+        var d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinch > 0 && d > 0) zoom(pinch / d);
+        pinch = d; drag = null; return;
+      }
+      if (!drag) return;
+      var dx = Math.max(-80, Math.min(80, e.clientX - drag.x));
+      var dy = Math.max(-80, Math.min(80, e.clientY - drag.y));
+      drag = { x: e.clientX, y: e.clientY };
+      orbit.yaw -= dx * 0.008;
+      orbit.pitch = Math.max(-1.3, Math.min(1.3, orbit.pitch + dy * 0.008));
+    });
+    function up(e) { delete pts[e.pointerId]; if (!Object.keys(pts).length) { drag = null; pinch = 0; } }
+    els.canvas.addEventListener("pointerup", up);
+    els.canvas.addEventListener("pointercancel", up);
+    els.canvas.addEventListener("wheel", function (e) {
+      e.preventDefault();
+      var unit = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? 400 : 1);
+      zoom(Math.exp(e.deltaY * unit * 0.0012));
+    }, { passive: false });
+    function zoom(f) {
+      if (!isFinite(f) || f <= 0) return;
+      orbit.dist = Math.max(orbit.base * 0.35, Math.min(orbit.base * 3.0, orbit.dist * f));
+    }
+    ["craft", "grab", "loop", "scale"].forEach(function (m) {
+      document.getElementById("m-" + m).addEventListener("click", function () {
+        if (mode !== m) show(m);
+      });
+    });
+    document.getElementById("spin").addEventListener("click", function () {
+      spinning = !spinning;
+      document.getElementById("spin").setAttribute("aria-pressed", String(spinning));
+    });
+    window.addEventListener("resize", resize);
+  }
+
+  function frame() {
+    requestAnimationFrame(frame);
+    if (!renderer) return;
+    resize();
+    clock += 1 / 60;
+    if (spinning && mode !== "loop" && mode !== "scale") orbit.yaw += 0.0026;
+
+    if (mode === "craft" && rig) {
+      // A slow breathe between folded and reaching, so both poses are seen.
+      pose(rig, 0.5 - 0.5 * Math.cos(clock * 0.7));
+    } else if (mode === "grab" && rig) {
+      // One cycle: reach, close, lift, let go.
+      var t = (clock * 0.42) % 1;
+      var p = t < 0.55 ? t / 0.55 : (t < 0.8 ? 1 : 1 - (t - 0.8) / 0.2);
+      pose(rig, p);
+      if (scene4.cube) {
+        var shut = Math.max(0, (p - 0.62) / 0.38);
+        scene4.cube.position.set(0, -0.02 + shut * 0.03, REACH + CUBE * 0.42);
+        scene4.cube.rotation.y = clock * 0.3;
+      }
+    } else if (mode === "loop" && scene4.flyers) {
+      scene4.flyers.forEach(function (f) {
+        var t = (clock * 0.11 + f.phase) % 1;
+        // out empty, grab, home loaded, release
+        var x, carry = 0, p = 0;
+        if (t < 0.36) { x = 6.0 - (t / 0.36) * 10.2; p = t / 0.36 * 0.5; }
+        else if (t < 0.46) { x = -4.2; p = 0.5 + (t - 0.36) / 0.10 * 0.5; carry = (t - 0.36) / 0.10; }
+        else if (t < 0.9) { x = -4.2 + ((t - 0.46) / 0.44) * 10.2; p = 1; carry = 1; }
+        else { x = 6.0; p = 1 - (t - 0.9) / 0.1; carry = 1 - (t - 0.9) / 0.1; }
+        f.rig.group.position.set(x, Math.sin(t * 6.283) * 0.5, Math.cos(f.phase * 6.283) * 1.6);
+        f.rig.group.rotation.y = (t < 0.42) ? -Math.PI / 2 : Math.PI / 2;
+        pose(f.rig, p);
+        if (!f.load) {
+          f.load = cube(f.phase > 0.5 ? "crys" : "ore");
+          root.add(f.load);
+        }
+        f.load.visible = carry > 0.5;
+        f.load.position.set(x + (t < 0.42 ? -0.9 : 0.9), f.rig.group.position.y, f.rig.group.position.z);
+      });
+      orbit.yaw += 0.0012;
+    } else if (mode === "scale") {
+      // A slow ROCK rather than a spin, for the reason the row is a row: a
+      // full turn puts the longest hull end on, which is exactly the view
+      // this picture exists to avoid.
+      if (spinning) orbit.yaw = 0.22 + Math.sin(clock * 0.32) * 0.28;
+    }
+
+    var cp = Math.cos(orbit.pitch);
+    camera.position.set(
+      Math.sin(orbit.yaw) * cp * orbit.dist,
+      Math.sin(orbit.pitch) * orbit.dist,
+      Math.cos(orbit.yaw) * cp * orbit.dist);
+    camera.lookAt(0, 0, 0);
+    renderer.render(scene, camera);
+  }
+
+  if (boot()) { bind(); show("craft"); frame(); }
+})();
+</script>
