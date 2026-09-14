@@ -660,7 +660,7 @@ damaged and one that eats the outside is always starting on fresh plating.
 
 ## Hulls are the redux-tribes hulls, one to one
 
-`assets/hulls/*.ftvx` are the twenty three stock hulls, exported from
+`assets/hulls/*.ftvx` are the twenty four stock hulls, exported from
 redux-tribes' own rasteriser AND its own mesher by `tools/export_hulls.mjs`,
 read by `VoxelModel::from_ftvx`. Cells, materials, purposes, roles, colours,
 which of the fifteen surfaces each cell draws in, what each surface is made
@@ -1363,6 +1363,175 @@ what a class IS and `build` answers what a yard DOES with one. `build`
 re-exports every name in `rung`, so nothing outside the crate learned a new
 path, which is exactly what `damage` did when `heat` and `wound` came out of
 it.
+
+## Three ways to play, and the campaign's front door is the MAP
+
+`Skirmish`, `Sandbox` and `Campaign` on the menu, and the campaign button was
+a stub reading "(not yet)" for as long as the run it opens had been finished:
+every piece of The Long Retreat was built and the only thing missing was the
+press that starts one.
+
+**It opens on the MAP rather than on the setup form**, and that is the
+decision worth writing down. What a system holds is the NODE's own answer:
+its tag decides the carriers, the rocks, which way the field leans and what
+the tide brings, and `reset_retreat` writes every one of those into the scene
+on the way into `Playing`. So a form asking for motherships and asteroids
+would be a page of controls a run overwrites the moment it is pressed, which
+is this file's own rule about a control for a mechanic that does not exist,
+arrived at from the other side. The one thing a player does pick is the
+flagship, and the form already carries that.
+
+The seed is an LCG step off the one the run is holding, so `--run-seed` still
+decides the first campaign and a second press is a different map rather than
+the same one again.
+
+## The base is a CARRIER, and it was authored in redux-tribes
+
+Base building needs a ship to build from, and the fleet had none: twenty three
+hulls, four warship rungs and seven civil trades, and every one of them is
+something you fly rather than something you build out of. So the carrier was
+authored where ships are authored, which is redux-tribes, and re-exported here
+like every other hull.
+
+**It is the rung that project declared and never used.** `RUNG.capital` is
+28/64 of a unit against the heavy cruiser's 14/64, so by `design.rs`'s own cube
+rule the same envelope at that cell is eight times the mass and eight times the
+hull, and nothing about the size is written down: it MEASURES 25.38 units long
+against the Terran frigate's 6.34 and the cruiser's 12.69, which is 4.00x and
+2.00x exactly. Here it is 11583 cells, 2210 quads over 128 bricks, 322 windows,
+six guns and a radius of 13.63, all of it read off the export.
+
+One honest number moved when the mouth was cut: it measures 24.94 units rather
+than 25.38, so 3.93x the frigate rather than 4.00x. The envelope is still
+exactly twice the cruiser's and the carve is what took the last cell of the
+nose.
+
+**Six guns and not ten, which is what makes it a carrier.** The volume goes on
+holds, berths, airlocks and clamps instead, and `Tier::Carrier` is what that
+buys: six production slots and six module slots against a heavy cruiser's four
+and four, and two sensor slots against one. A base building mode whose base was
+a frigate is a mode where the thing you build from is the thing you are trying
+to keep alive, and those are two different jobs.
+
+**It has a BERTH and LAUNCH TUBES, and they are the first HOLES anything in
+redux-tribes ever cut.** Every hull in that fleet is a shell grown on a profile
+with fittings laid inside it, and its decor pass can only ever add a cell. The
+two things that say carrier are both openings, so `voidsFor` is new over there:
+a class's own carve, a function of the frame exactly as its decor is.
+
+The berth is a SLIPWAY, cut down through the deck from amidships and out
+through the bow, eight cells wide, with a lit rail down each edge. Cut into the
+deck alone it is an open hold with the yard's own modules sitting in it and a
+hull built in one has nowhere to go; open at an end as well, a ship is
+assembled in the slot and leaves through the opening.
+
+**The bow and not the transom, and that was the one real decision.** The stern
+is where eight drive bells are, and a bell standing in the middle of a bay is a
+bay nothing can fly out of. Moving them outboard to clear it put four of them
+proud of the skin with a pylon welded under each, which is the slop that pass
+exists to catch rather than a thing to aim for. The nose carried one gun ring
+and nothing else, so the bow cost a ring's station and no geometry: the ring
+moved aft and is still the ship's forward most centreline deck mount, so
+`bowRing` still trains it down the keel.
+
+And `FULLNESS` went to 0.40 for the tier, which the MOUTH set rather than
+taste. At the heavy cruiser's 0.72 the nose tapers to nine cells and an eight
+cell mouth ate the whole of it, which reads as a hull with a bite out of it
+rather than as a ship with a door. Blunt, the same cut lands in a face. It
+cannot touch the ladder, because one raised to any power is one.
+
+The tubes are three a side, bored clean through the flank amidships, two cells
+square with a light over and under each mouth. Small on purpose: what leaves
+through one is a fighter, and a tube a capital ship fits through is a second
+berth.
+
+**The berth is LINED and LIT, and until it was it opened into the ship's own
+guts.** The plate pass over there lays armour within a few courses of the skin
+and leaves everything inboard hollow, so the first cut of this bay came out as
+a mouth with a cargo hold and a barracks stacked in the doorway. That is all
+authored in redux-tribes and its own CLAUDE.md is the long form; what matters
+here is the one thing the LIGHTS needed on this side.
+
+**A dock light is a WINDOW, because a window is the only thing in this
+renderer that carries its own light.** A lit cell is a purpose's highlight tone
+in the vertex colour, which is bright paint on a surface no lamp in the scene
+can reach, so it comes out black at the bottom of a slot: that is the same fact
+the four layer wound already records about the inside of a hull. A window
+material is emissive at 1.6 and is "the only part that survives with no light
+on it", so the bay's lamps are a `dock` decal and the whole path from the
+export to the material was already built.
+
+**And `WINDOW_KINDS` was a list that had gone stale, silently.** The textures
+are loaded in `PreStartup`, before any model exists, so that list cannot be
+read off what it describes: it is redux-tribes' `DECALS` written out by hand.
+A kind it does not have gets a material with no maps, and a `StandardMaterial`
+with no maps is plain WHITE, so 199 dock lights the size of a plate drew as a
+row of white slabs in exactly the place a light was meant to be. The picture
+was read three times as a texture authored wrong, and twice re-generated, and
+nothing anywhere said the kind was unknown. `window_materials` warns now, which
+turns a wrong picture into a line in the log: **a list that cannot be derived
+has to say when it is behind, because the thing it gets wrong looks exactly
+like the thing you were trying to fix.**
+
+**And the wing is not made of carriers.** `scene.hull` is the flagship's class
+AND what a reinforcement arrives as, so a base that simply set it to the carrier
+would answer R with a four thousand material yard. `open_base` moves the form's
+own pick into `SceneSpec.escort` and puts the carrier in `hull`, and
+`wing_class` is the one function that answers which of the two a wave is built
+from. One function rather than an `if` at each of the two presses that order
+one, which is this project's rule about a rule that gets copied.
+
+**Boarding moved in redux-tribes for this hull, and that is worth knowing
+here.** Its `can_board` measured centre to centre, which makes a ship harder to
+board the bigger it is, and at 14.8 radius it made three warship classes unable
+to board a carrier they were touching. That project's own test had named it as
+the thing to check before authoring a hull this big and named the remedy as the
+owner's call; the owner took the rule, and `turn::within_boarding` measures to
+the target's skin now. Nothing here reads it, and it is recorded because a hull
+authored in one repository changed a rule in it.
+
+## A skirmish is two modes, and they are one field with a different job on it
+
+**Battle scenario** is what the skirmish always was: the carriers stand there
+at tick nought and killing every one of them is the win. **Base building** is
+the siege: the carriers arrive on the TIDE, there are rocks to mine and
+support ships to mine them with, and killing a carrier is never a victory
+because the tide brings more. What you do is build, research and hold.
+
+**It is a flag on the scene rather than a second scene**, because the swarm,
+the rocks, the yard and the tide are one set of machinery and what a mode
+changes is which of them is turned on. `SceneSpec::open_base` is the whole of
+it: the tide, a floor under the asteroids, and the opening pair of support
+ships, which is a miner and a tanker because what fills the bank is a cutter
+and what turns crystal into fuel is a tanker and neither is any use alone.
+One implementation and two callers (the form's Launch and `--base`), because
+a mode set up one way on the form and another way on the command line is a
+mode the harness cannot photograph.
+
+**`SceneSpec::sieged` is the one predicate**, and three systems ask it: what
+the field opens with, what the tide spawns, and what `judge` calls a win. A
+retreat and a base are the same siege and what differs is the way out, which
+only one of them has. Written once, because a copy in each is the copy one of
+them would have differently.
+
+**And `--job` stopped turning a run on by itself.** It is the right click
+that puts every support ship to work, and it used to set `retreat` as a
+convenience because a run was the only mode with support ships. A base render
+therefore came out as a retreat, with a fuel gauge and a JUMP OUT button on
+it: a flag that quietly changes the MODE is a flag that cannot photograph the
+other one. The mode is named on the command line now and `--job` only says
+when the work starts.
+
+**The mode is its own panel on the form**, between the two columns, with a
+line under it saying what winning is. The first cut put the row under THE
+ENEMY, where it reads as one more thing the swarm brings rather than as the
+light the whole form is read in.
+
+**And LAUNCH is greyed.** What launching a ship IS has not been decided,
+so the tab stays on the strip, says "(soon)" in its own label and does not
+open: `PanelTab::ready` is what the press reads. A tab that switched to a
+blank page would be the reinforcement panel's own defect again, which is a
+control a player spends a fight wondering about.
 
 ## The sensors manager is a camera MODE, not a screen
 
@@ -2820,7 +2989,7 @@ is this one that answers "how much plating would a shot have to get through".
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 118, the core
+cargo test -p swarm_core                                   # 120, the core
 cargo test -p swarm_app                                    # 10, the run and the marks
 python3 tools/shape.py --check                             # no file over 900 lines, no function over 100
 cargo fmt --all -- --check                                 # the format
@@ -2862,6 +3031,12 @@ cargo build --release -p swarm_app
 # this is the one that photographs a hull arriving rather than a bar filling.
 ./target/release/swarm_app --headless --fixed-dt --motes 800 --hives 2 --rocks 2 \
     --chewers 0 --hud --build fighter,20 --frames 200 --zoom 4 --out yard.png
+# Base building: the siege, with a miner already cutting. `--job` is the right
+# click that puts the support ships to work and no longer turns a run on by
+# itself, so this is a BASE rather than a retreat: no jump drive, no fuel
+# gauge, the skirmish bank behind the build menu and a tide that never stops.
+./target/release/swarm_app --headless --fixed-dt --base --hud --motes 600 \
+    --chewers 0 --job 40 --frames 260 --zoom 5 --out base.png
 # The sensors manager, which is the camera pulling back rather than a screen:
 # `--view` is the tab, since a headless run has no pointer to press one with.
 # What to check is the dark wash, the patch the fleet lights on it, and the

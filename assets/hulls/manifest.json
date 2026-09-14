@@ -2370,6 +2370,112 @@
     }
    ],
    "bytes": 137488
+  },
+  {
+   "key": "terran_carrier",
+   "faction": "terran",
+   "rung": "capital",
+   "cell": 0.4375,
+   "cells": 12198,
+   "plate": 5955,
+   "quads": 1569,
+   "groups": {
+    "plate": 298,
+    "trim": 324,
+    "structure": 94,
+    "frame": 21,
+    "drive": 410,
+    "weapon": 248,
+    "part": 174
+   },
+   "windows": {
+    "beacons": 67,
+    "bridge": 10,
+    "dock": 186,
+    "hangar": 96,
+    "panes": 183,
+    "porthole": 33,
+    "strip": 56
+   },
+   "windowFaces": 631,
+   "surfaces": [
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "ribbed",
+     "metal": 0.38,
+     "rough": 0.44
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.48,
+     "rough": 0.58
+    },
+    {
+     "finish": "weave",
+     "metal": 0.45,
+     "rough": 0.7
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "greeble",
+     "metal": 0.55,
+     "rough": 0.62
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    },
+    {
+     "finish": "plate",
+     "metal": 0.3,
+     "rough": 0.5
+    }
+   ],
+   "bytes": 151730
   }
  ]
 }

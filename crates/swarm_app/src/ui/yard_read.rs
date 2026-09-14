@@ -163,7 +163,7 @@ pub(crate) fn build_input(
     escorts: Query<(), With<Escort>>,
 ) {
     for (i, tab) in &presses.panel {
-        if *i == Interaction::Pressed {
+        if *i == Interaction::Pressed && tab.0.ready() {
             views.panel = tab.0;
         }
     }

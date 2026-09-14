@@ -38,7 +38,17 @@ pub(crate) const FINISHES: [&str; 9] = [
     "plate", "ribbed", "hex", "cracked", "tread", "greeble", "weave", "battered", "crate",
 ];
 
-pub(crate) const WINDOW_KINDS: [&str; 9] = [
+/// Every decal kind a hull can wear, which is redux-tribes' `DECALS` written
+/// out: the textures are loaded at startup, before any model exists, so this
+/// is the one list here that cannot be read off what it describes.
+///
+/// It goes stale the day that project appends a kind, and the failure is
+/// silent and expensive: a material with no maps is plain WHITE, so a dock
+/// light the size of a plate came out as a row of white slabs in exactly the
+/// place a light was meant to be, and the picture was read three times as a
+/// texture that had been authored wrong. `window_materials` says so out loud
+/// now rather than drawing it.
+pub(crate) const WINDOW_KINDS: [&str; 10] = [
     "panes",
     "porthole",
     "strip",
@@ -48,6 +58,7 @@ pub(crate) const WINDOW_KINDS: [&str; 9] = [
     "louvre",
     "cargo",
     "hangar",
+    "dock",
 ];
 
 pub(crate) fn sampler(repeat: bool) -> ImageSampler {
@@ -245,6 +256,12 @@ pub(crate) fn window_materials(
         .iter()
         .map(|k| {
             let maps = tex.windows.get(k);
+            if maps.is_none() {
+                // A kind the export knows and `WINDOW_KINDS` does not. The
+                // material is still made, because a missing texture must not
+                // cost the hull its geometry, and it draws as flat white.
+                warn!("window kind {k:?} has no textures: add it to WINDOW_KINDS");
+            }
             materials.add(StandardMaterial {
                 base_color: Color::WHITE,
                 base_color_texture: maps.map(|m| m.colour.clone()),

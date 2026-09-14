@@ -20,6 +20,11 @@ pub enum Tier {
     Frigate,
     Destroyer,
     Cruiser,
+    /// A fleet carrier, at redux-tribes' `capital` cell: twice a heavy
+    /// cruiser's in every direction and eight times its mass. It is on nobody's
+    /// ladder, which is why it is a tier of its own rather than a fifth rung of
+    /// four navies that do not have one.
+    Carrier,
     /// A civil yard's trade. It does not stand on a ladder, and it is priced
     /// as a frigate because that is what the jump has always charged for one.
     Trade,
@@ -37,6 +42,7 @@ impl Tier {
             Some("frigate") => Tier::Frigate,
             Some("destroyer") => Tier::Destroyer,
             Some("cruiser") => Tier::Cruiser,
+            Some("carrier") => Tier::Carrier,
             _ => Tier::Trade,
         }
     }
@@ -54,6 +60,9 @@ impl Tier {
             Tier::Frigate | Tier::Trade => 50,
             Tier::Destroyer => 100,
             Tier::Cruiser => 200,
+            // The ladder continued rather than a number: every rung doubles
+            // and the carrier is the rung above a heavy cruiser.
+            Tier::Carrier => 400,
         }
     }
 
@@ -114,7 +123,7 @@ impl Category {
         match Tier::of(class) {
             Tier::Corvette => Category::Corvette,
             Tier::Frigate => Category::Frigate,
-            Tier::Destroyer | Tier::Cruiser => Category::Capital,
+            Tier::Destroyer | Tier::Cruiser | Tier::Carrier => Category::Capital,
             Tier::Trade => Category::Utility,
         }
     }
@@ -213,6 +222,14 @@ impl Slots {
                 module: 4,
                 sensors: 1,
             },
+            // A yard with engines, so the slots are the point of the hull
+            // rather than something it happens to have room for: half again a
+            // heavy cruiser's, which is what "you build from this" costs.
+            Tier::Carrier => Slots {
+                production: 6,
+                module: 6,
+                sensors: 2,
+            },
             Tier::Trade => Slots {
                 production: 1,
                 module: 2,
@@ -237,6 +254,31 @@ mod tests {
         assert_eq!(Tier::of("freighter"), Tier::Trade);
         assert_eq!(Tier::of("civil_lighter"), Tier::Trade);
         assert_eq!(Tier::of("civil_miner"), Tier::Trade);
+        // The one hull on nobody's ladder, and the reason this parses the key
+        // rather than the manifest's rung: the manifest calls its cell
+        // `capital` and the key is what says what the ship IS.
+        assert_eq!(Tier::of("terran_carrier"), Tier::Carrier);
+    }
+
+    /// A carrier is the rung above a heavy cruiser in every answer this file
+    /// gives, which is what keeps it from being a table entry somebody has to
+    /// remember to update.
+    #[test]
+    fn a_carrier_is_the_rung_above_a_cruiser() {
+        let cvn = Tier::of("terran_carrier");
+        assert_eq!(cvn.jump_cost(), 2 * Tier::of("terran_cruiser").jump_cost());
+        assert_eq!(cvn.build_cost(), cvn.jump_cost() * BUILD_FACTOR);
+        // A capital hull, because the mockup draws six buttons and a seventh
+        // with one ship behind it would be a category a player cannot fill.
+        assert_eq!(Category::of("terran_carrier"), Category::Capital);
+        // And it is the yard: more of both counters than anything else flies.
+        let slots = Slots::of("terran_carrier");
+        let cru = Slots::of("terran_cruiser");
+        assert!(
+            slots.production > cru.production,
+            "a carrier builds more at once"
+        );
+        assert!(slots.module > cru.module, "and fits more");
     }
 
     /// The ladder the jump has always charged, held here so moving it into the

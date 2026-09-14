@@ -50,7 +50,10 @@ const ARMOUR_BANDS = SURF_FRAME - SURF_ARMOUR;
 const KEYS = ['terran_frigate','karisen_frigate','rogue_frigate','benefactor_frigate','freighter',
   'terran_corvette','terran_destroyer','terran_cruiser','karisen_corvette','karisen_destroyer','karisen_cruiser',
   'rogue_corvette','rogue_destroyer','rogue_cruiser','benefactor_corvette','benefactor_destroyer','benefactor_cruiser',
-  'civil_lighter','civil_hauler','civil_boxship','civil_tanker','civil_miner','civil_liner'];
+  'civil_lighter','civil_hauler','civil_boxship','civil_tanker','civil_miner','civil_liner',
+  // The one hull on nobody's ladder, last for the reason redux-tribes
+  // appends it last: the position in ALL_CLASSES is the class index.
+  'terran_carrier'];
 
 let total = 0;
 const manifest = { surfaces: SURF_NAMES, hulls: [] };

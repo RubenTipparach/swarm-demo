@@ -22,11 +22,24 @@ impl PanelTab {
         match self {
             PanelTab::Build => "Build",
             PanelTab::Research => "Research",
-            PanelTab::Launch => "Launch",
+            PanelTab::Launch => "Launch  (soon)",
         }
     }
 
     pub(crate) const ALL: [PanelTab; 3] = [PanelTab::Build, PanelTab::Research, PanelTab::Launch];
+
+    /// Whether pressing it opens anything.
+    ///
+    /// LAUNCH does not, because what launching a ship IS has not been
+    /// decided: where it goes, what it costs, whether it comes back. A tab
+    /// that switched to a blank page would be a control a player spends a
+    /// fight wondering about, which is this project's own rule about the
+    /// build menu when it was a reinforcement call. It stays on the strip and
+    /// says so in its own label, which is the front door's rule for the
+    /// campaign button when that was the thing not yet built.
+    pub(crate) fn ready(self) -> bool {
+        self != PanelTab::Launch
+    }
 }
 
 /// Which of the three middle views is open, if any.
