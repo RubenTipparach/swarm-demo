@@ -119,6 +119,9 @@ struct Args {
     /// to answer it is to hold everything else still and turn the camera.
     yaw: f32,
     pitch: f32,
+    /// Ride a collector with the camera, since a craft that small crossing a
+    /// field that wide cannot be named by a coordinate.
+    watch_craft: bool,
     /// Draw the HUD in a headless run. It is a window's furniture and there is
     /// nobody to press it, but a screenshot is the only way to PROVE it draws
     /// rather than assert it, which is the rule the textures already keep.
@@ -234,6 +237,7 @@ fn parse_args() -> Args {
         launch_delay: 10.0,
         yaw: 0.6,
         pitch: 0.38,
+        watch_craft: false,
         hud: false,
         paused: false,
         delay_set: false,
@@ -428,6 +432,7 @@ fn parse_args() -> Args {
             }
             "--showcase" => a.showcase = true,
             "--hud" => a.hud = true,
+            "--watch-craft" => a.watch_craft = true,
             "--yaw" => {
                 a.yaw = next().parse().expect("--yaw RADIANS");
                 i += 1;
@@ -501,6 +506,7 @@ fn main() {
         chewers: args.chewers,
         yaw: args.yaw,
         pitch: args.pitch,
+        watch_craft: args.watch_craft,
         reinforce: args.reinforce,
         rocks: args.rocks,
         fighters: args.fighters,
@@ -873,7 +879,12 @@ fn main() {
                     light_outline,
                 ),
                 remesh_dirty,
-                (orbit_camera, ride_the_eye),
+                // And LAST, chained, because it is the only thing that
+                // overrules the orbit: a harness riding a craft writes the
+                // camera after whatever placed it this frame, and a tuple
+                // that is not chained is an order Bevy is free to pick, so
+                // the first cut of this was simply overwritten every frame.
+                (orbit_camera, ride_the_eye, watch_craft).chain(),
             )
                 .chain(),
         )

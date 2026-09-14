@@ -56,6 +56,16 @@ pub(crate) struct SceneSpec {
     pub(crate) launch_delay: f32,
     pub(crate) zoom: f32,
     pub(crate) target: Vec3,
+    /// Keep the camera on a COLLECTOR rather than on a point.
+    ///
+    /// `--target` aims at a place, which is every other thing in this game:
+    /// a hull, a rock, a wreck and the fleet all stand still enough to be
+    /// named by a coordinate. A collector does not. It is a craft about a
+    /// third of a frigate's radius crossing tens of units of field, so the
+    /// only framing that can photograph one is one that MOVES with it, and
+    /// without this the pictures of the mechanic were a yellow speck in a
+    /// wide shot or a camera inside a rock.
+    pub(crate) watch_craft: bool,
     pub(crate) explode: u32,
     /// `--wreck TICK` takes the reactor out of ONE escort at that tick, so a
     /// headless run has a wreck for a salvager to work. It kills the reactor

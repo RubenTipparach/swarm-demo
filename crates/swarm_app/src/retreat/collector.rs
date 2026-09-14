@@ -210,8 +210,15 @@ impl CraftKit {
 /// The arms are CHILDREN, so one rotation on a shoulder swings the whole arm
 /// with nothing recomputing where its parts are. That is the same reason a
 /// turret is a child of its hull.
-fn spawn_collector(commands: &mut Commands, kit: &CraftKit, at: Vec3, cube: f32) {
-    let c = CELL * cube;
+fn spawn_collector(commands: &mut Commands, kit: &CraftKit, at: Vec3, cell: f32) {
+    // `cell` is ONE cell of the craft in world units, already off the
+    // flagship, which is the same number `fly_collectors` flies and grabs
+    // in. Multiplying by `CELL` again here is what the first cut did, and it
+    // drew every craft at a twentieth of its own size: a speck a few pixels
+    // across that flew and grabbed correctly, so only a picture could say
+    // so. A scale that is applied where it is READ cannot be applied again
+    // where it is USED.
+    let c = cell;
     let body = commands
         .spawn((
             Transform::from_translation(at),
@@ -496,5 +503,46 @@ pub(crate) fn pose_claws(
             continue;
         };
         xf.rotation = Quat::from_rotation_x(jaw.0 * (0.55 - col.grip * 0.42));
+    }
+}
+
+/// How far off a watched craft the camera stands and how far above it, in
+/// the craft's own cells: close enough that a six cell craft fills a third
+/// of the frame, and behind its shoulder so the arms and whatever is in
+/// them are between the eye and the field.
+const WATCH_BACK: f32 = 26.0;
+const WATCH_UP: f32 = 9.0;
+
+/// Ride the first collector with the camera.
+///
+/// `--target` names a PLACE, which is enough for everything else in this
+/// game: a hull, a rock, a wreck and the fleet all stand still enough to be
+/// photographed from a coordinate. A collector does not, and the pictures
+/// said so: a wide shot of the field puts the craft at a few pixels and a
+/// close one is a camera inside whatever the craft has left, so the mechanic
+/// could be proved from the log and not from a picture. A harness flag that
+/// FOLLOWS is the answer, and it is the same answer `--fixed-dt` is: hold
+/// the thing still against the camera so a still can be taken of it.
+///
+/// It is one craft and not a choice of craft, because the point is to see
+/// what a collector does rather than which collector does it.
+pub(crate) fn watch_craft(
+    scene: Res<SceneSpec>,
+    cfg: Res<SwarmConfig>,
+    craft: Query<&Transform, With<Collector>>,
+    mut cams: Query<&mut Transform, (With<Camera3d>, Without<Collector>)>,
+) {
+    if !scene.watch_craft {
+        return;
+    }
+    let Some(at) = craft.iter().next() else {
+        return;
+    };
+    let size = cfg.hull_radius.max(0.1) * CELL;
+    // Behind and above in the CRAFT's own frame, so the camera swings with
+    // it and what is in the claws stays in the same corner of the picture.
+    let eye = at.translation + at.rotation * Vec3::new(0.0, WATCH_UP, -WATCH_BACK) * size;
+    for mut xf in &mut cams {
+        *xf = Transform::from_translation(eye).looking_at(at.translation, Vec3::Y);
     }
 }

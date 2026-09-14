@@ -2897,6 +2897,28 @@ reaching, folded in and shut once it has something. A cube is PLACED at the
 claws every frame rather than parented, because a cube is spawned by the
 cutter and re-parenting it would be a second place deciding what it rides.
 
+**`--watch-craft` rides one, and it is what finally photographed any of
+this.** `--target` names a PLACE, which is enough for everything else in
+this game: a hull, a rock, a wreck and the fleet all stand still enough to
+be shot from a coordinate. A collector does not. Half a dozen framings of a
+craft a third of a frigate's radius crossing tens of units of field came out
+as a yellow speck in a wide shot or as a camera inside a rock, and the
+mechanic could be proved from the LOG and not from a picture, which is the
+one thing this project says a picture is for. It is chained AFTER
+`orbit_camera`, because a tuple that is not chained is an order Bevy is free
+to pick and the first cut of the flag was simply overwritten every frame.
+
+**And the first picture it took found the bug every check had missed: the
+craft was drawn at a TWENTIETH of its own size.** `CELL` is applied where
+the cell size is read off the flagship, and `spawn_collector` applied it a
+second time to the number it was handed, so every box of the craft came out
+at 0.0086 units instead of 0.171. Nothing was wrong with it otherwise: it
+flew at the right speed, grabbed at the right range and landed its cubes, so
+the suites, the lints and the run report all said the mechanic worked, and
+it did. What it was was invisible. **A scale applied where it is READ cannot
+be applied again where it is USED**, and the only thing that can tell you it
+was is a picture of the thing.
+
 **It is plant yellow, and that is a decision about what a collector IS.**
 Every warship on this field wears a navy and a collector wears none of them,
 so it is painted the one colour nothing else out there is wearing, like the
@@ -3299,6 +3321,14 @@ cargo build --release -p swarm_app
 # gauge, the skirmish bank behind the build menu and a tide that never stops.
 ./target/release/swarm_app --headless --fixed-dt --base --hud --motes 600 \
     --chewers 0 --job 40 --frames 260 --zoom 5 --out base.png
+# A COLLECTOR, which is the one thing here a coordinate cannot frame: the
+# camera rides one craft rather than standing at a point, because a craft a
+# third of a frigate's radius crossing tens of units is a speck in any wide
+# shot. Dropping --fixed-dt on purpose, since the tick then advances about
+# three per frame on this container and a cube takes hundreds of ticks to
+# reach a shaft: this is a picture rather than a measurement.
+./target/release/swarm_app --headless --retreat --job 40 --motes 1 --chewers 0 \
+    --rocks 3 --watch-craft --frames 150 --out craft.png
 # The sensors manager, which is the camera pulling back rather than a screen:
 # `--view` is the tab, since a headless run has no pointer to press one with.
 # What to check is the dark wash, the patch the fleet lights on it, and the
