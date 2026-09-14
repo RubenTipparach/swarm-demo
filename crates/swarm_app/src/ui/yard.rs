@@ -26,6 +26,16 @@ impl PanelTab {
         }
     }
 
+    /// What the panel's own heading says while this tab is open. Not
+    /// `label`: a tab is a word on a strip and a heading names a page.
+    pub(crate) fn title(self) -> &'static str {
+        match self {
+            PanelTab::Build => "Build Menu",
+            PanelTab::Research => "Research",
+            PanelTab::Launch => "Launch",
+        }
+    }
+
     pub(crate) const ALL: [PanelTab; 3] = [PanelTab::Build, PanelTab::Research, PanelTab::Launch];
 
     /// Whether pressing it opens anything.
@@ -112,6 +122,10 @@ pub(crate) struct ModButton(pub(crate) Module);
 /// the rest.
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PanelBody(pub(crate) PanelTab);
+
+/// The panel's own heading, which names whichever tab is open.
+#[derive(Component)]
+pub(crate) struct PanelHead;
 
 /// A tab of the right panel.
 #[derive(Component, Clone, Copy)]

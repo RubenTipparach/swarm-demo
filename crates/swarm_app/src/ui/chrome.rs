@@ -93,11 +93,17 @@ pub(crate) fn readout(
 /// The cross carries whatever marker the caller hands it, because what a
 /// close button DOES is the panel's business and the heading's job is only to
 /// put one in the same place on every panel.
+///
+/// The TITLE carries a marker too, for the same reason: a panel whose body
+/// changes under it has a heading that has to change with it, and a heading
+/// that says BUILD MENU over the research list is the tabs lighting and
+/// nothing else all over again.
 pub(crate) fn head(
     p: &mut ChildSpawnerCommands,
     skin: &Skin,
     title: &str,
     close: Option<impl Bundle>,
+    named: impl Bundle,
 ) {
     let tok = skin.tok();
     p.spawn((
@@ -112,7 +118,7 @@ pub(crate) fn head(
         Pickable::IGNORE,
     ))
     .with_children(|h| {
-        label(h, &title.to_uppercase(), 14.0, tok.gold);
+        readout(h, &title.to_uppercase(), 14.0, tok.gold, named);
         if let Some(marker) = close {
             h.spawn((
                 Button,

@@ -48,10 +48,17 @@ pub(crate) fn side_panel(
     ))
     .with_children(|s| {
         if scene.sandbox {
-            head(s, skin, "The Range", Some(PanelToggle));
+            // A range has one body and no tabs, so its heading never moves.
+            head(s, skin, "The Range", Some(PanelToggle), ());
             range_rows(s, skin);
         } else {
-            head(s, skin, "Build Menu", Some(PanelToggle));
+            head(
+                s,
+                skin,
+                PanelTab::default().title(),
+                Some(PanelToggle),
+                PanelHead,
+            );
             // ONE panel, one body per tab, shown by `views.panel`. Both are
             // built here and hidden rather than spawned on the press: the
             // build list is thirty odd rows with a baked schematic each, and
