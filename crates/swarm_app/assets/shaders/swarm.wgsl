@@ -73,7 +73,8 @@ struct Mote {
                             // w = where it sits round its ship's ring
     // What the LIGHT does to this mote, which is the picture's state and not
     // the simulation's: x = how much of the sun reaches it through the cloud,
-    // y = how much of the sky does, and two spare. Written here and read by
+    // y = how much of the sky does, z = how hot its wound still is, and w =
+    // what a burst standing next to it lights it with. Written here and read by
     // `mote.wgsl` as one more instance attribute, because the draw cannot
     // afford to work it out: the mote buffer IS the instance buffer, so a
     // field the tick fills is one the vertex shader already has.
@@ -186,6 +187,18 @@ const DEATH_TRAIL: f32 = 0.5;
 /// And how hard it burns while it goes down. Under one on purpose: see the
 /// note where it is written.
 const DEATH_BURN: f32 = 0.62;
+
+/// How long a mote's wound takes to go out, in seconds.
+///
+/// A hit used to light a mote for as long as it stayed hurt, which is until it
+/// got home and was put back together: a pass through a beam left a cloud of
+/// bugs glowing orange for the rest of their lives, and a swarm where every
+/// mote that had ever been touched was still on fire says nothing about which
+/// of them was hit just now. A wound is an EVENT. It burns, it cools, and what
+/// is left afterwards is the char, which is the hull's own rule (`heat_of`
+/// over `COOL_TICKS`) at the scale a mote lives at: fifteen seconds is most of
+/// a frigate's siege and most of a mote's whole life.
+const MOTE_COOL: f32 = 2.5;
 
 /// What a shot takes off a mote, and how little it can have left before it
 /// breaks off for home. Two hits kill; one sends it limping.
@@ -480,6 +493,10 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
             // clock: a wave that all flipped together would breathe in and
             // out as one animal rather than read as a thousand of them.
             m.extra = vec4<f32>(1.0, PH_TRANSIT, 0.0, m.extra.w);
+            // And COLD. It died burning, and the heat below only ever cools:
+            // without this a mote that was killed launches out of its carrier
+            // still on fire from the last life.
+            m.shade.z = 0.0;
         }
         motes[i] = m;
         return;
@@ -493,6 +510,10 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     var hp = m.extra.x;
     var leg = m.extra.y;
     var fuse = m.extra.z;
+    // How hot its wound still is, one at the moment of the hit and nought once
+    // it has gone out. It is the mote's own `heat_of`, kept in the lane the
+    // shading already hands the draw rather than in a sixth vector.
+    var heat = m.shade.z;
     var hit = false;
     for (var s: u32 = 0u; s < p.shots; s = s + 1u) {
         let a = p.shot[s * 2u];
@@ -503,6 +524,13 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     // its own clock and a second shot cannot make that happen twice.
     if (hit && leg != PH_DYING) {
         hp = hp - SHOT_BITE;
+        // The wound is lit as hot as a mote going down burns, and the whole of
+        // the difference between the two is that this one COOLS. A hit and a
+        // mortal hit are the same event; what tells them apart is what happens
+        // over the next half second. Not one: `DEATH_BURN` is under one
+        // because the tone mapper turns a full burn white, and a white flash
+        // with a halo is a spark rather than a burning animal.
+        heat = DEATH_BURN;
         // ---- the hit itself ----
         //
         // A few sparks off the body on the tick the shot lands, which is the
@@ -1094,19 +1122,19 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     let lf = light_at(me);
     // ---- and what a WOUND does ----
     //
-    // A hurt mote throbs. The wound's own brightness is worked out in the
-    // draw, where the hit points already are, but the BEAT has to come from
-    // here: `mote.wgsl` has no clock, and a hurt mote that merely sat a little
-    // brighter read as a mote that happened to be a slightly different purple.
-    // A pulse reads as an injury at one glance and at one pixel.
+    // It COOLS, and that is the whole of this. It used to be a throb: a sine
+    // on the mote's own rate and phase, lit for as long as `hp` was under one,
+    // which is until it got home and was rebuilt. So a pass through a beam
+    // left every mote it touched glowing for the rest of its life, and a swarm
+    // in which everything that had ever been hit was still on fire cannot say
+    // which of them was hit just now. The pulse was standing in for a signal
+    // in TIME, and a wound that flares and fades is that signal for real.
     //
-    // Its own rate and its own phase off its own seed, for the reason the
-    // weave has them: ten thousand wounded motes beating together is one
-    // animal breathing rather than ten thousand hurt ones.
-    var throb = 0.0;
-    if (hp < 1.0) {
-        throb = 0.55 + 0.45 * sin(p.time * (7.0 + 5.0 * hash(sh + 311u)) + seed * 53.0);
-    }
-    m.shade = vec4<f32>(lf.x, lf.y, throb, min(flare, 3.0));
+    // The char is not here and must not be: what is left once the fire is out
+    // is a burnt body, and a burnt body does not un-burn itself. That rides
+    // `hp`, which the draw already has, exactly as the hull's crust rides its
+    // own dead cell rather than its heat.
+    heat = max(heat - p.dt / MOTE_COOL, 0.0);
+    m.shade = vec4<f32>(lf.x, lf.y, heat, min(flare, 3.0));
     motes[i] = m;
 }

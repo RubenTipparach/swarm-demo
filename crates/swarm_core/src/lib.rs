@@ -45,6 +45,7 @@ pub mod rng;
 pub mod rock;
 pub mod rung;
 pub mod sky;
+pub mod surface;
 pub mod tide;
 pub mod voxel;
 pub mod wound;

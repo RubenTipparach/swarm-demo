@@ -52,7 +52,41 @@ pub(crate) fn side_panel(
             range_rows(s, skin);
         } else {
             head(s, skin, "Build Menu", Some(PanelToggle));
-            build_body(s, skin, glyphs);
+            // ONE panel, one body per tab, shown by `views.panel`. Both are
+            // built here and hidden rather than spawned on the press: the
+            // build list is thirty odd rows with a baked schematic each, and
+            // rebuilding that on every tab press is a bake in an input
+            // handler.
+            for tab in PanelTab::ALL {
+                s.spawn((
+                    Node {
+                        width: Val::Percent(100.0),
+                        flex_grow: 1.0,
+                        min_height: Val::Px(0.0),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(5.0),
+                        display: if tab == PanelTab::Build {
+                            Display::Flex
+                        } else {
+                            Display::None
+                        },
+                        ..default()
+                    },
+                    PanelBody(tab),
+                    Pickable::IGNORE,
+                ))
+                .with_children(|b| match tab {
+                    PanelTab::Build => build_body(b, skin, glyphs),
+                    PanelTab::Research => research_body(b, skin, glyphs),
+                    // Launch is the one the tab itself already calls "soon",
+                    // and a body invented for it would be exactly the control
+                    // for a mechanic that does not exist this deck refuses.
+                    PanelTab::Launch => {
+                        section(b, skin, "Launch", DeckStat::None);
+                        label(b, "no launch bays yet", 12.0, skin.tok().dim);
+                    }
+                });
+            }
         }
     });
 }
@@ -77,7 +111,7 @@ fn range_rows(s: &mut ChildSpawnerCommands, skin: &Skin) {
 
 /// A section heading inside a panel: a gold word on the left and one live
 /// number on the right.
-fn section(s: &mut ChildSpawnerCommands, skin: &Skin, name: &str, stat: DeckStat) {
+pub(crate) fn section(s: &mut ChildSpawnerCommands, skin: &Skin, name: &str, stat: DeckStat) {
     let tok = skin.tok();
     s.spawn((
         Node {
