@@ -152,10 +152,6 @@ impl Role {
 #[derive(Component)]
 pub(crate) struct Support {
     pub(crate) role: Role,
-    /// Where it flies when it has nothing to do, in the flagship's frame.
-    /// Kept here rather than worked out again when a job ends, because two
-    /// places computing one station is two stations the day either moves.
-    pub(crate) station: Vec3,
 }
 
 /// What a hold has in it, in CUBES.
@@ -277,11 +273,11 @@ pub(crate) fn spawn_support(
             ShipSpec::at(Transform::from_translation(station))
                 .chewers((scene.chewers / 3) as u32)
                 .seed(0x5A17 ^ (n as u32).wrapping_mul(0x9E37))
-                .station(station),
+                .wing(),
         );
         commands
             .entity(e)
-            .insert((Support { role, station }, Job::default(), Hold::default()));
+            .insert((Support { role }, Job::default(), Hold::default()));
     }
 }
 

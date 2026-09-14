@@ -1748,11 +1748,10 @@ LEFT click commits, which is Homeworld's own button and the one the first cut
 got wrong. Holding a button while also moving the mouse to pick a point and
 then holding shift to lift it is three things one hand is doing at once; a mode
 costs one more click and lets the player take as long as they like over the
-part that is actually hard. Every selected ship gets the commit point offset by
+part that is actually hard. Every SELECTED ship gets the commit point offset by
 where it already stands relative to the group, so a formation arrives as a
-formation instead of piling onto one coordinate. An escort that is given an
-order of its own stops keeping station, because one flown to a point and then
-straight back to its slot is an order that did nothing.
+formation instead of piling onto one coordinate. Selected and alive is the
+whole of that list: a ship nobody picked does not move.
 
 **`OrderMode` is the rule: a button press is read by exactly one system per
 frame, and the mode decides which.** The first cut read every button in every
@@ -2397,21 +2396,17 @@ marker is what those three ask for now, and `publish_hull` asks for it too
 rather than iterating and keeping the last, which would have pointed the whole
 swarm at whichever escort the query happened to yield last.
 
-**The formation target is a RESOURCE, because Bevy will not lend it twice.**
+**The flagship's pose is a RESOURCE, because Bevy will not lend it twice.**
 `fly_hull` holds every hull's `Transform` mutably, so it cannot also read the
 flagship's: the same component in the same system is refused. `Lead` carries
-the flagship's pose and velocity, published a frame behind, which a formation
-cannot see. A ship a sixtieth of a second stale is a ship a centimetre out of
-place.
+the flagship's pose, published a frame behind, which is a centimetre and
+nothing anybody can see. Nothing FLIES on it: it is where a wave is aimed when
+it is called and where a cutter is told to bring its load, both one shot
+answers rather than goals chased every frame.
 
-**An escort has no order, so its goal is never reached.** A station is an
-offset in the FLAGSHIP's own frame, so the formation turns with the ship it is
-flying beside instead of sliding round it, and the goal moves every frame.
-Station keeping is the leader's velocity plus a steering term: steering alone
-would leave an escort permanently behind by however far it takes to close the
-gap. A reinforcement also ARRIVES, at three times cruise easing back over the
-last eight lengths, because a capital ship's cruise would take a minute to
-cross the gap it is called in over.
+**A wave ARRIVES and then holds**, on one `NavTo` to its station, through the
+same `Hull.order` a player's right click writes. What that replaced is the
+next section.
 
 **And a wave is not free.** The GPU swarm knows one hull centre and chases the
 flagship alone, so an escort with no chewers of its own is a ship that adds
@@ -2422,6 +2417,45 @@ is what makes calling one a decision.
 came out identical on every hull in the wing, so four frigates fired in one
 volley, on the same tick, for ever, and their flames flickered in lockstep.
 `Hull.seed` is per ship and is mixed into all of them.
+
+## Nothing follows the leader, and nothing unpicked moves
+
+**A ship moves because it was TOLD to, and the only thing that tells one is a
+player.** That is one sentence and it took deleting a whole flight rule to be
+true. `fly_hull` had a second branch: an `Escort` chased a slot in the
+flagship's own frame every frame off `Lead`, matching the leader's velocity,
+at up to three times cruise. So the wing moved whenever the flagship did,
+whether or not any of it was selected, and a support ship that finished a job
+flew home across the map to a station nobody had asked for.
+
+**Two ways for a ship to hold station on another ship is this project's own
+divergent path defect**, and the one that stays is `Guard`, because the player
+ASKS for it: it writes `Hull.order` every frame at an offset round whatever is
+being guarded, so the flight envelope, the rock avoidance and the heading are
+the one implementation they always were. The wing follows the flagship exactly
+when a player says so, which is what an RTS means by a formation.
+
+**So `Escort` is a marker and nothing else**, which is what its name always
+claimed: a ship on the wing's books, counted against `WING_MAX` by the yard
+and called "Escort" by the deck. It carried the station it was flying, and
+three places took it OFF to mean "this one has an order now", which was quietly
+freeing a berth every time a ship was given one. It is never removed now: an
+escort sent somewhere is still an escort.
+
+**A reinforcement still flies in from off the map**, because that was never
+the station keeping: it is spawned nine radii behind its slot and handed one
+`NavTo`. What went with the branch is the three times cruise it used to close
+on a moving goal with, so a wave crosses that gap at cruise, which is about
+six seconds and reads as a ship arriving rather than as one being teleported
+in slowly.
+
+**And the other half of the same report was that a press must not order a ship
+nobody picked.** `nav_input` already refused to open on an empty selection and
+already committed to `sel.is_some()` only, and `assign_work` already filtered
+`With<Selected>`, so the input side was right the whole time: what was moving
+unpicked ships was the flight rule, not the input. The commit loop says so in
+its own comment now, because the next person to read it will be looking for
+exactly that guard.
 
 ## Effects: what a shot is, and what comes off a thing that dies
 

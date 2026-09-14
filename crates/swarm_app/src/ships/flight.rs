@@ -26,10 +26,19 @@ pub(crate) const HULL_TURN: f32 = 2.2;
 /// A real envelope rather than a lerp: it accelerates, it has a top speed, and
 /// it slows into the arrival, so a move has weight and a player can see that
 /// giving an order to a capital ship is a commitment.
+///
+/// ONE rule, and it is the order. A hull flies where it was told and nowhere
+/// else: there is no second branch in here that flies a ship somewhere it was
+/// never sent. There used to be, and it is what the owner found. An `Escort`
+/// chased a slot in the flagship's own formation every frame off the `Lead`
+/// resource, so a wing moved whenever the flagship moved and a support ship
+/// that finished a job flew back across the map to a station nobody had asked
+/// for. Two ways for a ship to hold station on another ship is this project's
+/// own divergent path defect, and the one that stays is `Guard`, which the
+/// player ASKS for and which writes `Hull.order` like everything else.
 pub(crate) fn fly_hull(
     time: Res<Time>,
     scene: Res<SceneSpec>,
-    lead: Res<Lead>,
     cfg: Res<SwarmConfig>,
     // WITHOUT a carrier. A mothership is a `Hull` now so that cells come off
     // it the way they come off a ship, and every system that takes hulls
@@ -38,7 +47,7 @@ pub(crate) fn fly_hull(
     // wreck, which is a hull too and drifts on its own rule, and WITHOUT a
     // platform, which is a gun that never moves: that is what the marker IS.
     mut hulls: Query<
-        (&mut Hull, &mut Transform, Option<&Escort>),
+        (&mut Hull, &mut Transform),
         (
             Without<Hive>,
             Without<Wreck>,
@@ -48,7 +57,7 @@ pub(crate) fn fly_hull(
     >,
 ) {
     let dt = scene.step(&time);
-    for (mut hull, mut xf, escort) in &mut hulls {
+    for (mut hull, mut xf) in &mut hulls {
         let radius = hull.model.radius();
         // What it can still pull. A ship that has been chewed to the stern
         // does not accelerate like a fresh one and does not cruise like one
@@ -60,45 +69,21 @@ pub(crate) fn fly_hull(
             radius * HULL_ACCEL * thrust,
             radius * ARRIVE,
         );
-        let mut hurry = 1.0;
-        let want = match escort {
-            // An escort has no order of its own: its goal is a place in the
-            // formation, which MOVES, so it is never reached and never
-            // cleared. Matching the leader's velocity is what makes it hold
-            // station rather than trail: steering alone would put it
-            // permanently behind by however far it takes to close the gap.
-            Some(e) => {
-                let goal = lead.pos + lead.rot * e.station;
-                let to = goal - xf.translation;
+        let want = match hull.order {
+            Some(t) => {
+                let to = t - xf.translation;
                 let d = to.length();
-                // A reinforcement ARRIVES: three times cruise while it is far
-                // out, easing back to cruise over the last eight lengths, so
-                // a wave called from off the map is on station in seconds
-                // rather than in the minute a capital ship's cruise would
-                // take. It is the same envelope, with the cap raised.
-                hurry = 1.0 + 2.0 * (d / (radius * 8.0)).min(1.0);
-                if d < arrive * 0.5 {
-                    lead.vel
+                if d < arrive {
+                    hull.order = None;
+                    Vec3::ZERO
                 } else {
-                    lead.vel + to / d * speed * hurry * (d / (radius * 3.0)).min(1.0)
+                    // Slow into it: the speed asked for falls off over the
+                    // last few lengths, so it settles rather than overshooting
+                    // and hunting back and forth.
+                    to / d * speed * (d / (radius * 4.0)).min(1.0)
                 }
             }
-            None => match hull.order {
-                Some(t) => {
-                    let to = t - xf.translation;
-                    let d = to.length();
-                    if d < arrive {
-                        hull.order = None;
-                        Vec3::ZERO
-                    } else {
-                        // Slow into it: the speed asked for falls off over the
-                        // last few lengths, so it settles rather than overshooting
-                        // and hunting back and forth.
-                        to / d * speed * (d / (radius * 4.0)).min(1.0)
-                    }
-                }
-                None => Vec3::ZERO,
-            },
+            None => Vec3::ZERO,
         };
         let mut want = want;
         // ---- round the rocks ----
@@ -120,7 +105,7 @@ pub(crate) fn fly_hull(
         }
 
         let dv = want - hull.vel;
-        let step = accel * hurry * dt;
+        let step = accel * dt;
         let was = hull.vel;
         hull.vel += if dv.length() > step {
             dv.normalize() * step

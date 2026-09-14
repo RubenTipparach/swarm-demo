@@ -23,8 +23,7 @@ pub(crate) fn assign_work(
     mode: Res<OrderMode>,
     targets: Query<(Entity, &Hull, &Transform), Or<(With<Rock>, With<Wreck>)>>,
     rocks: Query<&Rock>,
-    mut crews: Query<(Entity, &Support, &mut Job), With<Selected>>,
-    mut commands: Commands,
+    mut crews: Query<(&Support, &mut Job), With<Selected>>,
     mut ack: ResMut<Ack>,
 ) {
     if *mode != OrderMode::Idle || !buttons.just_pressed(MouseButton::Right) {
@@ -68,7 +67,7 @@ pub(crate) fn assign_work(
         return;
     }
     let mut given = 0;
-    for (_, support, mut job) in &mut crews {
+    for (support, mut job) in &mut crews {
         let can = if is_rock {
             support.role.cuts_rock()
         } else {
@@ -82,14 +81,6 @@ pub(crate) fn assign_work(
     }
     if given == 0 {
         return;
-    }
-    // An ordered ship stops keeping station, exactly as one given a move
-    // order does: a ship that flew to a rock and straight back to its slot
-    // would be a job that did nothing.
-    for (e, _, job) in &crews {
-        if matches!(*job, Job::Work(_)) {
-            commands.entity(e).remove::<Escort>();
-        }
     }
     buttons.clear_just_pressed(MouseButton::Right);
     ack.text = format!(
@@ -136,14 +127,13 @@ pub(crate) fn script_jobs(
     tick: Res<Tick>,
     auto: Res<Script>,
     targets: Query<(Entity, &Transform, Option<&Rock>), (With<Hull>, WorkableBody)>,
-    mut crews: Query<(Entity, &Support, &mut Job, &Transform)>,
+    mut crews: Query<(&Support, &mut Job, &Transform)>,
     mut fired: Local<bool>,
-    mut commands: Commands,
 ) {
     if !tick.cue(auto.job, &mut fired) {
         return;
     }
-    for (entity, support, mut job, xf) in &mut crews {
+    for (support, mut job, xf) in &mut crews {
         // The nearest thing this role can work, which is the rock a player
         // would have picked and is the only choice a script can defend.
         let mut best: Option<(f32, Entity)> = None;
@@ -162,7 +152,6 @@ pub(crate) fn script_jobs(
         }
         let Some((_, target)) = best else { continue };
         *job = Job::Work(target);
-        commands.entity(entity).remove::<Escort>();
         if let Ok((_, at, _)) = targets.get(target) {
             info!(
                 "{} to work on the body at {:.1},{:.1},{:.1}",
@@ -308,13 +297,12 @@ fn unload_hold(
         Some(t) => *job = Job::Work(t),
         None => {
             *job = Job::Idle;
+            // It HOLDS where it landed, which is alongside the command ship,
+            // because that is where it had to be to unload. It used to be put
+            // back on a station it then chased for ever, and a support ship
+            // that flew home across the map on its own was half of what the
+            // owner found: a ship moves because it was told to.
             hull.order = None;
-            // Back into the formation, on the station it was given when it
-            // was built, since a ship with nothing to do should be somewhere
-            // a player can find it.
-            commands.entity(entity).insert(Escort {
-                station: support.station,
-            });
         }
     }
 }
