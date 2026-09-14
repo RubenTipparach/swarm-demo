@@ -396,9 +396,26 @@
 (function () {
   "use strict";
 
+  // A WORKING yellow, and that is a decision about what a collector IS rather
+  // than a taste. Every warship in this fleet is a navy's paint (Terran blue,
+  // Karisen maroon, Rogue rust, Benefactor bone) and a collector belongs to
+  // none of them: it is plant, like the machine that digs a road up, and the
+  // one colour every fleet on earth paints plant is the one nothing else on
+  // the field wears. It also has to read at the size the thing is drawn at,
+  // which is a couple of hundred pixels at most: grey plate against grey rock
+  // and a grey miner is three greys, and the craft was the one that vanished.
+  //
+  // Three things stay cool so the shape still has parts. The CAB, because the
+  // dark pane is what says which end is the front. The ARMS, in a warm steel
+  // rather than in the body colour, because arms in the hull's own paint read
+  // as a lump; a yellow machine with grey hydraulics is what plant actually
+  // looks like. And the wrist LAMP, in the dock light's own blue, which is
+  // now the only cool accent on the craft and therefore the brightest thing
+  // on it. The hazard band went the other way: gold on grey was a stripe and
+  // gold on yellow is nothing, so it is the BLACK half of a hazard marking.
   var COL = {
-    plate: 0xb9c2cc, dark: 0x5d6773, cab: 0x2b3946,
-    arm: 0x8d97a3, joint: 0x3d4854, hazard: 0xe0a94b,
+    plate: 0xe3a02e, dark: 0x8a4a14, cab: 0x2b3946,
+    arm: 0x9b9288, joint: 0x3a342c, hazard: 0x22190e,
     drive: 0xff7a18, lamp: 0x4fd8e8,
     ore: 0xc8a24a, crys: 0x86e8ff, rock: 0x6a6258,
     ship: 0x124e89, shipDeck: 0x0b2e52
@@ -665,6 +682,7 @@
       rows: [["length", "0.96 u"], ["against a frigate", "0.15x"],
              ["arms", "2, three segments"], ["carries", "one cube"],
              ["guns", "none"], ["built in", "a hangar slot"],
+             ["paint", "plant yellow, no navy"],
              ["drawn as", "boxes, no voxel model"]]
     },
     grab: {
