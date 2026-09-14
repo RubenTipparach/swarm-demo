@@ -70,11 +70,41 @@ pub fn ramp(heat: f32) -> [f32; 3] {
     [HEAT[4][1], HEAT[4][2], HEAT[4][3]]
 }
 
-/// How much of the char crust still covers what it burned. A third stays once
-/// the embers are gone: a crust does not un-char itself.
-pub const COLD_CRUST: f32 = 0.34;
+/// How much of the char crust still covers what it burned. Nearly all of it
+/// stays once the embers are gone: a crust does not un-char itself.
+///
+/// It was a THIRD, and a third is not a patch. What is under the crust is the
+/// machinery layer, which is LIT and in the cell's own paint, so at a third
+/// two thirds of a lit blue interior came through and a cold wound read as
+/// plating with a smudge on it: the hole stopped being visible the moment it
+/// stopped glowing, which is the one time a player most needs to see where the
+/// ship has been eaten.
+pub const COLD_CRUST: f32 = 0.82;
 pub fn crust_alpha(heat: f32) -> f32 {
     COLD_CRUST + heat * (1.0 - COLD_CRUST)
+}
+
+/// How brightly the burn is LAID ON, at its hottest.
+///
+/// This is a different question from what colour it is, which is why it is not
+/// in the ramp: the ramp is nought to one by construction because it is a
+/// COLOUR, and how bright that colour is put on a hull is the picture's
+/// business. A fresh hole has to clear the bloom threshold, so the hot end is
+/// well over white.
+pub const WOUND_GLOW: f32 = 3.4;
+
+/// And the gain RIDES the heat, which is the fix for a wound that cooled to
+/// nothing.
+///
+/// The app used to carry this as a constant 3.4 on the material, multiplying
+/// every heat alike. Char is authored at 0.09 precisely so it reads as burnt
+/// rather than black, and 0.09 times 3.4 is 0.31, which is a mid grey: the
+/// cold end of the ramp arrived three and a half times too bright and a
+/// burnt out crater came out as a pale wash over its own machinery. A gain
+/// that is one at the cold end leaves char exactly the colour it was written
+/// as, and the hot end is untouched.
+pub fn glow_of(heat: f32) -> f32 {
+    1.0 + heat * (WOUND_GLOW - 1.0)
 }
 
 /// Hit points a cell starts with, by what it is made of. Plate is what armour

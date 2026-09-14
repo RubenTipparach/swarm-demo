@@ -115,6 +115,26 @@ pub(crate) fn fly_chunks(
 /// what it takes.
 pub(crate) const REACTOR_LOSS: f32 = 0.50;
 
+/// And the OTHER way a ship dies: half of what it was built out of is gone.
+///
+/// The reactor rule alone leaves a hull that cannot be killed by the thing
+/// actually attacking it. A chewer's bite is a ray from outside along its own
+/// bearing to the first LIVE cell, holes included, so a crater does deepen and
+/// nothing about the reactor is unreachable in principle; but the teeth are
+/// spread over the whole sphere, so sixty four of them dig sixty four shallow
+/// pits rather than one shaft, and the most buried cells in the ship are the
+/// last thing any of them arrives at. A frigate under a swarm therefore
+/// hollows out for minutes, losing most of its material, with a reactor
+/// still at full and a health bar still saying it is fine.
+///
+/// A share of the hull is a hit point bar with extra steps, which is why this
+/// file argues for the reactor above and why this is a SECOND condition rather
+/// than a replacement: aiming still matters, because a hole through the middle
+/// still kills faster than a scouring. What this adds is that a ship eaten
+/// down to half of itself is gone whatever is left of its core, which is the
+/// honest answer to a hull that is more hole than plating.
+pub(crate) const HULL_LOSS: f32 = 0.50;
+
 /// An escort of the fleet's, which is a hull that is neither a support ship
 /// nor a carrier. The filter IS the interface, as every query here.
 pub(crate) type LiveEscort = (With<Escort>, Without<Support>, Without<Hive>);
@@ -183,8 +203,16 @@ pub(crate) fn go_critical(
         } else {
             gone as f32 / core as f32
         };
+        // What is left of the ship at all, against what it was built with.
+        let eaten = if hull.cells == 0 {
+            0.0
+        } else {
+            hull.damage.dead_count() as f32 / hull.cells as f32
+        };
         let forced = scene.explode > 0 && tick.tick >= scene.explode;
-        if !forced && share < REACTOR_LOSS {
+        let core_gone = share >= REACTOR_LOSS;
+        let hulled = eaten >= HULL_LOSS;
+        if !forced && !core_gone && !hulled {
             continue;
         }
         hull.dead_hull = true;
@@ -210,12 +238,23 @@ pub(crate) fn go_critical(
             radius: radius * HULL_HOLE,
             born: tick.tick,
         };
+        // WHICH rule took it, because the two mean different things about the
+        // fight: a reactor gone is a shot that got through, and a hull eaten
+        // is a ship nobody got off the line in time.
+        let why = if forced {
+            "forced"
+        } else if core_gone {
+            "reactor"
+        } else {
+            "hull eaten"
+        };
         info!(
-            "hull went critical at tick {} ({:.0}% of its {} reactor cells gone{}): blast radius {:.2}",
+            "hull went critical at tick {} ({why}: {:.0}% of its {} reactor cells gone, {:.0}% of its {} cells eaten): blast radius {:.2}",
             tick.tick,
             share * 100.0,
             core,
-            if forced { ", forced" } else { "" },
+            eaten * 100.0,
+            hull.cells,
             blast.radius
         );
 

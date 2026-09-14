@@ -133,7 +133,19 @@ pub(crate) fn spawn_ship(
     // cells are taken off the model the hull is built from and drawn as their
     // own child. The clusters are read BEFORE the cells are removed, or there
     // would be nothing left to find.
-    let turrets: Vec<(Gun, [f32; 3], Vec<usize>)> = gun_clusters(&model);
+    // ONLY THE MOUNT COMES OUT. A turret is a mount standing on a barbette and
+    // only the mount turns: the ring it is seated in belongs to the ship. The
+    // whole cluster used to be lifted and turned, so a gun tracking a target
+    // screwed its own seating round with it, which is the one part of a turret
+    // a player knows does not move. `turret_split` answers which cells are the
+    // seating by asking which have a face against hull that is not the gun.
+    let turrets: Vec<(Gun, [f32; 3], Vec<usize>)> = gun_clusters(&model)
+        .into_iter()
+        .map(|(gun, mid, cells)| {
+            let (_, mount) = turret_split(&model, &cells);
+            (gun, mid, mount)
+        })
+        .collect();
     let mut model = model;
     for (_, _, cells) in &turrets {
         for &c in cells {
@@ -189,12 +201,18 @@ pub(crate) fn spawn_ship(
             normal_map_texture: tex.finishes.get("greeble").cloned(),
             ..default()
         }),
-        // The burn over it. Unlit, because a fire is its own light, and well
-        // over white so a fresh hole clears the bloom threshold: the ramp is
-        // nought to one by construction (it is a colour), and how BRIGHT that
-        // colour is put on the hull is the picture's business, not the ramp's.
+        // The burn over it. Unlit, because a fire is its own light.
+        //
+        // PLAIN WHITE, and the brightness is in the vertex colour now. It was
+        // a constant 3.4 here so a fresh hole would clear the bloom threshold,
+        // and a constant multiplies every heat alike: char is authored at 0.09
+        // to read as burnt rather than black, and 0.09 times 3.4 is a mid
+        // grey, so a crater that had cooled came out as a pale wash over its
+        // own machinery and the hole stopped being visible the moment it
+        // stopped glowing. The gain rides the heat in `glow_of`, beside the
+        // ramp it scales, which is the only place that knows the heat at all.
         wound_mat: materials.add(StandardMaterial {
-            base_color: Color::LinearRgba(LinearRgba::rgb(3.4, 3.4, 3.4)),
+            base_color: Color::WHITE,
             base_color_texture: tex.ember.clone(),
             unlit: true,
             alpha_mode: AlphaMode::Blend,

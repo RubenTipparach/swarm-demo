@@ -738,6 +738,25 @@ three to the same faces quad for quad, and holds the soot OFF the faces that
 already carry the burn: three decals deep on one plane is not a picture
 anybody can read.
 
+**A cold wound is CHAR, and it was coming out as a grey wash.** Two numbers
+stacked. The burn material carried a constant 3.4 so a fresh hole clears the
+bloom threshold, and a constant multiplies every heat alike: char is authored
+at 0.09 precisely so it reads as burnt rather than black, and 0.09 times 3.4 is
+0.31, which is a mid grey. Under it `COLD_CRUST` was a third, and what is under
+the crust is the machinery layer, which is LIT and in the hull's own paint, so
+two thirds of a lit blue interior came through. Between them a crater stopped
+being visible the moment it stopped glowing, which is the one time a player
+most needs to see where the ship has been eaten.
+
+The gain RIDES the heat now (`glow_of`, one at the cold end and 3.4 at the hot)
+and lives beside the ramp it scales, which is the only place that knows the
+heat at all; the material is plain white. The crust holds at 0.82. The ramp is
+still nought to one by construction, because it is a colour, and how brightly
+that colour is laid on is still the picture's business: what changed is that
+the picture's business is a function of the heat rather than a constant. The
+suite pins BOTH ends now, which is what would have caught it: it held the hot
+end at white and never asked what the cold end came out as.
+
 The burn leaves the greedy pass entirely, like a window, because each face
 picks its own tile of the atlas by its own DEAD cell: a wound that took its
 tile from the live cell would light a whole crater the same way. And the
@@ -928,6 +947,25 @@ makes a wreck that is still fighting possible at all. The suite holds the
 reactor to buried (no cell of it has a face open to space), solid, small, and
 amidships: a reactor that came out at one end passes the first three and is
 still a reactor anybody can shoot from the front.
+
+**And there is a SECOND way to die, because the reactor rule alone left a hull
+the swarm could not kill.** A bite is a ray from outside along a tooth's own
+bearing to the first LIVE cell, holes included, so a crater deepens and nothing
+about the reactor is unreachable in principle. But the teeth are spread over
+the whole sphere: sixty four of them dig sixty four shallow pits rather than
+one shaft, and the most buried cells in the ship are the last thing any of them
+arrives at. A frigate under a swarm therefore hollowed out for minutes, losing
+most of its material, with its reactor at full and its health bar still saying
+it was fine.
+
+`HULL_LOSS` is half of what the ship was built out of. It is a SECOND condition
+and not a replacement, which is the whole of why it is safe: a share of the
+hull is a hit point bar with extra steps, and aiming still matters because a
+hole through the middle still kills faster than a scouring. What it adds is
+that a ship eaten down to half of itself is gone whatever is left of its core.
+The log says WHICH rule took it, because the two mean different things about
+the fight: a reactor gone is a shot that got through, and a hull eaten is a
+ship nobody got off the line in time.
 
 **And the plating is worth a hundred times the bare material.** `ARMOUR` is a
 multiplier on hit points rather than a divisor on the bite, so the heat ramp
@@ -1713,6 +1751,36 @@ range, and a band box is in screen space by definition. Anything that has to
 hold its size in the WORLD stays a mesh, which is why the nav disc and the
 beams are not here.
 
+**And the bar is not the whole story, which is why the unit panel says what is
+LEFT of each subsystem.** A bar over a hull reads the reactor, and that is the
+right thing for it to read: the reactor is the only thing that kills a ship, so
+it is the only honest thing to put on a bar that means "about to die". What it
+cannot answer is the question a chewed ship actually raises. The teeth are
+spread over the sphere and the core is the most buried thing in the hull, so a
+frigate is eaten most of the way to gone with its reactor untouched and a green
+bar over it the whole time, which is exactly the picture that looked like the
+damage model had stopped working.
+
+`wear_by_purpose` counts what is left of each system off the cells the export
+said were FOR it, so nothing is authored beside the hull and a class with no
+ordnance bay has none by construction. Four of them sit under the reactor bar,
+drives, guns, command and structure, and a system the ship does not carry reads
+WHOLE rather than destroyed: a ship with no ordnance is not a ship whose
+ordnance is wrecked, and a readout that showed those alike would put a red bar
+on every hull in the fleet.
+
+**And a bar is placed in AUTHORED pixels, not window ones.** The deck is
+authored at 1600 by 900 and scaled by the window's height through `UiScale`, so
+a `Val::Px` is an authored pixel and what `world_to_viewport` hands back is a
+window one. Placed straight from the projection a bar lands at that fraction of
+the way across the screen: at 1080 the scale is 1.2, so the bar sat a fifth of
+its own distance from the corner away from its ship and drifted FURTHER the
+further out the ship was, which is why it read as a bar that would not stay put
+rather than as a constant offset anybody would have spotted. `place_sensor_marks`
+already divided by it and said so; this file predates the deck and never
+learned. A rule that arrives after the code it applies to is a rule the old code
+will miss, which is the two clamps a third time.
+
 A bar reads the REACTOR, not the plating. Plating comes off and the ship keeps
 flying; the reactor is the only thing that kills it, so it is the only honest
 thing to put on a bar. Your ships only: a health bar over a carrier turns a
@@ -2376,6 +2444,19 @@ is this file's own divergent path warning, and the guard is that the cells are
 redux-tribes' answer and the facing is derived from them: a hull the two
 disagree about is a barrel drawn one way and a beam leaving it another, and
 `bow_check` is what measures that they do not.
+
+**And only the MOUNT turns: the barbette stays with the ship.** The whole
+cluster used to be lifted out of the hull and given to the child, so a gun
+tracking a target screwed its own seating round with it, which is the one part
+of a turret a player knows does not move. `turret_split` answers which cells
+are the seating by asking which of them have a face against hull that is not
+the gun: a cluster cell seated on the ship is the base and everything standing
+on those is the mount. It is a fact about the GEOMETRY rather than a direction
+anybody has to choose, which matters because the mounts are not all alike: a
+sponson is bolted outboard and a bow gun lies down the nose, so any rule
+written along one axis is a rule that is wrong on the other. A cluster that is
+all contact layer has nothing to split and the whole of it turns, because a gun
+one cell deep is a barrel with no barbette under it.
 
 **A turret turns by an ARC from where it was authored, never to an absolute
 pose.** `aim_turrets` used to say `looking_to(-want_local)`, which puts local

@@ -118,6 +118,16 @@ pub(crate) enum Fill {
     Unit,
     /// How far along the job at the front of the yard's queue is.
     Yard,
+    /// What is left of one of the selected ship's SUBSYSTEMS, by the purpose
+    /// the export gave its cells.
+    ///
+    /// The reactor bar answers whether the ship is about to die and nothing
+    /// else, which is right for a bar over a hull and leaves the one question
+    /// a chewed ship actually raises unanswered: a frigate can be most of the
+    /// way to gone with its core untouched, because the teeth are spread over
+    /// the sphere and the core is the most buried thing in it. This is the
+    /// readout that tells those apart.
+    System(u8),
 }
 
 /// The picture of whatever is selected, set on SELECTION rather than drawn,

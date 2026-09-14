@@ -65,6 +65,7 @@ pub(crate) fn draw_marquee(
 pub(crate) fn draw_bars(
     mut commands: Commands,
     hud: Res<Hud>,
+    scale: Res<UiScale>,
     cams: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     ships: Query<
         (&Transform, Option<&Hull>, Option<&Fighter>),
@@ -81,6 +82,21 @@ pub(crate) fn draw_bars(
     let Ok((cam, cam_xf)) = cams.single() else {
         return;
     };
+    // ---- DIVIDED BY `UiScale`, which is the whole of the drift ----
+    //
+    // The deck is authored at 1600 by 900 and scaled by the window's height,
+    // so a `Val::Px` is an AUTHORED pixel and what `world_to_viewport` hands
+    // back is a WINDOW one. Placed straight from the projection a bar lands at
+    // that fraction of the way across the screen, which is why it sat beside
+    // its ship rather than over it and drifted further the further out the
+    // ship was: at 1080 the scale is 1.2, so the error is a fifth of the bar's
+    // own distance from the corner rather than a fixed offset anybody would
+    // have spotted as a constant.
+    //
+    // `place_sensor_marks` already does this and says so; this file predates
+    // the deck and never learned. Same lesson as the two clamps: a rule that
+    // arrives after the code it applies to is a rule the old code will miss.
+    let k = scale.0.max(0.01);
     let mut want: Vec<(Vec2, f32)> = Vec::new();
     for (xf, hull, fighter) in &ships {
         let (share, radius): (f32, f32) = match (hull, fighter) {
@@ -148,8 +164,8 @@ pub(crate) fn draw_bars(
         match want.get(n) {
             Some(&(p, share)) if hud.show_bars => {
                 node.display = Display::Flex;
-                node.left = Val::Px(p.x - BAR_W * 0.5);
-                node.top = Val::Px(p.y);
+                node.left = Val::Px(p.x / k - BAR_W * 0.5);
+                node.top = Val::Px(p.y / k);
                 if let Some(&fill) = kids.iter().next().as_ref() {
                     if let Ok((mut fnode, mut fbg)) = fills.get_mut(fill) {
                         fnode.width = Val::Percent(share * 100.0);

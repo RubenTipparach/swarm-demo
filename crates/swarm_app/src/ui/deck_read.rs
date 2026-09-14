@@ -514,6 +514,11 @@ pub(crate) fn deck_bars(
         ((all - hives.iter().count() as f32) / all).clamp(0.0, 1.0)
     };
     let unit = picked.iter().next().map(reactor_left).unwrap_or(0.0);
+    let wear = picked
+        .iter()
+        .next()
+        .map(|h| wear_by_purpose(&h.model, &h.damage))
+        .unwrap_or([Wear::default(); 9]);
     let job = yards
         .single()
         .ok()
@@ -529,6 +534,11 @@ pub(crate) fn deck_bars(
             // there before the queue existed and said nothing about the
             // panel it sits under.
             Fill::Yard => job,
+            // What is LEFT of each subsystem of the picked ship, counted off
+            // the cells the export said were for it. One pass over the hull
+            // per frame rather than one per bar, because four bars asking the
+            // same question four times is the same answer counted four times.
+            Fill::System(p) => wear[*p as usize].share(),
         };
         let want = Val::Percent(share * 100.0);
         if n.width != want {

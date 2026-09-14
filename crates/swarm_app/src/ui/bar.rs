@@ -313,6 +313,64 @@ fn unit_stats(row: &mut ChildSpawnerCommands, skin: &Skin, glyphs: &Glyphs) {
             }
         });
         bar(l, skin, tok.green, 5.0, Fill::Unit);
+        systems_row(l, skin, glyphs);
+    });
+}
+
+/// What the selected ship's SUBSYSTEMS are at, one thin bar each.
+///
+/// The reactor bar above answers whether the ship is about to die and nothing
+/// else. That is the right thing for a bar over a hull, and it leaves the
+/// question a chewed ship actually raises unanswered: the teeth are spread
+/// over the sphere and the core is the most buried thing in the ship, so a
+/// frigate can be eaten most of the way to gone with its reactor untouched and
+/// a green bar over it the whole time. These are what came off.
+///
+/// Four, by the purpose the export gave the cells, so nothing is authored
+/// beside the hull: a class with no ordnance bay has none by construction. A
+/// system the ship does not carry reads WHOLE rather than destroyed, because a
+/// ship with no ordnance is not a ship whose ordnance is wrecked.
+fn systems_row(l: &mut ChildSpawnerCommands, skin: &Skin, glyphs: &Glyphs) {
+    let tok = skin.tok();
+    l.spawn((
+        Node {
+            width: Val::Percent(100.0),
+            column_gap: Val::Px(4.0),
+            ..default()
+        },
+        Pickable::IGNORE,
+    ))
+    .with_children(|r| {
+        for (mk, purp, ink) in [
+            (Glyph::Speed, purpose::PROPULSION, tok.teal),
+            (Glyph::Gun, purpose::GUN, tok.gold),
+            (Glyph::Utility, purpose::COMMAND, tok.cyan),
+            (Glyph::Armour, purpose::STRUCTURE, tok.green),
+        ] {
+            r.spawn((
+                Node {
+                    flex_grow: 1.0,
+                    flex_basis: Val::Px(0.0),
+                    min_width: Val::Px(0.0),
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(3.0),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ))
+            .with_children(|c| {
+                c.spawn(mark(glyphs, mk, 10.0, tok.faint));
+                c.spawn((
+                    Node {
+                        flex_grow: 1.0,
+                        min_width: Val::Px(0.0),
+                        ..default()
+                    },
+                    Pickable::IGNORE,
+                ))
+                .with_children(|w| bar(w, skin, ink, 4.0, Fill::System(purp)));
+            });
+        }
     });
 }
 
