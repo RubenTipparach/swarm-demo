@@ -205,6 +205,38 @@ pub(crate) fn build_input(
     }
 }
 
+/// Show the body of whichever tab is open and hide the other two.
+///
+/// The tabs used to light and nothing else: `views.panel` was written by the
+/// press and read only by the code deciding which tab looked lit, so pressing
+/// Research lit Research and left the build list under it. This is the half
+/// that was missing.
+pub(crate) fn show_panel_body(
+    views: Res<Views>,
+    mut bodies: Query<(&PanelBody, &mut Node)>,
+    mut title: Query<&mut Text, With<PanelHead>>,
+) {
+    // And the heading names it. One writer for one fact: the tab that is open
+    // decides both what is shown and what the panel is called, so they cannot
+    // disagree, which is the deck's own "one marker, one owner" rule.
+    for mut t in &mut title {
+        let want = views.panel.title().to_uppercase();
+        if t.0 != want {
+            t.0 = want;
+        }
+    }
+    for (body, mut node) in &mut bodies {
+        let want = if body.0 == views.panel {
+            Display::Flex
+        } else {
+            Display::None
+        };
+        if node.display != want {
+            node.display = want;
+        }
+    }
+}
+
 /// Every button the build menu carries, as ONE parameter.
 ///
 /// Six queries in an argument list is the smell this project names, and they

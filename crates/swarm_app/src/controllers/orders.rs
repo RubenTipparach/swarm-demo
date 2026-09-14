@@ -2,12 +2,23 @@
 
 use crate::*;
 
-/// How far one order may send a ship, in radii of the biggest hull in the
-/// selection: where the move disc stops growing. Past the carriers' standoff
-/// band (`HIVE_FAR` is twenty two), so an order can reach the fight and a
-/// little beyond it, and no further: a point past it is clamped to it rather
-/// than refused.
-pub(crate) const MOVE_RANGE: f32 = 24.0;
+/// How far one order may send a ship: the OPERATIONAL AREA, in world units.
+///
+/// It was twenty four radii of the biggest hull in the selection, which is two
+/// mistakes in one number. It was too short, reaching a little past the
+/// carriers' own standoff band and stopping there, so a disc could not name
+/// most of the field a player can see; and being a multiple of the HULL it
+/// meant something different for every ship, so a fighter could be sent a
+/// fraction of the distance a cruiser could for no reason anybody could state.
+///
+/// `SENSORS_R` is the operational area the sensors view frames and is already
+/// this project's answer to "how big is the battle", so an order reaches
+/// exactly as far as the map a player plans on. Two numbers that have to agree
+/// are one number. A point past it is clamped rather than refused, which is
+/// the rule it always had.
+pub(crate) fn move_range() -> f32 {
+    SENSORS_R
+}
 
 /// Seconds the confirmation ring lives.
 pub(crate) const PING_LIFE: f32 = 0.55;
@@ -47,7 +58,7 @@ impl NavOrder {
 
     /// The disc's radius, in world units.
     pub(crate) fn range(&self) -> f32 {
-        self.radius * MOVE_RANGE
+        move_range()
     }
 
     /// Is the target far enough off the plane to draw the triangle?
@@ -227,6 +238,25 @@ pub(crate) fn nav_input(
             order.lift = aim.y - centre.y;
             order.lifting = order.lift.abs() > 1e-3;
         }
+    }
+
+    // ---- an OPEN order FOLLOWS its ships ----
+    //
+    // The anchor is the disc's centre, the plane's height and the point every
+    // ship's offset is kept from, and it was written once when the order
+    // opened and never again. So a disc opened on a ship that was already
+    // under way stayed where the ship HAD been and the ship flew out of its
+    // own order: the rim no longer reached the cursor, the plane was at the
+    // old height, and a player aiming at something beside the ship was aiming
+    // relative to a point it had left.
+    //
+    // `centre` is recomputed from the live selection every frame just above,
+    // so this is one assignment. The aim is re-derived from the cursor below
+    // whenever it moves, and the commit offset is taken against the anchor at
+    // the moment of the press, so a formation still arrives as a formation.
+    if *mode == OrderMode::Move && !chosen.is_empty() {
+        order.anchor = centre;
+        order.radius = radius.max(1e-3);
     }
 
     // Escape cancels, and only cancels. `toggle_pause` has already run this

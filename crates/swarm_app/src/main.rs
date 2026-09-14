@@ -146,6 +146,11 @@ struct Args {
     /// manager is a camera MODE, so this is the only way to photograph what
     /// the eye does when it is asked for.
     view: String,
+    /// `--panel build|research|launch` opens the side panel on one of its
+    /// tabs at start, since a headless run has no pointer to press one with.
+    /// Same rule as `--view`: a flag per thing a player presses, because a
+    /// tab whose body nothing can photograph is a tab nobody can check.
+    panel: String,
     /// `--build WHAT,TICK`: press one build row at that tick, so a hull coming
     /// off the queue can be photographed. WHAT is a class key or `fighter`.
     build: u32,
@@ -244,6 +249,7 @@ fn parse_args() -> Args {
         build: 0,
         build_what: String::new(),
         view: String::new(),
+        panel: String::new(),
         cadence: 70,
         hives: 10,
         order: None,
@@ -316,6 +322,10 @@ fn parse_args() -> Args {
             }
             "--view" => {
                 a.view = next();
+                i += 1;
+            }
+            "--panel" => {
+                a.panel = next();
                 i += 1;
             }
             "--build" => {
@@ -660,7 +670,7 @@ fn main() {
                     // The build menu: what it says, then what a press on it
                     // does, in that order so a press names the row that was
                     // actually drawn.
-                    (fill_build_list, build_input).chain(),
+                    (fill_build_list, build_input, show_panel_body).chain(),
                     // The sensors furniture DRAWS, so it sits outside the run
                     // gate with the nav disc: an overview with the world
                     // stopped is worth exactly as much as an order is.
@@ -731,6 +741,11 @@ fn main() {
                 "sensors" => Some(ViewTab::Sensors),
                 "menu" => Some(ViewTab::Menu),
                 _ => None,
+            },
+            panel: match args.panel.as_str() {
+                "research" => PanelTab::Research,
+                "launch" => PanelTab::Launch,
+                _ => PanelTab::Build,
             },
             ..default()
         })
@@ -868,7 +883,11 @@ fn main() {
                     light_outline,
                 ),
                 remesh_dirty,
-                (orbit_camera, ride_the_eye),
+                // Chained, and it has to be: a tuple inside a `chain` is one
+                // link of that chain and is not itself ordered. The backdrop
+                // riding last frame's eye is a sun across the picture during
+                // any fast camera move. See `ride_the_eye`.
+                (orbit_camera, ride_the_eye).chain(),
             )
                 .chain(),
         )
