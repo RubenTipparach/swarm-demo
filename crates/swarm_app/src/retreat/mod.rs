@@ -7,6 +7,7 @@
 //! in.
 
 mod cargo;
+mod collector;
 mod jump;
 mod refit;
 mod run;
@@ -16,6 +17,7 @@ mod tide;
 mod work;
 
 pub(crate) use cargo::*;
+pub(crate) use collector::*;
 pub(crate) use jump::*;
 pub(crate) use refit::*;
 pub(crate) use run::*;
@@ -156,23 +158,18 @@ pub(crate) struct Support {
 
 /// What a hold has in it, in CUBES.
 ///
-/// `carrying` is what is aboard and `loose` is the cells cut since the last
-/// cube popped, which is the remainder rather than cargo: a cutter that
-/// dropped its part cube every bite would take twice as long for nothing
-/// anybody could see. The cubes themselves are entities and are not in here,
-/// because a cube is a thing in the world and this is only the count that
-/// says when a hold is full.
+/// `loose` is the cells cut since the last cube popped, which is the
+/// remainder rather than cargo: a cutter that dropped its part cube every
+/// bite would take twice as long for nothing anybody could see.
+///
+/// Nothing is ever ABOARD, and that is the collector's doing: a cutter's
+/// cubes lie where they were cut and craft ferry them, so a cutter has no
+/// capacity to run out of and never leaves its rock. What used to be here
+/// was a count and a cap that sent it home, which is the trip the whole
+/// mechanic exists to take off it.
 #[derive(Component, Default)]
 pub(crate) struct Hold {
     pub(crate) loose: Yield,
-    pub(crate) carrying: u32,
-    pub(crate) cap: u32,
-}
-
-impl Hold {
-    pub(crate) fn full(&self) -> bool {
-        self.carrying >= self.cap
-    }
 }
 
 /// What a support ship has been told to do.
@@ -182,15 +179,9 @@ pub(crate) enum Job {
     Idle,
     /// Cutting the thing it was pointed at.
     Work(Entity),
-    /// Hold full: back to the command ship, then to the thing it was on.
-    Unload(Option<Entity>),
+    /// Nothing left to work: back to the command ship and stand down.
+    Home,
 }
-
-/// How many cells of hull a support ship needs per CUBE it can carry. A
-/// miner comes out at four and a freighter at more, which is what makes the
-/// freighter worth building: the trip home is the cost, so the ship that
-/// makes fewer of them is the ship that gathers faster.
-pub(crate) const CELLS_PER_SLOT: u32 = 2200;
 
 /// How often a cutter takes a bite, in ticks, and how deep it bores, in
 /// cells. A cut is a SHAFT: the ore is buried under ninety five percent of a
@@ -278,16 +269,5 @@ pub(crate) fn spawn_support(
         commands
             .entity(e)
             .insert((Support { role }, Job::default(), Hold::default()));
-    }
-}
-
-/// A hold's capacity comes off the hull it is in, so a bigger trade carries
-/// more without a table saying so. Done the frame after the spawn, because
-/// the `Hull` arrives through commands and cannot be read at spawn time.
-pub(crate) fn size_holds(mut q: Query<(&Hull, &mut Hold), Added<Hull>>) {
-    for (hull, mut hold) in &mut q {
-        if hold.cap == 0 {
-            hold.cap = (hull.cells as u32 / CELLS_PER_SLOT).max(1);
-        }
     }
 }

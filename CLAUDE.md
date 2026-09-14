@@ -2812,20 +2812,96 @@ a border rather than reading as noise. The first cut had the height field the
 wrong way up and the maps said so immediately: a depth map whose cell WALLS
 are white is one where the walls are the bottom.
 
-**A harvester carries CUBES, and they come off the rock.** The bank used to
-go up the moment a cutter got home, which is an economy with nothing in the
-world to look at. Eight cells of one seam pack into a cube (`Cube::packed`,
-the one place cells become cargo), the cube is spawned at the shaft, pulled
-in by the ship that cut it, and rides in a line behind that ship all the way
-back. A miner killed on the way home is carrying something a player can watch
-it lose, and a cube whose ship is gone goes LOOSE where it died rather than
-vanishing.
+**A cut makes CUBES, and they come off the rock.** The bank used to go up
+the moment a cutter got home, which is an economy with nothing in the world
+to look at. Eight cells of one seam pack into a cube (`Cube::packed`, the one
+place cells become cargo) and the cube is thrown out of the shaft, where it
+lies until something comes for it. What comes for it is a collector, which is
+the section after this one; a cube whose collector is gone goes LOOSE again
+rather than vanishing, so a craft killed on its way home leaves its load
+floating for the next one.
 
 An ore cube lands 120 materials and a crystal cube 50 of volatiles, which are
 the owner's numbers, and a data cube off a wreck lands 30. Every price in the
 yard is written as a multiple of those, because "two cubes" is a thing a
 player can count in the field and a price in bare materials is a number
 nothing in the world corresponds to.
+
+## A cutter CUTS and a collector CARRIES
+
+One civil hull used to do both, and most of a system went on the transit: a
+miner bored a shaft, towed its cubes in a line behind it, flew home, landed
+the load and flew all the way back out, and the rock it was working stood
+idle for the whole round trip. The owner asked for the split and the mockup
+drew it (`docs/ui/collector-mockup.html`, approved before a line of this was
+written, which is this file's own rule about a large feature).
+
+**The cutter never leaves its rock now.** Its cubes are thrown out of the
+shaft and pile at the mouth, and two collectors per cutter ferry them to the
+command ship. So the loop a player watches is a pile growing and craft
+shuttling, which is a picture of work being done rather than a ship that is
+somewhere else most of the time.
+
+**A collector is a CRAFT, not a hull**: no voxel model, no damage grid, no
+cells, no chewers, exactly as a fighter is and for the same reason. It is a
+dozen boxes under one transform, with the two arms as CHILDREN so one
+rotation on a shoulder swings the whole arm and nothing recomputes where its
+parts are, which is the turret's own rule. Two per cutter, because one is a
+queue: a cutter making a cube every few seconds with one ferry piles them
+faster than they can be taken away, and three is a crowd round a shaft
+nobody can read.
+
+**The CUBE is the state, and there is no mode anywhere.** No claim is "go and
+look", a claim not yet in the claws is "go and get it", and a cube in the
+claws is "take it home". `fly_collectors` reads what the craft is holding and
+that decides the goal, so the four legs of the trip are one expression rather
+than a state machine two places have to keep in step.
+
+**And the claim lives on the CUBE.** `Cargo.to` is which collector is coming
+for it, so there is one answer to "who is coming for this" rather than one
+per craft, and two of them cannot fly at the same cube. That needed the one
+real fix of this stage: `haul_cargo` read `to` as the SHIP that cut the cube
+and cleared any claim it did not recognise, so it was quietly unclaiming
+every cube a collector was carrying, every frame. It is `drift_cargo` now and
+its rule is the filter (`With<Collector>`): a claim naming a craft that is
+still there is a craft's business and this system leaves it alone, and a
+claim naming one that is gone is a collector that died with the load. **A
+field that gains a second kind of owner needs every reader of it to be told,
+and the reader that is not told fails silently rather than loudly.**
+
+**One landing, not two.** A cutter's own hold, its cap, the trip home and the
+bank it emptied into are all gone, because a cube landed in two places is two
+answers the day either is tuned, which is this file's own divergent path
+defect. `fly_collectors` lands a cube and applies the freighters' share off
+`freight_lift`, which is the one implementation of that question. What is
+left of `Job::Unload` is `Job::Home`, which is what it always did once the
+landing is taken out of it: a ship with nothing left to work goes and stands
+by the command ship.
+
+**The scale is read off the FLAGSHIP, and getting that wrong is the lesson.**
+`CELL` is 0.0503 of the flagship's radius, so a craft is six cells and about
+a third of a frigate's radius, which is a fighter rather than a ship. The
+first cut read it off the CUBE, because that is what the mockup is drawn
+against: the mockup's cube is 0.36 UNITS and this game's is 0.36 of the
+CUTTER'S RADIUS, which is several units, so a craft held to the mockup's 2.67
+cubes came out five units long and stood beside the flagship as another
+warship. **A ratio ported between two pictures has to be ported with the
+thing it was a ratio OF.** Everything else about the craft is in its own
+cells for the same reason: it flies at sixty of them a second and grabs
+within nine, so it is the same craft at any flagship.
+
+**What the arms say is what the craft is DOING**, off ONE number. `grip` is
+nought folded and one closed, the sim publishes it and `pose_claws` swings
+both shoulders and all four jaws from it: splayed wide and open while it is
+reaching, folded in and shut once it has something. A cube is PLACED at the
+claws every frame rather than parented, because a cube is spawned by the
+cutter and re-parenting it would be a second place deciding what it rides.
+
+**It is plant yellow, and that is a decision about what a collector IS.**
+Every warship on this field wears a navy and a collector wears none of them,
+so it is painted the one colour nothing else out there is wearing, like the
+machine that digs a road up. The cab, the arms and the lamp stay cool, or a
+craft that size is one yellow lump rather than a shape with parts.
 
 **And SCRAP is the one cargo that is bulk rather than seam.** A cell of ore
 is a cell somebody went looking for; a cell of hull plating is a cell that
