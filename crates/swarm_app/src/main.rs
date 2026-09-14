@@ -883,7 +883,11 @@ fn main() {
                     light_outline,
                 ),
                 remesh_dirty,
-                (orbit_camera, ride_the_eye),
+                // Chained, and it has to be: a tuple inside a `chain` is one
+                // link of that chain and is not itself ordered. The backdrop
+                // riding last frame's eye is a sun across the picture during
+                // any fast camera move. See `ride_the_eye`.
+                (orbit_camera, ride_the_eye).chain(),
             )
                 .chain(),
         )

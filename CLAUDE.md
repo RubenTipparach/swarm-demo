@@ -2664,6 +2664,34 @@ The sun is a body at the key light's direction and the planets are lit
 spheres in the 250 to 660 band with a shade colour so their dark side is
 never black, as `backdrop.ts` has them.
 
+**And the sun was never DRAWN, which nobody could see because the one way it
+failed was invisible.** `ride_the_eye` wrote the camera's point straight over
+the translation of everything marked `AtInfinity`. The star shell wants exactly
+that, since a shell is centred on the eye; the sun does not, and its own
+`SUN * FAR_BAND * 1.35` was thrown away every frame. So a sphere of forty units
+emitting at forty sat ON the camera for the whole of this project's life, and
+the only reason the screen was not white is that a sphere seen from the inside
+is back face culled. This file said "the sun is a body at the key light's
+direction" and it was a body at the camera. `AtInfinity` carries its own offset
+now, `Vec3::ZERO` for the stars and its own vector for the sun, written once
+and handed to both so the spawn pose and the pose it is held at cannot drift.
+
+**That is the white flash on the way into the sensors view, and it took the
+ordering as well.** `(orbit_camera, ride_the_eye)` was registered as a bare
+tuple inside a `chain`, and **a tuple inside a `chain` is one link of that
+chain and is not itself chained**: Bevy was free to run the rider first and to
+pick differently from one frame to the next, so the backdrop rode LAST frame's
+eye. That is nothing at a pan, and during the ease out to `SENSORS_EYE` it is
+hundreds of units, which put that same emissive sphere between the camera and
+the fleet. Measured on the sensors scene: the frame mean was 173, 182 and 183
+of 255 at frames 7, 12 and 20 against 29 once settled, and it is 45, 38 and 35
+now, easing down rather than spiking. This is the defect `orbit_input` and
+`orbit_camera` already had, written down in this file, in the same source file,
+two systems apart.
+
+A picture that looks wrong names a symptom: "a white flash" is not a bug
+anybody can grep for, and the frame mean is.
+
 `Skybox.brightness` is what texel 1.0 maps to in cd/m^2, and the first cut
 had it at 1200 with the environment at 900: a uniform green sky with a grey
 mother in it. The bake was right the whole time (the log said so), and the

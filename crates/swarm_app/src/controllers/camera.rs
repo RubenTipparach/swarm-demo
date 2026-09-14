@@ -11,8 +11,18 @@ pub(crate) const MAX_DRAG: f32 = 120.0;
 
 /// Rides the eye: a thing with a direction and no position, which a camera
 /// move must not slide across the sky.
+///
+/// It carries its OWN offset, and that is the fix for a sun nobody could find.
+/// The rider used to write the eye straight over the translation, which threw
+/// away whatever the thing had been spawned at: the star shell wants exactly
+/// that, since a shell is centred on the eye, and the sun does not. The sun is
+/// spawned a long way along `SUN` and was being put at the camera's own point
+/// every frame, so a sphere of forty units emitting at forty sat on the eye
+/// for the whole of this project's life, invisible only because a sphere seen
+/// from the inside is back face culled. The file says "the sun is a body at
+/// the key light's direction" and it was a body at the camera.
 #[derive(Component)]
-pub(crate) struct AtInfinity;
+pub(crate) struct AtInfinity(pub(crate) Vec3);
 
 #[derive(Component)]
 pub(crate) struct Orbit {
@@ -266,12 +276,26 @@ pub(crate) fn orbit_camera(
 
 /// Copy the eye onto everything at infinity, translation only: a star has a
 /// direction and no position, and must not turn with the camera either.
+///
+/// Plus the thing's own offset, so a body at infinity keeps the direction it
+/// was spawned along. See [`AtInfinity`].
+///
+/// It runs AFTER `orbit_camera`, explicitly, and that ordering is the other
+/// half of the white flash. Registered as a bare tuple the two had no order
+/// between them, so Bevy was free to run this one first and to pick
+/// differently from one frame to the next; then the backdrop rode LAST
+/// frame's eye. That is nothing at a pan and hundreds of units during the
+/// ease out to the sensors view, which put a sphere emitting at forty right
+/// across the picture for about a third of a second. This is the same defect
+/// `orbit_input` and `orbit_camera` had, written down in this project's own
+/// notes, in the same file, two systems apart: **a tuple inside a `chain` is
+/// one link of that chain and is not itself chained.**
 pub(crate) fn ride_the_eye(
     cam: Query<&Transform, (With<Camera3d>, Without<AtInfinity>)>,
-    mut far: Query<&mut Transform, With<AtInfinity>>,
+    mut far: Query<(&mut Transform, &AtInfinity)>,
 ) {
     let Ok(c) = cam.single() else { return };
-    for mut xf in &mut far {
-        xf.translation = c.translation;
+    for (mut xf, off) in &mut far {
+        xf.translation = c.translation + off.0;
     }
 }
