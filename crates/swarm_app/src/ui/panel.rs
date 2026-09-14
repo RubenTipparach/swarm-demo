@@ -100,13 +100,23 @@ fn section(s: &mut ChildSpawnerCommands, skin: &Skin, name: &str, stat: DeckStat
 /// player needs in a system is how long they have, which is on the strip, and
 /// the one button that leaves. It is bottom right, where the mockup puts its
 /// green control, and it is green for the same reason.
+/// How far the run's controls stand clear of the deck's top edge.
+const RUN_GAP: f32 = 8.0;
+
 pub(crate) fn run_controls(p: &mut ChildSpawnerCommands, skin: &Skin, glyphs: &Glyphs) {
     let tok = skin.tok();
     p.spawn((
         Node {
             position_type: PositionType::Absolute,
             right: Val::Px(14.0),
-            bottom: Val::Px(14.0),
+            // ABOVE the deck, not on it. Fourteen off the bottom of the screen
+            // is seventy eight pixels INSIDE the bottom bar, so the run's one
+            // control for leaving a system was drawn over the module row and
+            // the view tabs: two things in one place, and the one underneath
+            // is the one a player was reaching for. Measured off `DECK_TOP`
+            // rather than written as its own number, or the day the deck moves
+            // this button follows it back on top.
+            bottom: Val::Px(HUD_H - DECK_TOP + RUN_GAP),
             column_gap: Val::Px(6.0),
             align_items: AlignItems::FlexEnd,
             ..default()

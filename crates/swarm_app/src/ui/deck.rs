@@ -83,6 +83,15 @@ pub(crate) const HUD_H: f32 = 900.0;
 pub(crate) const PANEL_W: f32 = 428.0;
 pub(crate) const DECK_H: f32 = 92.0;
 
+/// Where the bottom deck's own top edge sits, from the mockup's `.brow3`.
+///
+/// A constant because two things are measured off it now: the deck itself,
+/// and anything that has to stand CLEAR of the deck. `run_controls` put JUMP
+/// OUT fourteen pixels off the bottom of the screen, which is inside the deck
+/// by seventy eight, so the run's one button to leave a system was drawn over
+/// the module row and the view tabs.
+pub(crate) const DECK_TOP: f32 = 802.0;
+
 /// Everything on the deck that carries a number, named by what it says.
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DeckStat {
@@ -430,7 +439,24 @@ fn rail(p: &mut ChildSpawnerCommands, skin: &Skin, fleet: &Schematics) {
         Pickable::IGNORE,
     ))
     .with_children(|r| {
-        for (n, class) in PICKABLE.iter().enumerate() {
+        // EVERY class on the manifest, not the dropdown's picked eight.
+        //
+        // The rail was built over `PICKABLE`, which is the list of hulls the
+        // ship dropdown offers so a player can try different ones: it holds
+        // one civil trade and none of the others, so a fleet with a miner, a
+        // tanker and a salvager in it showed rows for its warships and had
+        // nothing at all for the three ships doing the actual work. They could
+        // not be counted from the rail and could not be selected from it.
+        //
+        // One list doing two jobs, which is this project's own defect: what a
+        // player may FIELD from a menu and what a player HAS in the field are
+        // different questions, and only one of them is answered by a typed
+        // list. `Schematics.keys` is the manifest in its own order, the same
+        // source the build menu reads, so a class added tomorrow has a rail
+        // row tomorrow. A row for a class the fleet has none of is hidden by
+        // `deck_roster` exactly as it always was, so the twenty four rows
+        // cost a hidden node each and nothing on screen.
+        for (n, class) in fleet.keys.iter().enumerate() {
             r.spawn((
                 Button,
                 Node {
@@ -509,7 +535,7 @@ fn bottom(
             position_type: PositionType::Absolute,
             left: Val::Px(6.0),
             right: Val::Px(6.0),
-            top: Val::Px(802.0),
+            top: Val::Px(DECK_TOP),
             height: Val::Px(DECK_H),
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Stretch,

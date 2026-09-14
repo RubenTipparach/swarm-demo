@@ -1308,6 +1308,77 @@ once; what is missing is what each one DRAWS. The sensors manager is a camera
 MODE in the mockup rather than a screen, which is the part worth keeping when
 it lands.
 
+## Five things the owner found in one session, and four were one rule
+
+**The band box drifted away from the cursor.** It is a UI node, and a
+`Val::Px` is an AUTHORED pixel while a cursor position is a WINDOW one: the
+deck is authored at 1600 by 900 and scaled by the window's height, so a box
+placed straight from the cursor is drawn at `cursor * scale` and pushed away
+from the top left corner by a fifth of its own distance from it at 1080. The
+fix is to divide by `UiScale`, which is what `draw_bars` ONE FUNCTION BELOW IT
+IN THE SAME FILE already does, under a comment that says "which is the whole
+of the drift". Third time: `place_sensor_marks`, then `draw_bars`, then this.
+**A rule that arrives after the code it applies to has to be carried to every
+place it applies to in the change that establishes it**, because the place it
+misses is the place nobody was looking at that day.
+
+**F went to the FLAGSHIP rather than to what was selected.** Invisible while
+there was one ship and simply wrong in an RTS: F is the key that takes you to
+the thing you have picked, so pressing it with an escort or a miner selected
+flew the camera to a different ship. It is the selection's own CENTROID now,
+summed rather than `single()`, which is the "do nothing at all" this project
+was caught by the day one hull became several; the flagship is the fallback
+when nothing is picked, because that is what F means with an empty selection.
+
+**The fleet rail had no civil trades on it.** It was built over `PICKABLE`,
+which is the list of eight hulls the ship DROPDOWN offers so a player can try
+different ones: one civil trade and none of the others. So a fleet with a
+miner, a tanker and a salvager in it showed rows for its warships and nothing
+at all for the three ships doing the work, and they could be neither counted
+nor selected from the rail. One list doing two jobs: what a player may FIELD
+from a menu and what a player HAS in the field are different questions, and
+only one of them is answered by a typed list. The rail reads
+`Schematics.keys`, which is the manifest in its own order and the same source
+the build menu reads, so a class added tomorrow has a row tomorrow.
+
+**JUMP OUT was drawn on the deck rather than above it.** `run_controls` sat
+fourteen pixels off the bottom of the screen, which is seventy eight pixels
+INSIDE the bottom bar, so the run's one control for leaving a system was over
+the module row and the view tabs: two things in one place, and the one
+underneath is the one a player was reaching for. `DECK_TOP` is a constant now
+and both measure off it, so the day the deck moves the button does not follow
+it back on top.
+
+## A rock has to SHOW what it carries
+
+**There was no crystal anywhere a player could see, and that is what "no
+crystal to mine" was.** The rocks had it: measured over fourteen seeds, 446
+cells of crystal and 445 of ore, about thirty of each per rock. Every one of
+them was invisible, because both seams were buried absolutely and for the same
+reason twice. Ore is laid only below `want - 1.2`, on the argument that "a
+vein that ran over the surface would read as paint"; `seed_crystal` takes a
+cell only if it has stone on all six faces, on the same argument. Each is
+right about a seam SMEARED over a rock and together they make a grey lump:
+2.5% of the seam had a face open to space and FOUR OF THE FOURTEEN ROCKS had
+none at all. A player cannot tell a rich rock from a poor one, cannot tell
+which face to cut, and cannot tell that crystal exists in the game.
+
+`OUTCROP` is the other half of the same rule, and it is a fifth of the buried
+rate: the bulk of a seam is still inside the rock, and a few facets reach the
+skin. Measured, the same fourteen seeds: 12.5% of the seam is open now against
+2.5%, the worst rock shows 6.2% against nought, and the seam itself went from
+6.3% of a rock to 7.3%, so a rock is barely richer and is now legible. An
+outcrop says a rock is worth cutting and pays almost nothing by itself, which
+is what it is FOR.
+
+**And the loop was working the whole time, just slowly.** One miner on a field
+of six rocks lands its first two cubes at about tick seventeen hundred, which
+is half a minute, and they were CRYSTAL: `miner landed 2 cubes: Yield {
+materials: 0, volatiles: 100, data: 0 }`. So this was never a mechanic that
+did not run, it was a mechanic nobody could find the input to. **A picture
+that looks wrong names a symptom**, which this file already says twice, and
+the symptom here was the absence of a thing rather than the presence of one.
+
 ## The HUD is authored at 1600 by 900 and SCALED
 
 Every number on the deck used to be a window pixel, and it drifted from the
