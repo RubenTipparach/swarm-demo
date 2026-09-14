@@ -213,6 +213,73 @@ const ATTACK_R: f32 = 0.90;
 /// a sphere, and a sphere has no formation in it.
 const RING_FLAT: f32 = 5.0;
 
+/// How far one carrier's ring stands off the next one's, as a share of
+/// `RING_R`.
+///
+/// A TILT alone is not enough to read, and that is measured rather than
+/// assumed. Six wings given six angles through one ship came out as a ball:
+/// each disc is a third or a sixth as dense as the one disc it replaced, so
+/// each is fainter, and half a dozen faint planes crossing at one point fill a
+/// volume. That is this project's own "orbits were balls" a second time, and
+/// what fills a volume is not a formation.
+///
+/// A radius of its own is what separates them. The same six wings are six
+/// BANDS then, nested and tilted, with the ship inside them, and a player can
+/// count the motherships besieging a hull without looking for them.
+const RING_TIER: f32 = 0.85;
+
+/// How far one carrier's plane may lean off the ship's own, in radians.
+///
+/// NOT the whole sphere, and that is measured rather than chosen. Six wings
+/// given six tilts anywhere on it came out as a BALL: two read as two planes
+/// crossing, three is close, and past about four there is no tuning that
+/// helps, because N discs through one point at every inclination is a sphere
+/// by construction. That is this project's own donut and its own orbiting
+/// spheres a third time, and neither `RING_FLAT` nor a radius of its own
+/// touches it: the discs were already flat and already nested, and six flat
+/// nested discs at six inclinations still fill the volume between them.
+///
+/// The picture that SAYS six carriers is a FAN. Planes that share a rough
+/// attitude and lean off it by different amounts is what a family of orbits
+/// round one body looks like, and it is legible for exactly that reason: a
+/// player can count the leaves. About fifty degrees is as wide as it goes
+/// before the outermost two start closing the volume again.
+const RING_TILT: f32 = 0.9;
+
+/// Which plane one carrier's wing rings on, as the normal of that plane: a
+/// lean off `base`, which is the ship's own.
+///
+/// Round on the golden angle, which is the spread this project already uses
+/// for where the motherships stand and for where a chewer bites. A plain hash
+/// per carrier CLUSTERS: three rolls can put three wings on three nearly
+/// parallel planes, and then two thirds of the swarm is one disc.
+fn ring_axis(k: u32, base: vec3<f32>) -> vec3<f32> {
+    var up = vec3<f32>(0.0, 1.0, 0.0);
+    if (abs(base.y) > 0.95) { up = vec3<f32>(1.0, 0.0, 0.0); }
+    let u = normalize(cross(up, base));
+    let v = cross(base, u);
+    let a = f32(k) * 2.39996323;
+    // `sqrt`, so the leans are spread evenly over the CAP rather than bunched
+    // against its axis, which is how a disc is sampled and for the same reason.
+    let lean = RING_TILT * sqrt(fract(f32(k) * 0.6180339887 + 0.5));
+    return normalize(base * cos(lean) + (u * cos(a) + v * sin(a)) * sin(lean));
+}
+
+/// The attitude a ship's whole set of rings is fanned about. Its own, so two
+/// ships under siege are not besieged in the same pose.
+fn ring_base(ti: u32) -> vec3<f32> {
+    let h = ti * 2654435761u;
+    let d = vec3<f32>(hash(h + 3u), hash(h + 17u), hash(h + 29u)) - 0.5;
+    return d / max(length(d), 1e-4);
+}
+
+/// And how far out it rings, as a multiplier on `RING_R`. Low discrepancy on
+/// the plastic constant, for the reason the tilt is on the golden angle: two
+/// carriers landing on one radius is two wings a player cannot tell apart.
+fn ring_tier(k: u32) -> f32 {
+    return 1.0 + RING_TIER * (fract(f32(k) * 0.7548776662) - 0.5);
+}
+
 /// How many pieces a mote comes apart into, on top of its own spark burst.
 const DEBRIS: u32 = 4u;
 
@@ -743,13 +810,31 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     // Put two ships far apart and the swarm splits between them; bring them
     // together and it converges. That is the whole game, and it is one line.
     var tgt = p.hull;
-    var ring_seed = 7777u;
+    // Which mothership this mote flew out of. Its BIRTH carrier, raw, not the
+    // live list it homes to: the list is compacted every frame, so a modulo
+    // would re-cut every disc in the sky the moment one carrier died. Which
+    // tube a mote came out of is a fact about the mote and does not move.
+    let hk = u32(max(m.state.z, 0.0));
+    var ring_ax = ring_axis(hk, ring_base(0u));
+    var ring_at = ring_tier(hk);
     if (p.targets > 0u) {
         let ti = sh % p.targets;
         tgt = p.ship[ti];
-        // The ring's own axis is hashed off WHICH ship it is round, so every
-        // mote on that ship shares it and two ships do not ring the same way.
-        ring_seed = ti * 2654435761u;
+        // The ring's own axis is hashed off WHICH ship it is round AND which
+        // carrier this mote flew out of, so a mothership's whole wing rings
+        // one way and the next mothership's rings another. That is what makes
+        // a besieged ship read as a stack of discs at a dozen angles rather
+        // than as one belt: a carrier MANAGES its own swarm, and the only
+        // place a player can see that is the shape its fighters hold.
+        //
+        // Off the carrier it was BORN from (`state.z` raw) and not off the
+        // live list it homes to. The list is compacted every frame, so a
+        // modulo would re-cut every disc in the sky the moment one carrier
+        // died; which tube a mote came out of is a fact about the mote and
+        // does not move.
+        // The carrier decides WHICH plane of the set, and the ship decides how
+        // the whole set is turned, so two ships under siege do not ring alike.
+        ring_ax = ring_axis(hk, ring_base(ti));
     }
     var focus = tgt.xyz;
     var focus_r = tgt.w;
@@ -858,7 +943,7 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
     m.extra = vec4<f32>(hp, phase, timer, m.extra.w);
 
     // Where it wants to be, which is the whole of what the leg decides.
-    var want = focus_r * RING_R;
+    var want = focus_r * RING_R * ring_at;
     if (phase == PH_ATTACK) { want = focus_r * ATTACK_R; }
     if (phase == PH_RETURN) { want = focus_r * 1.2; }
     // A vein has no legs and no standoff: it rides its point.
@@ -871,13 +956,14 @@ fn tick(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     // ---- the ring ----
     //
-    // The swirl axis belongs to the TARGET, not to the mote, and that is what
-    // makes a ring rather than a shell. An axis per mote gives orbits at every
-    // inclination, which is a sphere of traffic: fine for a cloud that is only
-    // milling about, and not a formation. One axis per ship means every mote
-    // circling that ship is going round the same way on the same plane.
-    var ax = vec3<f32>(hash(ring_seed + 11u), hash(ring_seed + 23u), hash(ring_seed + 41u)) - 0.5;
-    ax = ax / max(length(ax), 1e-4);
+    // The swirl axis belongs to the TARGET and the CARRIER, not to the mote,
+    // and that is what makes a ring rather than a shell. An axis per mote
+    // gives orbits at every inclination, which is a sphere of traffic: fine
+    // for a cloud that is only milling about, and not a formation. One axis
+    // per ship AND carrier means every mote that flew out of one mothership
+    // goes round its ship the same way on the same plane, and the next
+    // mothership's wing holds a plane of its own.
+    let ax = ring_ax;
     var swirl = cross(dir, ax);
     let sl = length(swirl);
     if (sl > 1e-4) { swirl = swirl / sl; } else { swirl = vec3<f32>(0.0, 1.0, 0.0); }

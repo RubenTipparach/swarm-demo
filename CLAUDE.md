@@ -521,15 +521,44 @@ coming apart, so a damaged mote goes orange too. What stays violet is the GORE
 that comes out when it bursts. Burning is what a hit DOES to it; bleeding is
 what is inside it.
 
-Two numbers make it read, and both were wrong in the first cut. It has to
-clear the bloom threshold at the one hit a mote actually survives, which is
-`SHOT_BITE` off a whole one, so the square the wound is scaled by is 0.36 and
-nothing under about three ever blooms at all. And it PULSES, on a clock the
-tick hands over in `shade.z` at the mote's own rate and phase: a steady glow is
-a colour, a pulse is an injury, and a pulse is what carries at the one or two
-pixels a mote is usually drawn at. `mote.wgsl` has no clock of its own, which
-is why the beat comes down with the shading rather than being worked out in
-the draw.
+**And it COOLS, because a wound is an EVENT.** It used to be a PULSE, held for
+as long as `hp` was under one, which is until the mote docked at its carrier
+and was rebuilt. So a pass through a beam left every mote it touched glowing
+for the rest of its life, and a cloud in which everything that had ever been
+hit was still on fire cannot say which of them was hit just now: the one thing
+a player most needs off it is exactly the thing it had stopped carrying. The
+pulse was standing in for a signal in TIME, and a fire that flares and fades is
+that signal for real.
+
+`shade.z` carries the heat rather than the beat: `DEATH_BURN` at the moment of
+the hit, nought `MOTE_COOL` (two and a half seconds) later, down a two stop
+ramp from the flare it has always been to a dark red that goes out. Two stops
+rather than the hull's five, because a hull's ramp has a crust alpha and a soot
+ring to carry and is read across a crater a player leans in at, and this is
+read at one pixel, where everything past "bright, then dull, then out" is
+arithmetic nobody can see. No new memory and no sixth vector: the lane was
+already there, filled by the tick and handed to the draw as an instance
+attribute.
+
+A hit and a MORTAL hit start at exactly the same heat, and that is honest: they
+are the same event, and the whole of the difference between them is what
+happens over the next half second. `DEATH_BURN` and not one, because the tone
+mapper turns a full burn white and a white flash with a halo is a spark rather
+than a burning animal.
+
+**And what is LEFT is char, which does not cool because it is not a fire.** The
+burn goes out; the damage does not. It rides `hp`, so a mote stays burnt for
+exactly as long as it is hurt and is its own colour again the moment it docks
+and is put back together. That is the hull's own rule at another scale, where
+the crust rides the dead CELL and not the heat over it, which is why a cold
+crater is still plainly a crater. On the chitin only, like the fire, and for
+the same reason: a bug charred from eye to exhaust is a shape with no parts.
+And not nought, which is the ramp's own last stop said again, since `CHAR` in
+the core is 0.09 and deliberately not black: a mote at nothing is a hole in the
+cloud rather than a hurt animal.
+
+The one number that was right from the start is that it has to clear the bloom
+threshold at the hit a mote actually survives.
 
 **And a kill FLASHES.** Five gore sparks and four pieces of debris was a puff:
 at the size a mote is drawn, nine small additive particles read as a sparkle
@@ -737,6 +766,47 @@ off one texture). `a_wound_is_four_layers_and_they_line_up` holds the first
 three to the same faces quad for quad, and holds the soot OFF the faces that
 already carry the burn: three decals deep on one plane is not a picture
 anybody can read.
+
+**And each layer is LIFTED off the face it is laid on, in geometry, because
+`depth_bias` is not a depth offset.** The layers sat on exactly one plane and
+leant on `StandardMaterial::depth_bias` to tell them apart. In Bevy that value
+is added to a mesh's distance when the TRANSPARENT phase is SORTED
+(`bevy_pbr::material`, where a Transparent3d and a Transmissive3d take their
+key) and it never reaches the depth test at all, so all it could ever decide is
+which of two BLENDED draws goes first. The burn and the machinery under it are
+not two blended draws: they are one opaque surface and one blended surface at
+exactly one depth, and so are the soot and the plating under it. The winner was
+picked per pixel by whichever way the interpolation happened to round, which is
+the shimmer along a torn edge and the shapes that fall across a cold crater in
+no pattern anybody can name. The shapes are not square because what decides
+them is a triangle's interpolation and not a cell.
+
+`mesh::DECAL_LIFT` is a two hundredth of a CELL rather than a number of world
+units, so it rides the hull: every class is drawn at its own cell size and one
+fixed offset would be a mile on a drone and nothing on a cruiser. It is a
+twentieth of a millimetre on these hulls and a great many steps to a reverse Z
+buffer at any range this game is played at. Measured on the chewed frigate at
+yaw 0.7 against the same binary with the lift at nought: 4.195% of the picture
+changes, and the whole of it is soot stripes coming off the deck.
+
+It showed up when the crust went opaque and did not arrive with it: a cold
+wound used to be a pale wash that the fight underneath hardly changed, and at
+`COLD_CRUST` the burn IS the surface, so what it was fighting is what a player
+is looking at. **A bug that has been there all along surfaces the day something
+else stops hiding it, and the change that surfaced it is not the change that
+caused it.**
+
+The `depth_bias` numbers are GONE rather than kept beside the lift. A number
+believed to fix something it cannot reach is worse than no number, because it
+is where the next reader stops looking.
+
+**And `mesh.rs` is two files now**, because the lift put it one line over this
+project's nine hundred and the answer was never to raise the limit. `surface`
+is what a meshed hull IS, the vertex buffer one draw is made of and the layers
+a hull is drawn in; `mesh` is which faces there are and how they merge, which
+is the line its own module docs already drew. `mesh` re-exports both names, so
+nothing outside the crate learned a new path, which is exactly what `damage`
+did for `heat` and `wound` and `build` for `rung`.
 
 **A cold wound is CHAR, and it was coming out as a grey wash.** Two numbers
 stacked. The burn material carried a constant 3.4 so a fresh hole clears the
@@ -1995,11 +2065,35 @@ of a mote that can be wounded rather than only alive or dead.
 **A RING, not a shell, and the difference is one axis.** The swirl axis belongs
 to the TARGET rather than to the mote: an axis per mote gives orbits at every
 inclination, which is a sphere of traffic, fine for a cloud milling about and
-not a formation. One axis per ship means every mote circling that ship goes
-round the same way on the same plane, and two ships do not ring the same way
-because the axis is hashed off which ship it is. A standoff alone would still
-spread them over that sphere, so there is a term pulling each mote INTO its
-ring's plane: that is what flattens the traffic into a ring somebody can see.
+not a formation. A standoff alone would still spread them over that sphere, so
+there is a term pulling each mote INTO its ring's plane: that is what flattens
+the traffic into a ring somebody can see.
+
+**And a CARRIER rings its own wing, which is how a player can see that a
+mothership manages its own swarm.** The axis is the ship's AND the carrier's,
+off the carrier the mote was BORN from rather than the live list it homes to:
+that list is compacted every frame, so a modulo would re-cut every disc in the
+sky the moment one carrier died, and which tube a mote came out of is a fact
+about the mote that does not move. Each wing rings at a radius of its own too,
+on the plastic constant, so the discs are nested as well as leaned.
+
+**The leans are a FAN and not the whole sphere, and that is measured.** Six
+wings given six tilts anywhere on it came out as a BALL. Two read as two planes
+crossing and three is close, and past about four there is no tuning that helps:
+N discs through one point at every inclination is a sphere by construction.
+That is this project's own donut and its own orbiting spheres a third time, and
+neither the plane pull nor the radius spread touches it, which was the thing to
+check before reaching for a number: the discs were already flat and already
+nested, and six flat nested discs at six inclinations still fill the volume
+between them. `RING_FLAT` at eighteen against five moved nothing worth
+measuring.
+
+What SAYS six carriers is a fan. `RING_TILT` is about fifty degrees off the
+ship's own attitude, spread on the golden angle round it and over the cap by a
+`sqrt`, so the planes share a rough pose and lean off it by different amounts,
+which is what a family of orbits round one body looks like and is legible for
+exactly that reason: a player can count the leaves. The ship's own attitude,
+so two ships under siege are not besieged in the same pose.
 
 **And a mote comes apart.** On top of the spark burst it throws DEBRIS: bigger,
 slower, longer lived and much dimmer, so what is left after the flash has gone
@@ -3070,7 +3164,7 @@ is this one that answers "how much plating would a shot have to get through".
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 120, the core
+cargo test -p swarm_core                                   # 122, the core
 cargo test -p swarm_app                                    # 10, the run and the marks
 python3 tools/shape.py --check                             # no file over 900 lines, no function over 100
 cargo fmt --all -- --check                                 # the format
