@@ -374,7 +374,7 @@
     <h1>Fleet Registry</h1>
     <p class="lede">
       Every ship in the game, drawn from the cells the game itself meshes. The
-      twenty three stock hulls come off <code>assets/hulls/*.ftvx</code>; the
+      stock hulls come off <code>assets/hulls/*.ftvx</code>; the
       four alien archetypes are generated from a seed and exist nowhere else a
       person can open. Nothing on this page is typed beside a class: every
       number, and every navy's swatch, is measured off the model.
@@ -411,7 +411,10 @@
         A rung is a CELL SIZE and not a longer profile: the lattice is 32 by 32
         by 64 for every warship, and what changes is what one cell is worth in
         the world. A corvette is a short profile at the frigate's cell, a
-        destroyer is the escort cell, a heavy cruiser the cruiser cell.
+        destroyer is the escort cell, a heavy cruiser the cruiser cell. One
+        hull is on nobody's ladder: the Terran Fleet Carrier stands at the
+        capital cell, twice a heavy cruiser's, which by the cube rule is eight
+        times its mass and eight times its hull.
       </p>
     </div>
     <div class="scroll"><table id="t-navy"></table></div>
@@ -565,7 +568,8 @@
     civil_lighter: "Survey: reads a body for data",
     freighter: "Freighter: a cut of everything landed, and two berths",
     civil_liner: "Tender: mends a hull it is standing beside",
-    civil_boxship: "No role yet"
+    civil_boxship: "No role yet",
+    terran_carrier: "Fleet carrier: the yard a base is built and researched from"
   };
 
   var FIELDED = {
@@ -591,6 +595,28 @@
 
   function label(key) {
     return key.replace(/_/g, " ");
+  }
+  /**
+   * Every ship a navy builds: its ladder in rung order, and then anything
+   * else of that navy the index carries.
+   *
+   * The second half is the point. `RUNGS` is the ladder and the Terran Fleet
+   * Carrier is on nobody's rung, so a picker built from the ladder alone
+   * simply did not have it: the hull was exported, its numbers were in the
+   * index, and the one page that is supposed to be the record of every ship
+   * in the game could not show it. A list of keys typed here would have gone
+   * stale exactly the same way the day after.
+   */
+  function navyShips(navy) {
+    var want = RUNGS.map(function (r) { return navy + "_" + r; })
+      .filter(function (k) { return byKey[k]; });
+    index.forEach(function (s) {
+      if (navyOf(s.key) !== navy) return;
+      if (want.indexOf(s.key) >= 0) return;
+      if (CIVIL.indexOf(s.key) >= 0 || SWARM.indexOf(s.key) >= 0) return;
+      want.push(s.key);
+    });
+    return want;
   }
   function navyOf(key) {
     if (SWARM.indexOf(key) >= 0) return "swarm";
@@ -837,12 +863,12 @@
   function showFleet() {
     mode = "fleet";
     paintPicker();
-    els.stamp.innerHTML = "the whole fleet<span>loading 27 ships</span>";
+    els.stamp.innerHTML = "the whole fleet<span>loading</span>";
     var rows = [
-      ["terran", RUNGS.map(function (r) { return "terran_" + r; })],
-      ["karisen", RUNGS.map(function (r) { return "karisen_" + r; })],
-      ["rogue", RUNGS.map(function (r) { return "rogue_" + r; })],
-      ["benefactor", RUNGS.map(function (r) { return "benefactor_" + r; })],
+      ["terran", navyShips("terran")],
+      ["karisen", navyShips("karisen")],
+      ["rogue", navyShips("rogue")],
+      ["benefactor", navyShips("benefactor")],
       ["civil", CIVIL],
       ["swarm", SWARM]
     ];
@@ -936,10 +962,10 @@
 
   function paintPicker() {
     var groups = [
-      ["Terran", RUNGS.map(function (r) { return "terran_" + r; })],
-      ["Karisen", RUNGS.map(function (r) { return "karisen_" + r; })],
-      ["Rogue", RUNGS.map(function (r) { return "rogue_" + r; })],
-      ["Benefactor", RUNGS.map(function (r) { return "benefactor_" + r; })],
+      ["Terran", navyShips("terran")],
+      ["Karisen", navyShips("karisen")],
+      ["Rogue", navyShips("rogue")],
+      ["Benefactor", navyShips("benefactor")],
       ["Civil", CIVIL],
       ["Swarm", SWARM]
     ];
@@ -1009,10 +1035,10 @@
     ];
     var navyKeys = [];
     ["terran", "karisen", "rogue", "benefactor"].forEach(function (n) {
-      RUNGS.forEach(function (r) { navyKeys.push(n + "_" + r); });
+      navyShips(n).forEach(function (k) { navyKeys.push(k); });
     });
     table(document.getElementById("t-navy"),
-      "Sixteen warships, navy by navy up the rungs", navyKeys, shared);
+      "The warships, navy by navy up the rungs", navyKeys, shared);
 
     table(document.getElementById("t-civil"),
       "Seven trades, and the role each one flies",
