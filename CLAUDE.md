@@ -91,6 +91,20 @@ first three are checks: `.claude/skills/tidy/SKILL.md` runs them all.
 - **Before a push**: `/simplify` on the diff for reuse and altitude,
   `/code-review` for correctness, then the suites.
 
+## A pull request is not polled
+
+This repository runs no CI: there are no check runs on a pull request, so
+there is no red to drive to green and nothing a schedule can learn that an
+event would not have delivered. Open a pull request, say what is in it, and
+stop. **Do not arm an hourly check-in, and do not re-arm one**: a wake that
+reports "no change" every hour for a day is a cost with no reader, and the
+subscription already delivers a comment or a review the moment one is
+written.
+
+What is worth waking for arrives on its own. If something does need
+watching, it is because a person asked for it and said what they were
+waiting on.
+
 ## The app is folders now, and the split was mechanical
 
 `main.rs` was 5241 lines after the merge that preceded it. It is the
