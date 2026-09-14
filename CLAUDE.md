@@ -1445,6 +1445,34 @@ square with a light over and under each mouth. Small on purpose: what leaves
 through one is a fighter, and a tube a capital ship fits through is a second
 berth.
 
+**The berth is LINED and LIT, and until it was it opened into the ship's own
+guts.** The plate pass over there lays armour within a few courses of the skin
+and leaves everything inboard hollow, so the first cut of this bay came out as
+a mouth with a cargo hold and a barracks stacked in the doorway. That is all
+authored in redux-tribes and its own CLAUDE.md is the long form; what matters
+here is the one thing the LIGHTS needed on this side.
+
+**A dock light is a WINDOW, because a window is the only thing in this
+renderer that carries its own light.** A lit cell is a purpose's highlight tone
+in the vertex colour, which is bright paint on a surface no lamp in the scene
+can reach, so it comes out black at the bottom of a slot: that is the same fact
+the four layer wound already records about the inside of a hull. A window
+material is emissive at 1.6 and is "the only part that survives with no light
+on it", so the bay's lamps are a `dock` decal and the whole path from the
+export to the material was already built.
+
+**And `WINDOW_KINDS` was a list that had gone stale, silently.** The textures
+are loaded in `PreStartup`, before any model exists, so that list cannot be
+read off what it describes: it is redux-tribes' `DECALS` written out by hand.
+A kind it does not have gets a material with no maps, and a `StandardMaterial`
+with no maps is plain WHITE, so 199 dock lights the size of a plate drew as a
+row of white slabs in exactly the place a light was meant to be. The picture
+was read three times as a texture authored wrong, and twice re-generated, and
+nothing anywhere said the kind was unknown. `window_materials` warns now, which
+turns a wrong picture into a line in the log: **a list that cannot be derived
+has to say when it is behind, because the thing it gets wrong looks exactly
+like the thing you were trying to fix.**
+
 **And the wing is not made of carriers.** `scene.hull` is the flagship's class
 AND what a reinforcement arrives as, so a base that simply set it to the carrier
 would answer R with a four thousand material yard. `open_base` moves the form's

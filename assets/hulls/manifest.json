@@ -2376,26 +2376,28 @@
    "faction": "terran",
    "rung": "capital",
    "cell": 0.4375,
-   "cells": 12823,
-   "plate": 5980,
-   "quads": 1838,
+   "cells": 12198,
+   "plate": 5955,
+   "quads": 1569,
    "groups": {
-    "plate": 325,
-    "trim": 293,
-    "structure": 115,
-    "frame": 37,
-    "drive": 449,
-    "weapon": 272,
-    "part": 347
+    "plate": 298,
+    "trim": 324,
+    "structure": 94,
+    "frame": 21,
+    "drive": 410,
+    "weapon": 248,
+    "part": 174
    },
    "windows": {
-    "beacons": 73,
-    "hangar": 8,
-    "louvre": 70,
-    "panes": 131,
-    "strip": 40
+    "beacons": 67,
+    "bridge": 10,
+    "dock": 186,
+    "hangar": 96,
+    "panes": 183,
+    "porthole": 33,
+    "strip": 56
    },
-   "windowFaces": 322,
+   "windowFaces": 631,
    "surfaces": [
     {
      "finish": "plate",
@@ -2473,7 +2475,7 @@
      "rough": 0.5
     }
    ],
-   "bytes": 156742
+   "bytes": 151730
   }
  ]
 }
