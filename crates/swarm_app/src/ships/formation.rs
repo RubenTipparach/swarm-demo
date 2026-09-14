@@ -3,14 +3,16 @@
 
 use crate::*;
 
-/// Where the flagship is, was heading and how fast, for whoever has to fly in
-/// formation on it.
+/// Where the flagship is, was heading and how fast.
 ///
-/// A resource rather than a second query, because `fly_hull` already holds
-/// every hull's `Transform` mutably and Bevy refuses a read of the same
-/// component in the same system. Published a frame behind, which a formation
-/// cannot see: a ship a sixtieth of a second stale is a ship one centimetre
-/// out of place.
+/// A resource rather than a second query, because a system that holds every
+/// hull's `Transform` mutably cannot also read the flagship's: Bevy refuses a
+/// read of the same component in the same system. Published a frame behind,
+/// which is a centimetre and nothing anybody can see.
+///
+/// Nothing FLIES on it any more. It is where a cutter is told to bring its
+/// load and where a wave is aimed when it is called, both of which are one
+/// shot answers rather than a goal chased every frame.
 #[derive(Resource, Default)]
 pub(crate) struct Lead {
     pub(crate) pos: Vec3,
@@ -36,15 +38,19 @@ pub(crate) struct NavTo(pub(crate) Vec3);
 #[derive(Component)]
 pub(crate) struct Flagship;
 
-/// A ship that came in as a reinforcement.
+/// A ship on the wing's books: what the yard counts against `WING_MAX`, and
+/// what the deck calls a unit that is neither the command ship nor a trade.
 ///
-/// It has no orders of its own: it keeps station on the flagship, at an offset
-/// in the FLAGSHIP's own frame rather than the world's, so a formation turns
-/// with the ship it is flying beside instead of sliding round it.
+/// A MARKER and nothing more. It used to carry the station it was flying and
+/// `fly_hull` chased that every frame, which is the follow the leader rule
+/// that is gone: a ship flies its order and holds where it stops, and a wing
+/// that is to move with the flagship is told to with `Guard`. So it is never
+/// taken off either, because it says which books a ship is on rather than
+/// what it is doing this second: an escort sent somewhere is still an escort,
+/// and removing the marker to mean "it has an order now" was quietly freeing
+/// a berth every time one was given one.
 #[derive(Component)]
-pub(crate) struct Escort {
-    pub(crate) station: Vec3,
-}
+pub(crate) struct Escort;
 
 /// How many escorts a wing holds, and how many one press of R brings.
 pub(crate) const WING_MAX: u32 = 6;
@@ -83,6 +89,13 @@ pub(crate) struct Wave {
 /// a wing would be four ships that add guns and can never be hurt: calling
 /// reinforcements would be free, which is the one thing a reinforcement must
 /// not be.
+///
+/// It ARRIVES on one order and then holds. The station used to be a goal it
+/// chased for the rest of its life, which is what made a wing move whenever
+/// the flagship did; it is a place it is SENT to now, through the same
+/// `Hull.order` a player's own right click writes, so the flight envelope,
+/// the rock avoidance and the heading are the one implementation they always
+/// were and a ship that has arrived is a ship standing still.
 pub(crate) fn call_one(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -107,7 +120,7 @@ pub(crate) fn call_one(
     let at = lead_pos
         + lead_rot * (station + Vec3::new(side * radius * 4.0, radius * 1.5, -radius * 9.0));
     let xf = Transform::from_translation(at).looking_to(lead_rot * Vec3::NEG_Z, Vec3::Y);
-    spawn_hull(
+    let (e, _) = spawn_hull(
         commands,
         meshes,
         materials,
@@ -116,8 +129,15 @@ pub(crate) fn call_one(
         ShipSpec::at(xf)
             .chewers(chewers)
             .seed(0x9E37 + n * 0x4F1B)
-            .station(station),
+            .wing(),
     );
+    // Through `NavTo` rather than by writing the order here, because the
+    // `Hull` arrives through `Commands` and nothing in this system can reach
+    // into it yet. That is what the component is for and the flagship's own
+    // `--move` already goes the same way.
+    commands
+        .entity(e)
+        .insert(NavTo(lead_pos + lead_rot * station));
 }
 
 /// Where the density field stands this frame.

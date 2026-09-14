@@ -24,6 +24,7 @@ pub(crate) struct BarPool(pub(crate) Vec<Entity>);
 pub(crate) fn draw_marquee(
     mode: Res<OrderMode>,
     marquee: Res<Marquee>,
+    scale: Res<UiScale>,
     windows: Query<&Window>,
     mut q: Query<&mut Node, With<MarqueeBox>>,
 ) {
@@ -46,11 +47,29 @@ pub(crate) fn draw_marquee(
         lo = lo.clamp(Vec2::ZERO, size);
         hi = hi.clamp(Vec2::ZERO, size);
     }
+    // DIVIDED BY `UiScale`, exactly as `draw_bars` below does and for exactly
+    // the same reason, which is the whole of the drift the owner reported.
+    //
+    // A `Val::Px` is an AUTHORED pixel and a cursor position is a WINDOW one.
+    // The deck is authored at 1600 by 900 and scaled by the window's height,
+    // so a box placed straight from the cursor is drawn at `cursor * scale`:
+    // it is pushed away from the top left corner by a fifth of its own
+    // distance from it at 1080, and by more on a taller screen. That reads as
+    // a band box that follows the pointer at the wrong speed and sits well
+    // clear of it by the time the drag is any size, which is what it did.
+    //
+    // The lesson is the one this file already records one function down, and
+    // it is the third time it has been learned here: the fix landed in
+    // `place_sensor_marks`, then in `draw_bars`, and the band box in the SAME
+    // FILE as `draw_bars` was left because nobody was looking at it that day.
+    // A rule that arrives after the code it applies to has to be carried to
+    // every place it applies to, in the change that establishes it.
+    let k = scale.0.max(0.01);
     n.display = Display::Flex;
-    n.left = Val::Px(lo.x);
-    n.top = Val::Px(lo.y);
-    n.width = Val::Px(hi.x - lo.x);
-    n.height = Val::Px(hi.y - lo.y);
+    n.left = Val::Px(lo.x / k);
+    n.top = Val::Px(lo.y / k);
+    n.width = Val::Px((hi.x - lo.x) / k);
+    n.height = Val::Px((hi.y - lo.y) / k);
 }
 
 /// A bar over every SELECTED ship of yours, and nothing else.

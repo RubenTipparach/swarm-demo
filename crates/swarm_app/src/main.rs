@@ -832,10 +832,15 @@ fn main() {
                     // the tanker has refined, what the tide has brought in,
                     // and the drive, which is the only way out.
                     (
-                        size_holds,
                         apply_scars,
                         price_jump,
-                        haul_cargo,
+                        drift_cargo,
+                        // A cutter cuts and a COLLECTOR carries: the craft
+                        // that ferry a cutter's pile home, and the one
+                        // number that poses their arms.
+                        launch_collectors,
+                        fly_collectors,
+                        pose_claws,
                         tend_repairs,
                         script_jobs,
                         script_jump,

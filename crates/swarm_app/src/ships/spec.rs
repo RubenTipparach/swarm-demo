@@ -14,9 +14,15 @@ pub(crate) struct ShipSpec {
     pub(crate) at: Transform,
     pub(crate) chewers: u32,
     pub(crate) seed: u32,
-    /// A place in the flagship's formation, or nothing for a ship that flies
-    /// its own orders.
-    pub(crate) station: Option<Vec3>,
+    /// On the wing's books rather than in command of it. A hull with a class
+    /// and NOT on the wing is the flagship, which is why a carrier and a rock
+    /// both leave this false.
+    ///
+    /// It used to carry the station the ship would fly, and the station used
+    /// to be chased every frame. Where a ship goes is an ORDER now, handed
+    /// over by whoever called it in, so all that is left here is which of the
+    /// three kinds of hull this is.
+    pub(crate) wing: bool,
     pub(crate) armour: f32,
     /// The class this came from, when it is one of the fleet's own. A hull
     /// with a class and no station is the flagship, which is why a carrier
@@ -36,7 +42,7 @@ impl ShipSpec {
             at,
             chewers: 0,
             seed: 0,
-            station: None,
+            wing: false,
             armour: ARMOUR,
             class: None,
             inert: false,
@@ -53,8 +59,8 @@ impl ShipSpec {
         self
     }
 
-    pub(crate) fn station(mut self, station: Vec3) -> ShipSpec {
-        self.station = Some(station);
+    pub(crate) fn wing(mut self) -> ShipSpec {
+        self.wing = true;
         self
     }
 
@@ -120,7 +126,7 @@ pub(crate) fn spawn_ship(
         at,
         chewers,
         seed,
-        station,
+        wing,
         armour,
         class,
         inert,
@@ -168,20 +174,23 @@ pub(crate) fn spawn_ship(
     } else {
         0
     };
-    match station {
-        Some(station) => {
-            commands.entity(hull_entity).insert(Escort { station });
+    match wing {
+        // On the wing's books. WHERE it is going is the caller's, handed over
+        // as an order like any other, because a station chased every frame is
+        // the follow the leader rule this game no longer has.
+        true => {
+            commands.entity(hull_entity).insert(Escort);
         }
         // Only a ship that is LOGGED is the flagship. A carrier is neither a
         // flagship nor an escort, and marking one would put the nav disc, the
         // camera and the swarm's own target on a mothership.
-        None if log.is_some() => {
+        false if log.is_some() => {
             // Selected out of the box, so the very first right button opens an
             // order instead of doing nothing at all. A game that starts with
             // nothing picked is a game whose first click teaches you nothing.
             commands.entity(hull_entity).insert((Flagship, Selected));
         }
-        None => {}
+        false => {}
     }
     let guns: Vec<Gun> = turrets.iter().map(|(g, _, _)| *g).collect();
     let engines: Vec<Drive> = engine_clusters(&model)

@@ -565,23 +565,27 @@ pub(crate) fn deck_bars(
 /// The fleet rail: a row per class you actually have, and nothing for a class
 /// you have none of.
 pub(crate) fn deck_roster(
+    fleet: Res<Schematics>,
     hulls: Query<&Hull, (Without<Hive>, Without<Wreck>)>,
     mut rows: Query<(&RosterRow, &mut Node)>,
     mut counts: Query<(&RosterCount, &mut Text)>,
 ) {
-    let mut have = [0usize; PICKABLE.len()];
+    // Over the MANIFEST, which is what `rail` builds its rows from: a count
+    // taken over a different list from the rows it fills is a row showing
+    // another class's number, and the dropdown's eight is not the fleet.
+    let mut have = vec![0usize; fleet.keys.len()];
     for h in &hulls {
         if h.dead_hull {
             continue;
         }
         if let Some(class) = h.class.as_deref() {
-            if let Some(n) = PICKABLE.iter().position(|p| *p == class) {
+            if let Some(n) = fleet.keys.iter().position(|p| p == class) {
                 have[n] += 1;
             }
         }
     }
     for (row, mut n) in &mut rows {
-        let want = if have[row.0] > 0 {
+        let want = if have.get(row.0).copied().unwrap_or(0) > 0 {
             Display::Flex
         } else {
             Display::None
@@ -591,7 +595,7 @@ pub(crate) fn deck_roster(
         }
     }
     for (c, mut t) in &mut counts {
-        let want = format!("x{}", have[c.0]);
+        let want = format!("x{}", have.get(c.0).copied().unwrap_or(0));
         if t.0 != want {
             t.0 = want;
         }
@@ -733,6 +737,7 @@ pub(crate) fn show_unit_shot(
 /// key nobody can learn.
 pub(crate) fn pick_group(
     mut commands: Commands,
+    fleet_keys: Res<Schematics>,
     keys: Res<ButtonInput<KeyCode>>,
     rows: Query<(&Interaction, &RosterRow), Changed<Interaction>>,
     fleet: LiveHulls,
@@ -741,7 +746,9 @@ pub(crate) fn pick_group(
     let Some((_, row)) = rows.iter().find(|(i, _)| **i == Interaction::Pressed) else {
         return;
     };
-    let Some(&class) = PICKABLE.get(row.0) else {
+    // The same list the rows were built from, or a press takes the group the
+    // row above it is a picture of.
+    let Some(class) = fleet_keys.keys.get(row.0).map(String::as_str) else {
         return;
     };
     let add = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
