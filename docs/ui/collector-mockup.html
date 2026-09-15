@@ -476,9 +476,19 @@
   var C = 0.16;
   /** The cube, at the size `cargo.rs` actually draws one. */
   var CUBE = 0.36;
-  /** How far the claws reach ahead of the hull's own middle, in units: the
-   *  shoulder at 1.6 cells plus an upper of 2.6 and a fore of 2.2. */
-  var REACH = (1.6 + 2.6 + 2.2) * C;
+  /** Where the claws are, WALKED down the same chain `pose` bends rather
+   *  than written down beside it. A reach authored on its own is a cube
+   *  riding in mid air the first time anybody tunes an angle, and the whole
+   *  point of a jointed arm is that the angles get tuned: laid out straight
+   *  the claws are 6.4 cells out, and bent they are nearer 6.1 and higher.
+   *  On the centreline, because the two arms are mirrored and what a PAIR
+   *  of them holds is how far forward and how high they hold it. */
+  function clawPoint(open) {
+    var u = -0.72 + open * 0.32, e = 1.02 - open * 0.47;
+    var y = -0.2 + Math.sin(-u) * 2.6 + Math.sin(-(u + e)) * 2.9;
+    var z = 1.6 + Math.cos(u) * 2.6 + Math.cos(u + e) * 2.9;
+    return { y: y * C, z: z * C };
+  }
   function box(w, h, d, colour, unlit) {
     var geo = new THREE.BoxGeometry(w * C, h * C, d * C);
     var mat = unlit
@@ -616,7 +626,8 @@
       orbit.base = which === "grab" ? 3.2 : 2.4;
       if (which === "grab") {
         var c = cube("ore");
-        c.position.set(0, -0.02, REACH + CUBE * 0.42);
+        var hold = clawPoint(0);
+        c.position.set(0, hold.y, hold.z);
         root.add(c);
         scene4.cube = c;
       }
@@ -696,8 +707,8 @@
     },
     grab: {
       role: "The grab, in one number",
-      rows: [["pose", "0 folded, 1 closed"], ["reach out", "0.00 to 0.62"],
-             ["close", "0.62 to 1.00"], ["cube", "0.36 u, a third of the craft"],
+      rows: [["pose", "0 reaching, 1 closed"], ["elbow bend", "58 to 32 deg"],
+             ["claws apart", "6.0 to 9.3 cells"], ["cube", "0.36 u, a third of the craft"],
              ["published by the sim", "one float"], ["everything else", "geometry"]]
     },
     loop: {
@@ -804,8 +815,10 @@
       var p = t < 0.55 ? t / 0.55 : (t < 0.8 ? 1 : 1 - (t - 0.8) / 0.2);
       pose(rig, p);
       if (scene4.cube) {
-        var shut = Math.max(0, (p - 0.62) / 0.38);
-        scene4.cube.position.set(0, -0.02 + shut * 0.03, REACH + CUBE * 0.42);
+        // It rides the claws all the way through, so the cube comes IN with
+        // the arms rather than waiting at the pose they end at.
+        var hold = clawPoint(Math.min(1, p * 1.6));
+        scene4.cube.position.set(0, hold.y, hold.z);
         scene4.cube.rotation.y = clock * 0.3;
       }
     } else if (mode === "loop" && scene4.flyers) {

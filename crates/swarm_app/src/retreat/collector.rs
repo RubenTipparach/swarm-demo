@@ -314,68 +314,78 @@ fn spawn_collector(commands: &mut Commands, kit: &CraftKit, at: Vec3, cell: f32)
             &kit.drive,
             body,
         );
-        // The arm is a CHAIN of three pivots, and each bone hangs off the
-        // joint above it rather than off the craft: shoulder, then elbow at
-        // the far end of the upper arm, then a jaw either side of the wrist.
-        // So the forearm and the claws ride the bend for nothing, exactly as
-        // the whole arm rides the craft.
-        let shoulder = commands
+        spawn_arm(commands, kit, c, s, body);
+    }
+}
+
+/// One ARM: a shoulder, an upper arm, an elbow, a forearm and two jaws.
+///
+/// Its own function because `spawn_collector` is the BODY and this is a
+/// limb, which is two things and therefore two functions, and because the
+/// craft went over this project's own hundred lines the moment the arm
+/// gained a joint. The limit is the work, never a reason to raise it.
+fn spawn_arm(commands: &mut Commands, kit: &CraftKit, c: f32, s: f32, body: Entity) {
+    // The arm is a CHAIN of three pivots, and each bone hangs off the
+    // joint above it rather than off the craft: shoulder, then elbow at
+    // the far end of the upper arm, then a jaw either side of the wrist.
+    // So the forearm and the claws ride the bend for nothing, exactly as
+    // the whole arm rides the craft.
+    let shoulder = commands
+        .spawn((
+            Transform::from_translation(
+                Vec3::new(s * SHOULDER_AT.x, SHOULDER_AT.y, SHOULDER_AT.z) * c,
+            ),
+            Visibility::default(),
+            Claw(s),
+            ChildOf(body),
+        ))
+        .id();
+    // The shoulder ball, then the upper arm out to the elbow.
+    box_at(
+        commands, kit, c, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, &kit.arm, shoulder,
+    );
+    box_at(
+        commands,
+        kit,
+        c,
+        0.7,
+        0.7,
+        UPPER,
+        0.0,
+        0.0,
+        UPPER * 0.5,
+        &kit.arm,
+        shoulder,
+    );
+    let elbow = commands
+        .spawn((
+            Transform::from_translation(Vec3::Z * UPPER * c),
+            Visibility::default(),
+            Elbow,
+            ChildOf(shoulder),
+        ))
+        .id();
+    box_at(
+        commands, kit, c, 0.9, 0.9, 0.9, 0.0, 0.0, 0.0, &kit.arm, elbow,
+    );
+    box_at(
+        commands, kit, c, 0.6, 0.6, 2.2, 0.0, 0.0, 1.1, &kit.arm, elbow,
+    );
+    box_at(
+        commands, kit, c, 0.3, 0.3, 0.3, 0.0, 0.0, 2.4, &kit.lamp, elbow,
+    );
+    for j in [-1.0f32, 1.0] {
+        let jaw = commands
             .spawn((
-                Transform::from_translation(
-                    Vec3::new(s * SHOULDER_AT.x, SHOULDER_AT.y, SHOULDER_AT.z) * c,
-                ),
+                Transform::from_translation(Vec3::new(0.0, j * 0.35, 2.2) * c),
                 Visibility::default(),
-                Claw(s),
-                ChildOf(body),
+                Jaw(j),
+                ChildOf(elbow),
             ))
             .id();
-        // The shoulder ball, then the upper arm out to the elbow.
         box_at(
-            commands, kit, c, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, &kit.arm, shoulder,
+            commands, kit, c, 0.5, 0.4, 1.4, 0.0, 0.0, 0.7, &kit.arm, jaw,
         );
-        box_at(
-            commands,
-            kit,
-            c,
-            0.7,
-            0.7,
-            UPPER,
-            0.0,
-            0.0,
-            UPPER * 0.5,
-            &kit.arm,
-            shoulder,
-        );
-        let elbow = commands
-            .spawn((
-                Transform::from_translation(Vec3::Z * UPPER * c),
-                Visibility::default(),
-                Elbow,
-                ChildOf(shoulder),
-            ))
-            .id();
-        box_at(
-            commands, kit, c, 0.9, 0.9, 0.9, 0.0, 0.0, 0.0, &kit.arm, elbow,
-        );
-        box_at(
-            commands, kit, c, 0.6, 0.6, 2.2, 0.0, 0.0, 1.1, &kit.arm, elbow,
-        );
-        box_at(
-            commands, kit, c, 0.3, 0.3, 0.3, 0.0, 0.0, 2.4, &kit.lamp, elbow,
-        );
-        for j in [-1.0f32, 1.0] {
-            let jaw = commands
-                .spawn((
-                    Transform::from_translation(Vec3::new(0.0, j * 0.35, 2.2) * c),
-                    Visibility::default(),
-                    Jaw(j),
-                    ChildOf(elbow),
-                ))
-                .id();
-            box_at(
-                commands, kit, c, 0.5, 0.4, 1.4, 0.0, 0.0, 0.7, &kit.arm, jaw,
-            );
-        }
     }
 }
 
