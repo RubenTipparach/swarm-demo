@@ -2891,11 +2891,46 @@ cells for the same reason: it flies at sixty of them a second and grabs
 within nine, so it is the same craft at any flagship.
 
 **What the arms say is what the craft is DOING**, off ONE number. `grip` is
-nought folded and one closed, the sim publishes it and `pose_claws` swings
-both shoulders and all four jaws from it: splayed wide and open while it is
-reaching, folded in and shut once it has something. A cube is PLACED at the
-claws every frame rather than parented, because a cube is spawned by the
+nought reaching and one closed, the sim publishes it and `pose_claws` poses
+both shoulders, both elbows and all four jaws from it. A cube is PLACED at
+the claws every frame rather than parented, because a cube is spawned by the
 cutter and re-parenting it would be a second place deciding what it rides.
+
+**An arm is a CHAIN of joints, and the first cut had exactly one.** The
+shoulder was the only pivot and every bone of the arm was laid out along one
+axis from it, so the upper arm, the forearm and the claw were a rigid stick
+that could only swing: a spar with a hand on the end, which is what the owner
+was looking at when he said it was never to be fully straight. The elbow is a
+child of the shoulder now and the forearm and the jaws hang off THAT, so the
+bend carries them with nothing recomputing where they are, which is the same
+reason the arm is a child of the craft and a turret is a child of its hull.
+
+**The bend is never nought at either end of the grip**, which is the rule
+rather than a taste: a limb run out to a line is the one shape an animal
+never holds, and even reaching for something a crane keeps an angle in it. It
+is 58 degrees reaching and 32 carrying, so the arm is an ARC in every frame
+this craft is ever drawn in.
+
+**Reaching, the claws point FORWARD**, and that is what decided the swing.
+A wide splay turns the claws OUTBOARD and the craft reads as warding
+something off rather than as waiting to pick something up, so the yaw stays
+small, the upper arm is raised well up and the elbow brings the forearm back
+down level: shoulders up, elbows out, hands in front.
+
+**Carrying, they SPREAD, which is the opposite of what the first cut
+assumed.** "Folded in once it has something" is what a hand does to a thing
+smaller than itself, and a cube here is several times the craft's own cell:
+folded in, the two claws are buried inside it. Measured off the same chain,
+the jaws stand 6.0 cells apart reaching and 9.3 carrying, against a cube of
+about 7.2, so they close ONTO its flanks.
+
+**And where a cube rides is WALKED down that chain rather than written down
+beside it.** `claw_point` composes the same two rotations over the same bone
+lengths `pose_claws` poses, so a carry point cannot disagree with the pose:
+a number authored on its own is a cube riding in mid air the first time
+anybody tunes an angle, and tuning the angles is the whole of what this
+section is. It follows the grip too, so a cube comes in with the arms as they
+close rather than snapping to the pose they end at.
 
 **`--watch-craft` rides one, and it is what finally photographed any of
 this.** `--target` names a PLACE, which is enough for everything else in

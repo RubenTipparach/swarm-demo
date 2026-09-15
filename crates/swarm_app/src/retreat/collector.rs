@@ -30,9 +30,22 @@ pub(crate) struct Collector {
     pub(crate) grip: f32,
 }
 
-/// One arm's shoulder, which is what the grip swings.
+/// One arm's shoulder, which is what the grip swings. The number is which
+/// side it is on, so one pose serves both arms mirrored.
 #[derive(Component)]
 pub(crate) struct Claw(pub(crate) f32);
+
+/// One arm's ELBOW, and the whole reason an arm reads as an arm.
+///
+/// The first cut had none: the shoulder was the only joint and every segment
+/// of the arm was laid out along one axis from it, so the upper arm, the
+/// forearm and the claw were a rigid stick that could only ever swing. A
+/// limb with one joint is a spar with a hand on the end, and the owner said
+/// so off the picture. It is a child of the shoulder, so the forearm and the
+/// jaws ride the bend with nothing recomputing where they are, which is the
+/// same reason the arm itself is a child of the craft.
+#[derive(Component)]
+pub(crate) struct Elbow;
 
 /// One jaw of a claw. Two per arm, and the grip closes them.
 #[derive(Component)]
@@ -62,9 +75,41 @@ pub(crate) const COLLECTOR_REPLACE: u32 = 90;
 /// two pictures has to be ported with the thing it was a ratio OF.
 pub(crate) const CELL: f32 = 0.0503;
 
-/// How far ahead of its middle the claws are, in cells: the shoulder at 1.6
-/// plus an upper arm of 2.6 and a forearm of 2.2, which is the mockup's arm.
-pub(crate) const REACH: f32 = 6.4;
+/// Where the arm is jointed and how long each bone is, in cells. The claws
+/// are measured to the middle of the jaws rather than to the wrist, because
+/// what these numbers exist to answer is where a cube is HELD.
+const SHOULDER_AT: Vec3 = Vec3::new(1.6, -0.2, 1.6);
+const UPPER: f32 = 2.6;
+const FORE_GRIP: f32 = 2.9;
+
+/// The arm's two poses, in radians, and the whole of what the grip eases
+/// between: how far out the shoulder is swung, how far the upper arm is
+/// raised, and how far the elbow is bent back.
+///
+/// **The elbow is never nought at either end, and that is the rule rather
+/// than a taste.** A limb straightened out to a line is the one shape an
+/// animal never holds, which is what the owner was looking at: even reaching
+/// for something a crane keeps an angle in it. So the smaller of the two
+/// bends is a quarter turn's worth and the arm is an ARC in every frame this
+/// craft is ever drawn in.
+///
+/// Idle is the one that had to be designed rather than derived. The claws
+/// point FORWARD, which means the yaw stays small (a wide splay turns the
+/// claws outboard and the craft reads as a thing warding something off), the
+/// upper arm is raised well up, and the elbow brings the forearm back down
+/// level: shoulders up, elbows out, hands in front, which is how anything
+/// that picks things up waits to pick something up.
+///
+/// Carrying is the opposite of what the first cut assumed. It SPREADS: a
+/// cube is several times the craft's own cell, so arms folded in would be
+/// two claws buried inside it. Held wide, the jaws sit on the cube's flanks
+/// and the craft reads as carrying rather than as impaling.
+const IDLE_YAW: f32 = 0.30;
+const IDLE_UPPER: f32 = -0.72;
+const IDLE_ELBOW: f32 = 1.02;
+const HOLD_YAW: f32 = 0.62;
+const HOLD_UPPER: f32 = -0.40;
+const HOLD_ELBOW: f32 = 0.55;
 
 /// How fast one flies and how near it has to be to take a cube or land one,
 /// in its own CELLS a second and in cells. Sixty cells a second is about ten
@@ -269,38 +314,62 @@ fn spawn_collector(commands: &mut Commands, kit: &CraftKit, at: Vec3, cell: f32)
             &kit.drive,
             body,
         );
-        // The shoulder is the pivot the grip swings, so it is placed and
-        // everything on the arm is drawn out along its own +Z from there.
-        let arm = commands
+        // The arm is a CHAIN of three pivots, and each bone hangs off the
+        // joint above it rather than off the craft: shoulder, then elbow at
+        // the far end of the upper arm, then a jaw either side of the wrist.
+        // So the forearm and the claws ride the bend for nothing, exactly as
+        // the whole arm rides the craft.
+        let shoulder = commands
             .spawn((
-                Transform::from_translation(Vec3::new(s * 1.6, -0.2, 1.6) * c),
+                Transform::from_translation(
+                    Vec3::new(s * SHOULDER_AT.x, SHOULDER_AT.y, SHOULDER_AT.z) * c,
+                ),
                 Visibility::default(),
                 Claw(s),
                 ChildOf(body),
             ))
             .id();
+        // The shoulder ball, then the upper arm out to the elbow.
         box_at(
-            commands, kit, c, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, &kit.arm, arm,
+            commands, kit, c, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, &kit.arm, shoulder,
         );
         box_at(
-            commands, kit, c, 0.7, 0.7, 2.6, 0.0, 0.0, 1.3, &kit.arm, arm,
+            commands,
+            kit,
+            c,
+            0.7,
+            0.7,
+            UPPER,
+            0.0,
+            0.0,
+            UPPER * 0.5,
+            &kit.arm,
+            shoulder,
+        );
+        let elbow = commands
+            .spawn((
+                Transform::from_translation(Vec3::Z * UPPER * c),
+                Visibility::default(),
+                Elbow,
+                ChildOf(shoulder),
+            ))
+            .id();
+        box_at(
+            commands, kit, c, 0.9, 0.9, 0.9, 0.0, 0.0, 0.0, &kit.arm, elbow,
         );
         box_at(
-            commands, kit, c, 0.9, 0.9, 0.9, 0.0, 0.0, 2.6, &kit.arm, arm,
+            commands, kit, c, 0.6, 0.6, 2.2, 0.0, 0.0, 1.1, &kit.arm, elbow,
         );
         box_at(
-            commands, kit, c, 0.6, 0.6, 2.2, 0.0, 0.0, 3.7, &kit.arm, arm,
-        );
-        box_at(
-            commands, kit, c, 0.3, 0.3, 0.3, 0.0, 0.0, 5.0, &kit.lamp, arm,
+            commands, kit, c, 0.3, 0.3, 0.3, 0.0, 0.0, 2.4, &kit.lamp, elbow,
         );
         for j in [-1.0f32, 1.0] {
             let jaw = commands
                 .spawn((
-                    Transform::from_translation(Vec3::new(0.0, j * 0.35, 4.8) * c),
+                    Transform::from_translation(Vec3::new(0.0, j * 0.35, 2.2) * c),
                     Visibility::default(),
                     Jaw(j),
-                    ChildOf(arm),
+                    ChildOf(elbow),
                 ))
                 .id();
             box_at(
@@ -422,7 +491,7 @@ pub(crate) fn fly_collectors(
             }
             continue;
         }
-        cube_xf.translation = xf.translation + xf.rotation * (Vec3::Z * REACH * size * 1.1);
+        cube_xf.translation = xf.translation + xf.rotation * (claw_point(col.grip) * size);
         cube_xf.rotation = xf.rotation;
         if landing && d < home.cfg.hull_radius * UNLOAD_REACH {
             let mut got = cargo.kind.worth();
@@ -474,29 +543,96 @@ fn claim(
     at
 }
 
+/// Where the shoulder stands at this grip, and which way it is swung.
+fn shoulder_pose(grip: f32, side: f32) -> Quat {
+    let g = grip.clamp(0.0, 1.0);
+    let yaw = IDLE_YAW + (HOLD_YAW - IDLE_YAW) * g;
+    let up = IDLE_UPPER + (HOLD_UPPER - IDLE_UPPER) * g;
+    // Yaw first and then pitch, so the swing is about the CRAFT's up and the
+    // raise is about the arm's own beam: the other order swings the arm
+    // about an axis that has already been tipped, and the two arms then come
+    // out at different heights.
+    Quat::from_rotation_y(side * yaw) * Quat::from_rotation_x(up)
+}
+
+/// How far the elbow is bent back at this grip. It takes no side, because a
+/// bend is the same bend on both arms: only the swing is mirrored.
+fn elbow_pose(grip: f32) -> Quat {
+    let g = grip.clamp(0.0, 1.0);
+    Quat::from_rotation_x(IDLE_ELBOW + (HOLD_ELBOW - IDLE_ELBOW) * g)
+}
+
+/// Where the claws are holding something, in the craft's own cells and its
+/// own frame.
+///
+/// It is WALKED down the same chain the draw is posed from rather than
+/// written down as a number beside it, which is this project's rule about
+/// one fact drawn twice: a carry point authored on its own is a cube riding
+/// in mid air the first time anybody tunes an angle, and the tuning is the
+/// whole of what this section is. It follows the grip as well, so a cube
+/// comes in with the arms as they close rather than snapping to the pose
+/// they end at.
+fn claw_point(grip: f32) -> Vec3 {
+    let sh = shoulder_pose(grip, 1.0);
+    let hand =
+        SHOULDER_AT + sh * (Vec3::Z * UPPER) + (sh * elbow_pose(grip)) * (Vec3::Z * FORE_GRIP);
+    // On the centreline, because the arms are mirrored: one claw's x is the
+    // other's, so what a PAIR of them holds is how far forward and how high
+    // they hold it, and the sides cancel.
+    Vec3::new(0.0, hand.y, hand.z)
+}
+
 /// Swing the arms from the one number the flight publishes.
 ///
-/// The mockup's own pose, and the two halves of it are what say what the
-/// craft is DOING at a glance: the shoulders are splayed wide while it is
-/// reaching and folded in once it has something, and the jaws are open on
-/// the way and shut on the cube.
+/// The mockup's own pose, and what the two ends of it say is what the craft
+/// is DOING at a glance: reaching, with the claws held out in front, or
+/// carrying, with them spread round what it has.
+/// One joint of an arm: what it is, what it hangs off, and the pose that is
+/// written to it. Named rather than written out, which is what keeps
+/// `pose_claws` readable and is what clippy's complex type rule is actually
+/// asking for, exactly as `CutRow` and `HaulShip` are.
+///
+/// Each filter says the row is NOT the other two joints, and that is not
+/// decoration: all three write a `Transform`, and Bevy proves two queries
+/// disjoint from their FILTERS rather than from anything anybody knows about
+/// the data, so without them the app refuses the system at startup.
+pub(crate) type ArmRow<'a> = (&'a Claw, &'a ChildOf, &'a mut Transform);
+pub(crate) type ArmOnly = (Without<Elbow>, Without<Jaw>);
+pub(crate) type ElbowRow<'a> = (&'a ChildOf, &'a mut Transform);
+pub(crate) type ElbowOnly = (With<Elbow>, Without<Claw>, Without<Jaw>);
+pub(crate) type JawRow<'a> = (&'a Jaw, &'a ChildOf, &'a mut Transform);
+pub(crate) type JawOnly = (Without<Claw>, Without<Elbow>);
+
 pub(crate) fn pose_claws(
     craft: Query<&Collector>,
-    mut arms: Query<(&Claw, &ChildOf, &mut Transform), Without<Jaw>>,
-    mut jaws: Query<(&Jaw, &ChildOf, &mut Transform), Without<Claw>>,
+    mut arms: Query<ArmRow, ArmOnly>,
+    mut elbows: Query<ElbowRow, ElbowOnly>,
+    mut jaws: Query<JawRow, JawOnly>,
 ) {
     for (claw, of, mut xf) in &mut arms {
         let Ok(col) = craft.get(of.parent()) else {
             continue;
         };
-        xf.rotation = Quat::from_rotation_y(claw.0 * (1.0 - col.grip * 1.25))
-            * Quat::from_rotation_x(-0.5 + col.grip * 0.42);
+        xf.rotation = shoulder_pose(col.grip, claw.0);
+    }
+    // A joint's parent is the joint ABOVE it and the grip is on the craft,
+    // so an elbow walks one more link and a jaw walks two. Three queries
+    // rather than one with `Option`s, because Bevy proves them disjoint from
+    // their FILTERS and not from anything anybody knows about the data.
+    for (of, mut xf) in &mut elbows {
+        let Ok((_, arm_of, _)) = arms.get(of.parent()) else {
+            continue;
+        };
+        let Ok(col) = craft.get(arm_of.parent()) else {
+            continue;
+        };
+        xf.rotation = elbow_pose(col.grip);
     }
     for (jaw, of, mut xf) in &mut jaws {
-        // A jaw's parent is the ARM and the grip is on the craft, so this
-        // walks one more link. Two queries rather than one with an `Option`,
-        // because Bevy proves them disjoint from their filters.
-        let Ok((_, arm_of, _)) = arms.get(of.parent()) else {
+        let Ok((elbow_of, _)) = elbows.get(of.parent()) else {
+            continue;
+        };
+        let Ok((_, arm_of, _)) = arms.get(elbow_of.parent()) else {
             continue;
         };
         let Ok(col) = craft.get(arm_of.parent()) else {

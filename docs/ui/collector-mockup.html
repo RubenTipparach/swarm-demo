@@ -541,14 +541,23 @@
     return { group: g, arms: arms };
   }
 
-  /** Pose both arms from one number: 0 folded back, 1 closed on a cube. */
+  /** Pose both arms from one number: 0 reaching, 1 closed on a cube.
+   *
+   * The elbow is never straightened out, at either end. A limb run out to a
+   * line is the one shape an animal never holds, and the first cut of this
+   * took the bend to 0.15 rad at the grab, which read as two spars rather
+   * than as arms. Reaching, the claws point FORWARD: the swing stays small,
+   * the upper arm is raised and the elbow brings the forearm back down
+   * level. Carrying, they SPREAD, because a cube is several times the
+   * craft's own cell and arms folded in would be two claws inside it.
+   * These are the numbers swarm-demo's `collector.rs` poses from. */
   function pose(r, t) {
     var open = Math.min(1, t * 1.6);          // reach out first
     var shut = Math.max(0, (t - 0.62) / 0.38); // then close
     r.arms.forEach(function (a) {
-      a.shoulder.rotation.y = a.side * (1.0 - open * 1.25);
-      a.upper.rotation.x = -0.5 + open * 0.42;
-      a.elbow.rotation.x = 1.15 - open * 1.0;
+      a.shoulder.rotation.y = a.side * (0.30 + open * 0.32);
+      a.upper.rotation.x = -0.72 + open * 0.32;
+      a.elbow.rotation.x = 1.02 - open * 0.47;
       a.pincers.forEach(function (p, i) {
         p.rotation.x = (i === 0 ? 1 : -1) * (0.55 - shut * 0.42);
       });
