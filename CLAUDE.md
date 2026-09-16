@@ -107,9 +107,9 @@ waiting on.
 
 ## The app is folders now, and the split was mechanical
 
-`main.rs` was 5241 lines after the merge that preceded it. It is the
-arguments, the `App` and the schedule now, and everything else is in the
-folders the proposal drew: `app/` (the scene, the clocks, the headless
+`main.rs` was 5241 lines after the merge that preceded it. It is the `App`
+and the schedule now, and everything else is in the folders the proposal
+drew: `app/` (the arguments, the scene, the clocks, the headless
 harness), `world/` (assets, backdrop, rocks), `ships/` (hull, spec, flight,
 formation, damage, wreck, turrets, flames), `weapons/` (beams, flak),
 `fighters/`, `hives/`, `controllers/` (selection, orders, camera), `ui/`
@@ -187,6 +187,21 @@ apart in the next stage, with the four `SystemSet`s and the explicit imports
 that replace `use crate::*;` once each module knows what it reads.
 `tools/shape.py --check` therefore still fails, on those, and the list it
 prints is that stage's work.
+
+**And the ARGUMENTS moved to `app/args.rs`, which a MERGE is what forced.**
+`main.rs` was 876 lines at the branch point, 895 on main and 892 here: neither
+side crossed nine hundred alone and the sum did, at 913. That is worth writing
+down because it is a shape regression no reviewer of either side could have
+seen and no check on either branch would have caught, and the answer is the
+one this file always gives: the limit is the work. `main.rs` is the `App` and
+the schedule, `Args` and `parse_args` are the command line, and those were
+always two things sharing a file.
+
+It is a MOVE, checked rather than asserted, by the same line accounting the
+first split used: every non blank line of the old file is in the two new ones,
+and the only arrivals are the module doc and its `use crate::*;`. The only
+edits are `pub(crate)` on the struct, the function and every field, which is
+exactly what the original split needed for the same reason.
 
 **Then the format, on its own.** The tree had never been through rustfmt:
 342 hunks at the default width, which is the width redux-tribes
@@ -3444,7 +3459,7 @@ is this one that answers "how much plating would a shot have to get through".
 ## Suites
 
 ```sh
-cargo test -p swarm_core                                   # 122, the core
+cargo test -p swarm_core                                   # 123, the core
 cargo test -p swarm_app                                    # 10, the run and the marks
 python3 tools/shape.py --check                             # no file over 900 lines, no function over 100
 cargo fmt --all -- --check                                 # the format
