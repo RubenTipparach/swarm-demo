@@ -261,7 +261,8 @@ fn spawn_stars(
         })),
         Transform::IDENTITY,
         bevy::camera::visibility::NoFrustumCulling,
-        AtInfinity,
+        // No offset: a shell of stars is centred on the eye by definition.
+        AtInfinity(Vec3::ZERO),
     ));
     info!("stars: {}", stars.len());
 }
@@ -298,7 +299,10 @@ fn spawn_sun_and_planets(
             ..default()
         })),
         Transform::from_translation(sun * FAR_BAND * 1.35),
-        AtInfinity,
+        // Its own offset, or the rider puts the sun on the camera. Written
+        // once and handed to both, so the spawn pose and the pose it is held
+        // at every frame cannot drift apart.
+        AtInfinity(sun * FAR_BAND * 1.35),
     ));
     for (at, r, colour, shade) in [
         ([-0.55f32, -0.18, -0.81], 62.0f32, 0x3c6b4a, 0x0a1410u32),

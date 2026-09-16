@@ -26,6 +26,16 @@ impl PanelTab {
         }
     }
 
+    /// What the panel's own heading says while this tab is open. Not
+    /// `label`: a tab is a word on a strip and a heading names a page.
+    pub(crate) fn title(self) -> &'static str {
+        match self {
+            PanelTab::Build => "Build Menu",
+            PanelTab::Research => "Research",
+            PanelTab::Launch => "Launch",
+        }
+    }
+
     pub(crate) const ALL: [PanelTab; 3] = [PanelTab::Build, PanelTab::Research, PanelTab::Launch];
 
     /// Whether pressing it opens anything.
@@ -107,6 +117,15 @@ pub(crate) struct BuildShot(pub(crate) usize);
 /// A cell of the modules row.
 #[derive(Component, Clone, Copy)]
 pub(crate) struct ModButton(pub(crate) Module);
+
+/// Which tab's body this node is, so `show_panel_body` can show one and hide
+/// the rest.
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PanelBody(pub(crate) PanelTab);
+
+/// The panel's own heading, which names whichever tab is open.
+#[derive(Component)]
+pub(crate) struct PanelHead;
 
 /// A tab of the right panel.
 #[derive(Component, Clone, Copy)]
@@ -233,7 +252,7 @@ pub(crate) fn modules_row(p: &mut ChildSpawnerCommands, skin: &Skin, glyphs: &Gl
 /// tomorrow needs a mark and nothing else. Four of the six wear a mark that
 /// already meant the same thing elsewhere on the deck, which is the point of
 /// a mark being DATA: a drive is a drive whether it is a module or a stat.
-fn module_mark(m: Module) -> Glyph {
+pub(crate) fn module_mark(m: Module) -> Glyph {
     match m {
         Module::Production => Glyph::Utility,
         Module::Hangar => Glyph::Dock,
@@ -255,6 +274,68 @@ pub(crate) fn build_body(p: &mut ChildSpawnerCommands, skin: &Skin, glyphs: &Gly
     cat_grid(p, skin, glyphs);
     build_list(p, skin);
     queue_lines(p, skin);
+}
+
+/// The RESEARCH body: the modules a yard can fit, and what each one costs.
+///
+/// The tabs used to light and do nothing else: `views.panel` was written by
+/// `build_input` and read in exactly one place, the code deciding which tab
+/// looked lit, so pressing Research lit Research and left the build list
+/// underneath it. A tab that changes nothing but its own colour is the same
+/// defect as a button for a mechanic that does not exist, which this project
+/// already holds is worse than a missing one.
+///
+/// What belongs here is what DATA buys, which is the yard's own division: the
+/// build list spends materials on hulls, and a module is the other half. Each
+/// row is a `ModButton`, which `build_input` already reads, so the press path
+/// is the one that existed rather than a second one written for this panel.
+pub(crate) fn research_body(p: &mut ChildSpawnerCommands, skin: &Skin, glyphs: &Glyphs) {
+    let tok = skin.tok();
+    section(p, skin, "Modules", DeckStat::Modules);
+    for kind in Module::ALL {
+        let cost = kind.price();
+        p.spawn((
+            Button,
+            Node {
+                height: Val::Px(30.0),
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(7.0),
+                padding: UiRect::horizontal(Val::Px(7.0)),
+                ..default()
+            },
+            frame(skin, Frame::Btn),
+            Chromed,
+            ModButton(kind),
+        ))
+        .with_children(|r| {
+            r.spawn(mark(glyphs, module_mark(kind), 15.0, tok.dim));
+            label(r, kind.label(), 12.0, tok.ink);
+            // The price, pushed to the right. Materials always, and the two
+            // that cost data or volatiles say so: a row that showed one number
+            // for three different currencies would be a price nobody could act
+            // on.
+            r.spawn((
+                Node {
+                    flex_grow: 1.0,
+                    justify_content: JustifyContent::FlexEnd,
+                    column_gap: Val::Px(6.0),
+                    ..default()
+                },
+                Pickable::IGNORE,
+            ))
+            .with_children(|c| {
+                if cost.materials > 0 {
+                    label(c, &format!("{}", cost.materials), 11.5, tok.gold);
+                }
+                if cost.volatiles > 0 {
+                    label(c, &format!("{}v", cost.volatiles), 11.5, tok.teal);
+                }
+                if cost.data > 0 {
+                    label(c, &format!("{}d", cost.data), 11.5, tok.cyan);
+                }
+            });
+        });
+    }
 }
 
 /// The producing ship: its name, its picture, the bar of the job it is on and

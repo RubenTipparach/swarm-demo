@@ -225,28 +225,32 @@ pub(crate) fn spawn_ship(
             base_color_texture: tex.ember.clone(),
             unlit: true,
             alpha_mode: AlphaMode::Blend,
-            // Well clear of the plate it is laid on. A wound quad and the
-            // face it replaces are the SAME plane, so whichever the depth
-            // test happens to prefer changes from pixel to pixel and from
-            // angle to angle, which is the shimmer along a torn edge. A bias
-            // of two was enough at arm's length and not at the far end of a
-            // cruiser, because depth precision is not linear: the same offset
-            // in depth units is a smaller offset in world units the further
-            // out it is applied.
-            depth_bias: 24.0,
+            // It stands off the machinery under it in GEOMETRY, and there is
+            // nothing here that does that: `mesh::DECAL_LIFT` is where a
+            // layer is separated from the face it is laid on.
+            //
+            // `depth_bias` was here and did nothing it was asked to do. It
+            // reads as a depth offset and is not one: Bevy adds it to a
+            // mesh's distance when the TRANSPARENT phase is sorted, so all it
+            // could ever decide is which of two blended draws goes first, and
+            // the burn and the machinery it is over are not two blended draws.
+            // They are one opaque surface and one blended surface at exactly
+            // one depth, which is a per pixel coin toss whatever is written
+            // here. A number that is believed to fix something it cannot
+            // reach is worse than no number, because it is where the next
+            // reader stops looking.
             ..default()
         }),
         // And the soot around it, which is a stain rather than a light: lit,
-        // dark, and biased off the plate it is laid on so it does not fight
-        // the panel underneath for the same depth.
+        // dark, and stood off the plate it is laid on by the same lift the
+        // burn takes. It never shares a face with the burn, so the two need no
+        // order between them: what each of them has to clear is the opaque
+        // surface underneath.
         scorch_mat: materials.add(StandardMaterial {
             base_color: Color::WHITE,
             base_color_texture: tex.ember.clone(),
             unlit: true,
             alpha_mode: AlphaMode::Blend,
-            // Under the burn and over the plate, and both gaps wide enough to
-            // survive the far end of the depth range.
-            depth_bias: 12.0,
             ..default()
         }),
         bricks: (0..damage.brick_count())

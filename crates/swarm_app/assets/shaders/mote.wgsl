@@ -20,6 +20,21 @@
 
 #import bevy_pbr::mesh_view_bindings::{view, lights}
 
+/// What a fresh wound burns, and what it has cooled to just before it goes
+/// out. The hot end is what the flare has always been and is well over white
+/// in the red, because the one hit a mote survives has to clear the bloom
+/// threshold; the cold end is under one everywhere, because a dying ember is
+/// the one thing in this cloud that must NOT bloom.
+const MOTE_FIRE: vec3<f32> = vec3<f32>(5.0, 2.2, 0.30);
+const MOTE_EMBER: vec3<f32> = vec3<f32>(0.9, 0.10, 0.02);
+
+/// How dark a mote that has been burnt through stays once its fire is out.
+///
+/// Not nought. Flat black reads as a hole in the cloud rather than as a hurt
+/// animal, which is the wound ramp's own last stop said again: `CHAR` in the
+/// core is 0.09 and deliberately not zero for exactly this reason.
+const MOTE_CHAR: f32 = 0.22;
+
 struct Vertex {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -33,7 +48,7 @@ struct Vertex {
     @location(10) i_life: vec4<f32>,
     // And what the cloud does to the light on it: x how much of the sun
     // reaches it through the rest of the swarm, y how much of the sky does,
-    // z the beat a wound throbs on, w how much a mote that has just burst
+    // z how hot its wound still is, w how much a mote that has just burst
     // nearby is lighting it.
     @location(11) i_shade: vec4<f32>,
 };
@@ -47,8 +62,8 @@ struct VertexOutput {
     // How much of its OWN light this fragment makes. Nought for chitin, and
     // over one for a drive at transit speed.
     @location(4) glow: f32,
-    // x = the sun that got through, y = the sky that got through, z = the
-    // beat a wound throbs on, w = the fire of a burst standing next to it.
+    // x = the sun that got through, y = the sky that got through, z = how hot
+    // its wound still is, w = the fire of a burst standing next to it.
     @location(5) shade: vec4<f32>,
     // How hurt it is: nought whole, one about to come apart.
     @location(6) hurt: f32,
@@ -218,9 +233,19 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // channel and never bloomed at all. At these numbers that same single hit
     // clears white in the red and the wound flares.
     //
-    // And it BEATS, on the clock the tick handed over in `shade.z`. A steady
-    // glow is a colour; a pulse is an injury, and a pulse is what carries at
-    // the one or two pixels a mote is usually drawn at.
+    // And it COOLS, on the heat the tick hands over in `shade.z`: one at the
+    // moment of the hit, nought a couple of seconds later. It used to be a
+    // steady pulse held for as long as the mote was hurt, which is until it
+    // docked and was rebuilt, so a cloud that had been swept once was a cloud
+    // permanently on fire and nothing in it said which mote had just been
+    // struck. A fire that fades is the injury; the pulse was standing in for
+    // it.
+    //
+    // Two stops rather than the hull's five, and the ramp is the same shape:
+    // white hot into orange into a dark red that goes out. A hull's ramp has
+    // a crust alpha and a soot ring to carry and is read across a crater a
+    // player leans in at; this is read at one pixel, where everything past
+    // "bright then dull then out" is arithmetic nobody can see.
     //
     // It burns on the CHITIN and nowhere else. The lit cells are a bug's eyes
     // and its drive, and those are the two things that say which way it is
@@ -230,8 +255,24 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // already the marker for which cells are which, so the burn simply takes
     // the other half of it.
     let plate = in.color.a;
-    let burn = clamp(in.hurt * in.hurt * in.shade.z, 0.0, 1.0) * plate;
-    let wound = vec3<f32>(5.0, 2.2, 0.30) * burn;
+    let heat = clamp(in.shade.z, 0.0, 1.0);
+    let burn = heat * plate;
+    let wound = mix(MOTE_EMBER, MOTE_FIRE, heat * heat) * burn;
+
+    // ---- and the CHAR, which does not cool because it is not a fire ----
+    //
+    // What is left of a mote that has been burnt is a burnt mote. The fire
+    // above is an event and goes out; this is the damage, and it rides `hp`,
+    // so it stands for exactly as long as the mote is hurt and is gone the
+    // moment it docks and is put back together. It is the hull's own rule at
+    // another scale: there the crust rides the dead CELL and not the heat
+    // over it, which is why a cold crater is still plainly a crater.
+    //
+    // On the chitin only, like the fire, and for the same reason: a bug's
+    // eyes and its drive are the two marks that say which way it is facing
+    // and that it is alive at all, and a mote charred from eye to exhaust is
+    // a shape with no parts.
+    let char = mix(1.0, MOTE_CHAR, in.hurt * plate);
 
     // ---- and a burn BEATS the shadow ----
     //
@@ -243,5 +284,5 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // as two different colours, and the ones in the middle, which is where the
     // fighting is, were the dim ones. What a player has just hit should not
     // depend on where the cloud happened to be standing.
-    return vec4<f32>(body * (1.0 - burn) + in.color.rgb * in.glow + wound, 1.0);
+    return vec4<f32>(body * (1.0 - burn) * char + in.color.rgb * in.glow + wound, 1.0);
 }
