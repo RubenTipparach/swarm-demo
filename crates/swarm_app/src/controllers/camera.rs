@@ -220,23 +220,54 @@ pub(crate) fn orbit_input(
 /// is how it gets to a ship: set by a key, eased in, and DROPPED the moment
 /// the player pans. Focusing is a thing you ask for rather than a state you
 /// are stuck in.
+///
+/// **And what it goes to is the SELECTION**, not the flagship. It went to the
+/// flagship for as long as this camera has existed, which was invisible while
+/// there was one ship and is simply wrong in an RTS: F is the key that takes
+/// you to the thing you have picked, so pressing it with an escort or a miner
+/// selected flew the camera to a different ship entirely. A whole selection
+/// focuses on its own CENTROID, which is what makes F usable on a group: a
+/// wing spread over a system has no single ship the camera should choose.
+///
+/// The flagship is the fallback when nothing is picked, because "take me to
+/// my fleet" is what F means with an empty selection and there is no better
+/// answer to it.
 pub(crate) fn orbit_camera(
     time: Res<Time>,
     scene: Res<SceneSpec>,
     views: Res<Views>,
+    picked: Query<&Transform, (With<Selected>, Without<Camera3d>)>,
+    // No `Without<Selected>` on this one. Both are read only, so Bevy lets
+    // them overlap, and the flagship is only ever read when nothing is
+    // picked: the filter that would keep them disjoint is a filter that can
+    // never matter, and it is one clippy counts.
     hulls: Query<&Transform, (With<Flagship>, Without<Camera3d>)>,
     mut q: Query<(&mut Orbit, &mut Transform), With<Camera3d>>,
 ) {
     let dt = scene.step(&time);
     let sensors = views.open == Some(ViewTab::Sensors);
+    // Where F goes: the middle of what is picked, or the flagship when nothing
+    // is. Summed rather than `single()`, because a selection is a group and
+    // `single()` on a group is the "do nothing at all" this project has been
+    // caught by once already, the day one hull became several.
+    let mut sum = Vec3::ZERO;
+    let mut n = 0u32;
+    for xf in picked
+        .iter()
+        .chain(hulls.iter().take(usize::from(picked.is_empty())))
+    {
+        sum += xf.translation;
+        n += 1;
+    }
+    let want = (n > 0).then(|| sum / n as f32);
     for (mut o, mut xf) in &mut q {
         if o.follow {
-            if let Ok(hull) = hulls.single() {
+            if let Some(hull) = want {
                 // Eased on `1 - exp(-k dt)` so the ease takes the same wall
                 // time at twenty frames a second as at a hundred and twenty,
                 // which is the rule redux-tribes' camera keeps.
                 let k = 1.0 - (-3.4 * dt).exp();
-                o.target = o.target.lerp(hull.translation, k);
+                o.target = o.target.lerp(hull, k);
                 // And it LETS GO once it has arrived, so a focus is a move to
                 // a place rather than a lock: the ship then flies out of the
                 // middle of the view under its own power, which is what says
@@ -246,7 +277,7 @@ pub(crate) fn orbit_camera(
                 // its own threshold as the ship flew away from nothing in
                 // particular, so a focus let go at a different gap depending
                 // on where in the map it was asked for.
-                if o.target.distance(hull.translation) < o.dist * 0.004 {
+                if o.target.distance(hull) < o.dist * 0.004 {
                     o.follow = false;
                 }
             } else {

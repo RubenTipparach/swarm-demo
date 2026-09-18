@@ -23,8 +23,7 @@ pub(crate) fn assign_work(
     mode: Res<OrderMode>,
     targets: Query<(Entity, &Hull, &Transform), Or<(With<Rock>, With<Wreck>)>>,
     rocks: Query<&Rock>,
-    mut crews: Query<(Entity, &Support, &mut Job), With<Selected>>,
-    mut commands: Commands,
+    mut crews: Query<(&Support, &mut Job), With<Selected>>,
     mut ack: ResMut<Ack>,
 ) {
     if *mode != OrderMode::Idle || !buttons.just_pressed(MouseButton::Right) {
@@ -68,7 +67,7 @@ pub(crate) fn assign_work(
         return;
     }
     let mut given = 0;
-    for (_, support, mut job) in &mut crews {
+    for (support, mut job) in &mut crews {
         let can = if is_rock {
             support.role.cuts_rock()
         } else {
@@ -82,14 +81,6 @@ pub(crate) fn assign_work(
     }
     if given == 0 {
         return;
-    }
-    // An ordered ship stops keeping station, exactly as one given a move
-    // order does: a ship that flew to a rock and straight back to its slot
-    // would be a job that did nothing.
-    for (e, _, job) in &crews {
-        if matches!(*job, Job::Work(_)) {
-            commands.entity(e).remove::<Escort>();
-        }
     }
     buttons.clear_just_pressed(MouseButton::Right);
     ack.text = format!(
@@ -136,14 +127,13 @@ pub(crate) fn script_jobs(
     tick: Res<Tick>,
     auto: Res<Script>,
     targets: Query<(Entity, &Transform, Option<&Rock>), (With<Hull>, WorkableBody)>,
-    mut crews: Query<(Entity, &Support, &mut Job, &Transform)>,
+    mut crews: Query<(&Support, &mut Job, &Transform)>,
     mut fired: Local<bool>,
-    mut commands: Commands,
 ) {
     if !tick.cue(auto.job, &mut fired) {
         return;
     }
-    for (entity, support, mut job, xf) in &mut crews {
+    for (support, mut job, xf) in &mut crews {
         // The nearest thing this role can work, which is the rock a player
         // would have picked and is the only choice a script can defend.
         let mut best: Option<(f32, Entity)> = None;
@@ -162,7 +152,6 @@ pub(crate) fn script_jobs(
         }
         let Some((_, target)) = best else { continue };
         *job = Job::Work(target);
-        commands.entity(entity).remove::<Escort>();
         if let Ok((_, at, _)) = targets.get(target) {
             info!(
                 "{} to work on the body at {:.1},{:.1},{:.1}",
@@ -181,10 +170,8 @@ pub(crate) fn work_jobs(
     tick: Res<Tick>,
     mut crews: Query<(Entity, &Support, &mut Job, &mut Hull, &mut Hold, &Transform)>,
     mut targets: Query<BodyRow, Without<Support>>,
-    cubes: Query<(Entity, &Cargo)>,
     lead: Res<Lead>,
     cfg: Res<SwarmConfig>,
-    mut bank: ResMut<Bank>,
     mut sparks: ResMut<SparkQueue>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -193,12 +180,6 @@ pub(crate) fn work_jobs(
     mut cube: Local<Option<Handle<Mesh>>>,
     mut cargo_mesh: Local<Option<Handle<Mesh>>>,
 ) {
-    // Counted once for the whole pass rather than per ship: a freighter is
-    // a fact about the fleet, not about the miner that happens to be home.
-    let freighters = crews
-        .iter()
-        .filter(|(_, s, _, h, _, _)| s.role == Role::Freighter && !h.dead_hull)
-        .count() as u32;
     for (entity, support, mut job, mut hull, mut hold, xf) in &mut crews {
         if hull.dead_hull {
             continue;
@@ -230,7 +211,6 @@ pub(crate) fn work_jobs(
                     work_body(
                         crew,
                         (rock, rock_xf, seam, part),
-                        target,
                         tick.tick,
                         &mut sparks,
                         world,
@@ -238,36 +218,21 @@ pub(crate) fn work_jobs(
                     );
                 }
             }
-            Job::Unload(back) => unload_hold(
-                (entity, support, &mut job, &mut hull, &mut hold, xf),
-                back,
-                &lead,
-                &cfg,
-                (&mut bank, &cubes, freighters),
-                &mut commands,
-            ),
+            Job::Home => stand_down((&mut job, &mut hull, xf), &lead, &cfg),
         }
     }
 }
 
-/// A full hold, home to the command ship, emptied into the bank, and then
-/// back to what it was cutting.
+/// Done here: home to the command ship, and stand down.
 ///
-/// The crew's own row of the query is passed whole rather than as six
-/// arguments: it is one thing, a ship with a job and a hold, and taking it
-/// apart at this boundary would only put it back together on the other side.
-fn unload_hold(
-    crew: (Entity, &Support, &mut Job, &mut Hull, &mut Hold, &Transform),
-    back: Option<Entity>,
-    lead: &Lead,
-    cfg: &SwarmConfig,
-    into: (&mut Bank, &Query<(Entity, &Cargo)>, u32),
-    commands: &mut Commands,
-) {
-    let (entity, support, job, hull, hold, xf) = crew;
-    // The bank, the cubes and the freighters travel together because they
-    // are three halves of one question: what this load is worth landed.
-    let (bank, cubes, freighters) = into;
+/// It lands NOTHING, and that is the collector's doing rather than an
+/// omission. A cutter used to fill a hold, fly home and empty it into the
+/// bank, which is a second implementation of the thing `fly_collectors`
+/// does: one cargo landed in two places is two answers the day either one
+/// is tuned. The cubes are landed where they are carried, so what is left
+/// here is a ship with nothing to work and somewhere to wait.
+fn stand_down(crew: (&mut Job, &mut Hull, &Transform), lead: &Lead, cfg: &SwarmConfig) {
+    let (job, hull, xf) = crew;
     // In the flagship's RADII, and in its frame, like every other station in
     // this game: a distance in bare units means one thing on a corvette and
     // another on a heavy cruiser.
@@ -275,48 +240,12 @@ fn unload_hold(
     if xf.translation.distance(lead.pos) > cfg.hull_radius * UNLOAD_REACH {
         return;
     }
-    // What is landed is the CUBES it is actually carrying, not a number it
-    // has been keeping: the cubes are the cargo, so they are what is asked.
-    let load = cubes_of(cubes, entity);
-    if !load.is_empty() {
-        let mut got = Yield::NOTHING;
-        for (e, kind) in &load {
-            got += kind.worth();
-            commands.entity(*e).despawn();
-        }
-        // And the freighters take their cut, which is the freighter's whole
-        // job: it cuts nothing and it makes every other ship's trip worth
-        // more, so the first one pays for itself the moment two cutters are
-        // working. On what is LANDED, so a freighter is worth nothing to a
-        // fleet that is not gathering.
-        let lift = 1.0 + FREIGHT_SHARE * freighters as f32;
-        if freighters > 0 {
-            got.materials = (got.materials as f32 * lift) as u32;
-            got.volatiles = (got.volatiles as f32 * lift) as u32;
-            got.data = (got.data as f32 * lift) as u32;
-        }
-        info!(
-            "{} landed {} cubes: {:?} ({freighters} freighters)",
-            support.role.label(),
-            load.len(),
-            got
-        );
-        bank.take(got);
-        hold.carrying = 0;
-    }
-    match back {
-        Some(t) => *job = Job::Work(t),
-        None => {
-            *job = Job::Idle;
-            hull.order = None;
-            // Back into the formation, on the station it was given when it
-            // was built, since a ship with nothing to do should be somewhere
-            // a player can find it.
-            commands.entity(entity).insert(Escort {
-                station: support.station,
-            });
-        }
-    }
+    *job = Job::Idle;
+    // It HOLDS where it arrived, which is alongside the command ship. It
+    // used to be put back on a station it then chased for ever, and a
+    // support ship that flew home across the map on its own was half of
+    // what the owner found: a ship moves because it was told to.
+    hull.order = None;
 }
 
 /// A body a CUTTER holds while it works it: what it is made of, where it
@@ -343,13 +272,12 @@ pub(crate) type CutRow<'a> = (
 fn work_body(
     crew: (Entity, &mut Job, &mut Hull, &mut Hold, &Transform),
     body: CutRow,
-    target: Entity,
     tick: u32,
     sparks: &mut SparkQueue,
     world: Spawner,
     cube: &mut Option<Handle<Mesh>>,
 ) {
-    let (entity, job, hull, hold, xf) = crew;
+    let (_entity, job, hull, hold, xf) = crew;
     let (mut rock, rock_xf, mut seam, mut part) = body;
     let scale = rock_xf.scale.x.max(1e-3);
     let (out, stand) = cutter_stand(&rock, rock_xf, hull, xf);
@@ -362,7 +290,7 @@ fn work_body(
     // at all: what is left to cut is not a reason to go on cutting it.
     let cut = match seam.as_deref() {
         Some(r) if !r.worth_cutting() => {
-            *job = Job::Unload(None);
+            *job = Job::Home;
             return;
         }
         Some(_) => Cut::Rock,
@@ -399,15 +327,11 @@ fn work_body(
     pop_cubes(
         hold,
         cut.pack(),
-        entity,
         rock_xf.translation + out * stand * 0.72,
         out,
         CUBE_SIZE * hull.model.radius(),
         (commands, meshes, materials, mats, mesh),
     );
-    if hold.full() {
-        *job = Job::Unload(Some(target));
-    }
     if cells == 0 {
         // The shaft came out the far side: nothing is left along that line,
         // and the answer is to WALK ROUND rather than to go home, because a
@@ -442,7 +366,7 @@ fn survey_body(
     tick: u32,
     world: Spawner,
 ) {
-    let (entity, job, hull, hold, xf) = crew;
+    let (_entity, job, hull, hold, xf) = crew;
     let (rock, rock_xf, scan) = body;
     let (out, stand) = cutter_stand(&rock, rock_xf, hull, xf);
     hull.order = Some(rock_xf.translation + out * stand * WORK_STANDOFF);
@@ -470,7 +394,7 @@ fn survey_body(
     };
     if got == 0 {
         // Nothing left to learn here. Home, and then somewhere else.
-        *job = Job::Unload(None);
+        *job = Job::Home;
         return;
     }
     hold.loose.data += got;
@@ -481,15 +405,11 @@ fn survey_body(
     pop_cubes(
         hold,
         Pack::Seam,
-        entity,
         rock_xf.translation + out * stand * 0.72,
         out,
         CUBE_SIZE * hull.model.radius(),
         (commands, meshes, materials, mats, mesh),
     );
-    if hold.full() {
-        *job = Job::Unload(Some(target));
-    }
 }
 
 /// What is left to learn about a body, in cells of data.
@@ -525,30 +445,20 @@ type Spawner<'a, 'w, 's> = (
     &'a mut Option<Handle<Mesh>>,
 );
 
-/// Turn what a cutter has loose into cubes, while it still has room.
+/// Turn what a cutter has loose into cubes, and leave them at the shaft.
 ///
 /// Out of the SHAFT, at the face, where the cutter is working: a cube that
 /// appeared beside the ship would be a number going up with a mesh on it.
-/// The hold is what says when to stop, so a full ship stops making them and
-/// the rest of the seam stays in the rock for the next trip.
-fn pop_cubes(
-    hold: &mut Hold,
-    pack: Pack,
-    to: Entity,
-    at: Vec3,
-    out: Vec3,
-    size: f32,
-    world: Spawner,
-) {
+///
+/// LOOSE, which is the whole of the collector change. A cutter used to claim
+/// every cube it made, tow the lot home in a line behind it and fly all the
+/// way back out, so most of a system went on transit and the shaft stood
+/// idle for the length of every round trip. The pile stays at the mouth now
+/// and the collectors ferry it, so a cutter cuts until the rock is empty.
+fn pop_cubes(hold: &mut Hold, pack: Pack, at: Vec3, out: Vec3, size: f32, world: Spawner) {
     let (commands, meshes, materials, mats, mesh) = world;
-    while !hold.full() {
-        let Some(kind) = Cube::packed(&mut hold.loose, pack) else {
-            break;
-        };
-        spawn_cube(
-            commands, meshes, materials, mats, mesh, kind, at, out, size, to,
-        );
-        hold.carrying += 1;
+    while let Some(kind) = Cube::packed(&mut hold.loose, pack) {
+        spawn_cube(commands, meshes, materials, mats, mesh, kind, at, out, size);
     }
 }
 

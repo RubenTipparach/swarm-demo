@@ -180,17 +180,7 @@ pub(crate) fn nav_input(
     mut pings: ResMut<Pings>,
     mut ack: ResMut<Ack>,
     mut rally: ResMut<Rally>,
-    mut commands: Commands,
-    mut hulls: Query<
-        (
-            Entity,
-            &mut Hull,
-            &Transform,
-            Option<&Selected>,
-            Option<&Escort>,
-        ),
-        Without<Hive>,
-    >,
+    mut hulls: Query<(&mut Hull, &Transform, Option<&Selected>), Without<Hive>>,
     mut aimed: Local<bool>,
 ) {
     // The acknowledgements age on the REAL clock: a ping plays out whether or
@@ -208,7 +198,7 @@ pub(crate) fn nav_input(
     // selected too, for their bars, and fly their own patrol regardless.
     let mut chosen: Vec<Vec3> = Vec::new();
     let mut radius = 0.0f32;
-    for (_, hull, xf, sel, _) in &hulls {
+    for (hull, xf, sel) in &hulls {
         if sel.is_some() && !hull.dead_hull {
             chosen.push(xf.translation);
             radius = radius.max(hull.model.radius());
@@ -342,19 +332,15 @@ pub(crate) fn nav_input(
                 // by where it already stands relative to the group, so a
                 // formation arrives as a formation instead of all piling
                 // onto one coordinate.
+                // SELECTED and alive, and that list is the whole of it.
+                // Nothing else in this game may write `Hull.order` off a
+                // press: a ship that was not picked does not move, which is
+                // the rule an RTS is played on.
                 let mut n = 0;
-                for (e, mut hull, xf, sel, escort) in &mut hulls {
+                for (mut hull, xf, sel) in &mut hulls {
                     if sel.is_some() && !hull.dead_hull {
                         hull.order = Some(to + (xf.translation - order.anchor));
                         n += 1;
-                        // A ship that is given an order of its own stops
-                        // keeping station: an escort ordered somewhere and
-                        // then flown straight back to its slot would be an
-                        // order that did nothing. It is a ship of the line
-                        // from here on, and R can call another.
-                        if escort.is_some() {
-                            commands.entity(e).remove::<Escort>();
-                        }
                     }
                 }
                 pings.0.push((to, 0.0, order.radius));

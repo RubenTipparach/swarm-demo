@@ -29,6 +29,27 @@ const RELIEF: f32 = 0.42;
 /// without anything here knowing what colour it will be drawn in.
 const ORE_SHARE: f32 = 0.06;
 
+/// What share of a seam breaks the SURFACE, against the share that is buried.
+///
+/// Both seams used to be buried absolutely: ore is laid only below `want -
+/// 1.2` because "a vein that ran over the surface would read as paint", and
+/// `seed_crystal` takes a cell only if it has stone on all six faces for the
+/// same reason. Each is right about a seam SMEARED over a rock, and together
+/// they make a rock that tells a player nothing at all: measured over
+/// fourteen seeds, 2.5% of the seam had a face open to space and four of the
+/// fourteen rocks had none. There was no crystal anywhere a player could see,
+/// which is what "no crystal to mine" is, and no way to tell a rich rock from
+/// a poor one or to know which face to cut.
+///
+/// An OUTCROP is the other half of the same rule. A seam that reaches the
+/// skin in a few places is what a mineral asteroid actually looks like, and
+/// it is the one thing on a rock worth looking at twice, which is what this
+/// project's own notes have claimed about ore all along. It is a FIFTH of the
+/// buried rate, so the bulk of a seam is still inside the rock and cutting is
+/// still how it is got: an outcrop says a rock is worth cutting and pays
+/// almost nothing by itself.
+const OUTCROP: f32 = 0.2;
+
 /// The warm yellow an ore seam is drawn in, and the pale blue of a crystal.
 /// A crystal is `mat::GLOW`, which is what everything that is a LIGHT in this
 /// game is made of, so it is lit rather than painted and a shaft that reaches
@@ -238,12 +259,15 @@ pub fn generate_of(n: usize, cell: f32, seed: u64, flavour: Flavour) -> VoxelMod
                     continue;
                 }
                 let idx = m.index(i, j, k);
-                // Ore where a second, coarser field is high, and only below
-                // the skin: an ore seam is something a rock is made of, so a
-                // vein that ran over the surface would read as paint.
+                // Ore where a second, coarser field is high, mostly below the
+                // skin and OUTCROPPING here and there: a vein smeared over the
+                // whole surface reads as paint, and a vein with no outcrop at
+                // all is a rock with nothing on it to look at. See `OUTCROP`.
                 let deep = r < want - 1.2;
+                let crop = hash3(i as i32 * 13 + 1, j as i32 * 13 + 7, k as i32 * 13 + 3);
+                let seam = deep || crop < OUTCROP;
                 let vein = noise3([u[0] * 3.1 + 11.0, u[1] * 3.1 + 11.0, u[2] * 3.1 + 11.0]);
-                if deep && vein > 1.0 - ORE_SHARE * 4.0 && flavour != Flavour::Barren {
+                if seam && vein > 1.0 - ORE_SHARE * 4.0 && flavour != Flavour::Barren {
                     m.grid[idx] = mat::ACCENT;
                     m.surf[idx] = SURF_FRAME;
                     m.colour[idx] = ORE_COLOUR;
@@ -296,10 +320,19 @@ fn seed_crystal(m: &mut VoxelModel, flavour: Flavour) {
                         continue;
                     }
                     let n = m.index(ni as usize, nj as usize, nk as usize);
-                    if m.grid[n] != mat::PLATE || !buried(m, ni, nj, nk) {
+                    if m.grid[n] != mat::PLATE {
                         continue;
                     }
-                    if hash3(ni * 7 + 3, nj * 7 + 5, nk * 7 + 11) < share {
+                    // A buried cell at the full rate, a surface one at a
+                    // fifth of it: the bulk of the seam stays inside the rock
+                    // and a few facets reach the skin, which is what says
+                    // there is crystal in here at all. See `OUTCROP`.
+                    let want = if buried(m, ni, nj, nk) {
+                        share
+                    } else {
+                        share * OUTCROP
+                    };
+                    if hash3(ni * 7 + 3, nj * 7 + 5, nk * 7 + 11) < want {
                         take.push(n);
                     }
                 }
@@ -326,6 +359,56 @@ fn buried(m: &VoxelModel, i: i32, j: i32, k: i32) -> bool {
 mod tests {
     use super::*;
     use crate::voxel::mat;
+
+    /// Every rock SHOWS what it carries, and most of it is still inside.
+    ///
+    /// Both halves, because each without the other is a defect this has had.
+    /// Buried absolutely, a rock is a grey lump that tells a player nothing:
+    /// there was no crystal anywhere anybody could see, four seeds in
+    /// fourteen had not one cell of seam open to space, and "no crystal to
+    /// mine" is exactly what that looks like from the cockpit. Laid over the
+    /// whole skin instead, a seam reads as paint and cutting buys nothing.
+    ///
+    /// So: every seed outcrops SOMETHING of each seam, and the outcrop is a
+    /// minority of it. Held loosely on both sides, because what the numbers
+    /// have to be is "visible" and "not most of it" rather than any figure in
+    /// particular, and a pin on a figure is a pin that fails the day the
+    /// relief is tuned.
+    #[test]
+    fn every_rock_outcrops_some_of_its_seam_and_hides_most_of_it() {
+        for seed in 0..14u64 {
+            let m = generate(22, 0.2, seed);
+            let (mut seam, mut open) = (0usize, 0usize);
+            for k in 0..m.nz {
+                for j in 0..m.ny {
+                    for i in 0..m.nx {
+                        let n = m.index(i, j, k);
+                        if m.grid[n] != mat::ACCENT && m.grid[n] != mat::GLOW {
+                            continue;
+                        }
+                        seam += 1;
+                        if !buried(&m, i as i32, j as i32, k as i32) {
+                            open += 1;
+                        }
+                    }
+                }
+            }
+            assert!(seam > 0, "seed {seed}: a rock with no seam in it at all");
+            assert!(
+                open > 0,
+                "seed {seed}: {seam} cells of seam and not one of them visible, \
+                 so there is nothing on this rock to tell a player it is worth cutting"
+            );
+            // A third is the loose ceiling: at the shipped fifth the measured
+            // share over these seeds is an eighth, so this catches an outcrop
+            // that has turned into a coat of paint without pinning the tuning.
+            assert!(
+                open * 3 <= seam,
+                "seed {seed}: {open} of {seam} seam cells are on the surface, \
+                 which is a seam painted on rather than a rock with one in it"
+            );
+        }
+    }
 
     /// A rock has to be ONE rock. The relief can cut a lump off the main
     /// body, and a floating shelf beside an asteroid is the same defect

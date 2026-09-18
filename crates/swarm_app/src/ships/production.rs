@@ -127,9 +127,9 @@ fn launch(berth: &mut Berth, hull: &Hull, class: &str, n: u32) {
 /// one thing that makes it a platform: the same spawn, at the station itself
 /// instead of out past it, with the marker that keeps `fly_hull` off it.
 ///
-/// It keeps a station all the same, because `spawn_hull` reads "a class and no
-/// station" as the flagship, and a second ship wearing that marker is a
-/// camera, a nav disc and a swarm target that all do nothing.
+/// It goes on the WING's books all the same, because `spawn_hull` reads a
+/// class that is not on them as the flagship, and a second ship wearing that
+/// marker is a camera, a nav disc and a swarm target that all do nothing.
 fn emplace(berth: &mut Berth, hull: &Hull, class: &str, n: u32) {
     let radius = hull.model.radius();
     let station = Vec3::from(formation::station(berth.wing.0, n as usize)) * radius;
@@ -141,7 +141,7 @@ fn emplace(berth: &mut Berth, hull: &Hull, class: &str, n: u32) {
         &mut berth.materials,
         &berth.tex,
         class,
-        ShipSpec::at(at).seed(0x50A7 + n * 0x4F1B).station(station),
+        ShipSpec::at(at).seed(0x50A7 + n * 0x4F1B).wing(),
     );
     berth.commands.entity(e).insert(Platform);
 }
